@@ -1,169 +1,178 @@
 # Jobpipe
 
-An AI-powered job hunting pipeline for the Norwegian job market. Ingests listings from NAV and FINN.no, runs a cost-tiered triage and scoring pipeline, generates application drafts for top matches, and tracks application status automatically via Gmail — all from a single command.
+*Reduce noise. Prioritize better. Follow up with structure.*
 
-```powershell
-.\go.ps1
-```
+Jobpipe is a practical job search operating system for people who are tired of messy, repetitive, low-signal job hunting.
+
+It helps turn a chaotic process into a structured workflow: find jobs, filter out the noise, focus on the listings that actually matter, and keep track of what happened next.
+
+This started as a personal tool, but it is being shaped into something broader: a trustworthy workflow for job seekers who want better structure, clearer decisions, and less wasted effort.
 
 ---
 
-## The problem it solves
+## Why this exists
 
-Manually reviewing hundreds of job listings per week is slow, noisy, and inconsistent. Jobpipe automates the parts where AI outperforms human attention — filtering, ranking, and first-pass evaluation — so time can be spent on the parts that actually require human judgment: writing, relationships, and decisions.
+Modern job searching is noisy.
+
+You open too many tabs. You scan too many weak matches. You lose time on jobs that were never a fit. You forget where you applied, what happened next, or why you decided something was worth pursuing in the first place.
+
+Jobpipe exists to reduce that friction.
+
+The goal is not to make job search feel flashy or fully automated. The goal is to make it **clearer, calmer, and more structured**.
+
+---
+
+## What Jobpipe does
+
+Jobpipe helps with three parts of the process:
+
+### 1. Triage
+It gathers jobs from relevant sources and filters out obvious noise before deeper evaluation.
+
+### 2. Prioritization
+It helps identify which jobs deserve real attention, using staged evaluation instead of treating every listing the same.
+
+### 3. Follow-up
+It keeps decisions, outcomes, and status visible so the process does not disappear into notes, browser tabs, and inbox clutter.
+
+---
+
+## What Jobpipe is
+
+- a practical workflow for job discovery, triage, and follow-up
+- a product-minded solo project rooted in a real user problem
+- a decision-support tool, not just a scraper or dashboard
+- a structured way to reduce manual noise in the job search process
+
+## What Jobpipe is not
+
+- not a full ATS replacement
+- not a mass auto-apply bot
+- not a generic resume builder
+- not a polished SaaS product
+- not an attempt to replace human judgment with AI
+
+---
+
+## Product principles
+
+Jobpipe is built around a few simple rules:
+
+- **Cheap filters before expensive AI calls**
+- **Traceable decisions over black-box magic**
+- **Practical usefulness over feature bloat**
+- **Human judgment stays in the loop**
+- **A clearer workflow matters more than clever automation**
 
 ---
 
 ## How it works
 
-```
-NAV pam-stilling-feed + FINN.no
-    ↓  Apps Script (hourly, ~50 jobs/run) + pull_finn_search.py
-Google Sheet / JSONL input
-    ↓  pull_sheets_csv.py  (delta pull, active listings only)
+Jobpipe follows a staged workflow designed to reduce noise before spending money or attention on deeper evaluation.
 
-Pipeline stages (per job):
-    [FREE]   Geo postal filter        Oslo / Akershus / Vestfold-Telemark / Agder
-    [FREE]   Hard-no title regex      Trades, retail, clinical, 1st-line support, etc.
-    [FREE]   Semantic pre-filter      Multilingual cosine similarity vs. candidate profile
-    [NANO]   Triage                   gpt-4.1-nano → SKIP / REVIEW / APPLY + noise_level
-    [MINI]   Parse                    gpt-4.1-mini → structured job requirements
-    [MINI]   Profile match            gpt-4.1-mini → fit_score 0–100 (4 dimensions)
-    [MINI]   Pivot                    gpt-4.1-mini → pivot_score 0–100
-    [FREE]   Moderate                 Deterministic thresholds → final decision
-    [MINI]   Application pack         Draft cover letter + CV highlights (APPLY+ only)
+### 1. Collect jobs
+Job listings are pulled from relevant sources and stored in a structured input format.
 
-    ↓  sync_ledger.py   →  reports/ledger.sqlite
-    ↓  export_dashboard.py  →  reports/dashboard.html  (self-contained, opens in browser)
+### 2. Filter early
+Before any LLM call happens, Jobpipe applies a set of low-cost filters:
+- geographic filtering
+- title-based exclusion rules
+- semantic pre-filtering against the candidate profile
 
-Gmail integration:
-    scan_gmail.py  →  auto-detects application confirmations, interviews, rejections
-                   →  updates application_state.json without manual input
-```
+This removes a large share of irrelevant listings at effectively zero cost.
 
-**Design principle:** free filters run before any LLM call. The geo filter, regex filter, and semantic pre-filter eliminate the majority of listings at zero cost, so LLM spend is concentrated on genuinely relevant jobs.
+### 3. Triage and score
+Jobs that pass the early filters go through deeper evaluation:
+- AI-assisted triage
+- structured parsing of requirements
+- profile matching
+- pivot scoring
+- deterministic moderation into final decision tiers
 
----
+### 4. Generate useful outputs
+For stronger matches, Jobpipe produces structured outputs such as:
+- decision data
+- scoring breakdowns
+- dashboard-ready reports
+- application support materials
 
-## Decision tiers
+### 5. Track follow-up
+Where enabled, Gmail integration helps detect confirmations, interviews, and rejections so application follow-up stays visible over time.
 
-| Decision | Condition |
-|---|---|
-| `APPLY_STRONGLY` | fit_score ≥ 78 |
-| `APPLY` | fit_score ≥ 67 |
-| `REVIEW_HIGH` | fit_score ≥ 58 |
-| `REVIEW_LOW` | fit_score ≥ 30 |
-| `SKIP` | fit_score < 30 or hard filter triggered |
+**Core principle:** cheap filters run before expensive AI calls, so cost and effort are concentrated on jobs that are more likely to matter.
 
-Thresholds live in `configs/pipeline.v1.yaml` and are applied at export time — no re-run needed after changes.
+**Traceability:** every reviewed job leaves a structured artifact trail, so decisions can be inspected instead of treated like black-box output.
 
 ---
 
-## Per-job artifacts
+## Quick start
 
-Every job that passes initial filters produces a full artifact trail:
-
-```
-out_runs/<run_id>/<job_id>/
-  00_input.json          Normalized job snapshot
-  01_triage.json         AI triage signal + noise_level
-  03_parsed.json         Structured requirements
-  04_profile_match.json  fit_score + dimension breakdown
-  05_pivot.json          pivot_score + rationale
-  06_moderator.json      Final decision + reasoning
-  07_application_pack.json  Cover letter draft + CV highlights (APPLY+ only)
-```
-
-Every decision is traceable. No hidden logic.
-
----
-
-## Setup
-
-**Requirements:** Python 3.11+, OpenAI API key, Google Sheets access (for NAV feed)
+**Requirements:** Python 3.11+, OpenAI API key, and optional Google access for feed and Gmail features.
 
 ```powershell
-# Create virtual environment and install dependencies
 python -m venv .venv
 .venv\Scripts\pip install -e .
-
-# Configure environment
 copy .env.example .env
-# Fill in OPENAI_API_KEY and JOBPIPE_CSV_URL in .env
-
-# Configure your candidate profile
 copy profile_pack.example.md profile_pack.md
-# Edit profile_pack.md with your own roles, geo preferences, and background
 ```
 
-### Gmail integration (optional)
+Then update:
+- `.env` with your API and source settings
+- `profile_pack.md` with your own role targets, geography, and profile details
+
+Run the pipeline:
 
 ```powershell
-# One-time OAuth setup
-python -m jobpipe.cli.scan_gmail --setup
-
-# Scan inbox and update application status
-python -m jobpipe.cli.scan_gmail
+.\go.ps1
 ```
 
-Requires Gmail API credentials from Google Cloud Console — see `docs/gmail_filter_spec.md`.
-
----
-
-## Running the pipeline
+Useful options:
 
 ```powershell
-.\go.ps1              # Full run: pull → process → sync → open dashboard
-.\go.ps1 -DryRun      # Test mode: 2 jobs only, no browser
-.\go.ps1 -NoOpen      # Full run, skip auto-opening browser
+.\go.ps1 -DryRun
+.\go.ps1 -NoOpen
 ```
 
-Manual steps are available in `CLAUDE.md` for finer control.
+For detailed setup and optional Gmail integration, see:
+- [docs/configuration.md](docs/configuration.md)
+- [docs/decision-model.md](docs/decision-model.md)
+- [docs/artifacts.md](docs/artifacts.md)
+- [docs/profile-pack.md](docs/profile-pack.md)
+- [docs/cli.md](docs/cli.md)
+- [docs/architecture.md](docs/architecture.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-## Application tracking
+## Current status
 
-```powershell
-python -m jobpipe.cli.mark_status JOB_ID shortlisted
-python -m jobpipe.cli.mark_status JOB_ID applied
-python -m jobpipe.cli.mark_status JOB_ID interview
-python -m jobpipe.cli.mark_status JOB_ID rejected --notes "Form letter"
-python -m jobpipe.cli.mark_status JOB_ID dismissed
-python -m jobpipe.cli.mark_status --list
-```
+Jobpipe is an actively evolving solo-built project.
 
----
+It is already useful as a real workflow tool, but it is still growing in clarity, scope, and usability.
 
-## Adapting to your own job search
-
-Jobpipe is built around a `profile_pack.md` file that defines your target roles, geographic constraints, keyword signals, and career evidence. The pipeline uses this file as the truth source for all triage and scoring decisions.
-
-Start from `profile_pack.example.md` and replace with your own:
-- Target role titles and seniority level
-- Geographic whitelist (postal code ranges)
-- Hard-no role types
-- Keyword tiers (role anchors, domain signals, noise signals)
-- Career evidence bullets in STAR format
-
-The rest of the pipeline adapts automatically.
+The current priority is to make it:
+- easier to understand
+- easier to trust
+- easier to run
+- easier to improve without losing structure
 
 ---
 
-## Key files
+## Roadmap
 
-| File | Purpose |
-|---|---|
-| `go.ps1` | One-shot runner |
-| `configs/pipeline.v1.yaml` | Models, thresholds, regex patterns |
-| `profile_pack.example.md` | Candidate profile template |
-| `jobpipe/stages/` | Pipeline stage implementations |
-| `jobpipe/cli/` | CLI entry points |
-| `apps_script/` | Google Apps Script for NAV feed ingestion |
-| `CLAUDE.md` | Full architecture and operating guide |
+See [ROADMAP.md](ROADMAP.md).
+
+---
+
+## Contributing
+
+This project is currently solo-led, but feedback, ideas, and contributions are welcome.
+
+Start here:
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
 ## License
 
-MIT © Lars Værland
+MIT
