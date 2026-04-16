@@ -154,7 +154,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Optional: keep ledger up to date before we decide what's "processed"
     if args.sync_ledger_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--db", str(db_path), "--candidate-id", candidate_id]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--skip-sqlite", "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
@@ -266,7 +266,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Update ledger at the end (so the next run won't reprocess even after reset-state)
     if args.sync_ledger_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--db", str(db_path), "--candidate-id", candidate_id]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--skip-sqlite", "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
@@ -276,7 +276,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     update_agent_status(project_root, ledger_path, total_rows_processed, loops)
 
     print(
-        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, ledger={ledger_path}"
+        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, db={db_path}, ledger_fallback={ledger_path}"
     )
 
 

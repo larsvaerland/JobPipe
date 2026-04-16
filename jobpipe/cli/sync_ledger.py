@@ -463,11 +463,12 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    ap = argparse.ArgumentParser(description="Build an incremental JobPipe ledger (CSV + SQLite) from out_runs/*/index.jsonl and per-job stage artifacts.")
+    ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state from out_runs/*/index.jsonl and per-job stage artifacts.")
     ap.add_argument("--out", default="./out_runs", help="Path to out_runs (default: ./out_runs)")
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
     ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/ledger_latest.csv)")
-    ap.add_argument("--sqlite", default="", help="SQLite output path (default: <reports>/ledger.sqlite)")
+    ap.add_argument("--sqlite", default="", help="Legacy ledger SQLite output path (default: <reports>/ledger.sqlite)")
+    ap.add_argument("--skip-sqlite", action="store_true", help="Skip writing the legacy ledger.sqlite artifact")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe SQLite DB for mirrored evaluation state")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB mirroring (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
@@ -485,9 +486,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     out_dir = Path(args.out)
     reports_dir = Path(args.reports)
     csv_path = Path(args.csv) if args.csv else (reports_dir / "ledger_latest.csv")
-    sqlite_path = Path(args.sqlite) if args.sqlite else (reports_dir / "ledger.sqlite")
-
-    conn = init_db(sqlite_path)
+    sqlite_path = None if args.skip_sqlite else (Path(args.sqlite) if args.sqlite else (reports_dir / "ledger.sqlite"))
+    conn = init_db(sqlite_path) if sqlite_path is not None else None
 
     latest_by_job: Dict[str, Dict[str, Any]] = {}
     event_rows: List[Dict[str, Any]] = []
@@ -517,7 +517,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             "application_url": enriched.get("application_url"),
             "raw_index_json": enriched.get("raw_index_json"),
         }
-        insert_event(conn, event_row)
+        if conn is not None:
+            insert_event(conn, event_row)
         event_rows.append(event_row)
         events_scanned += 1
 
@@ -525,8 +526,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         if prev is None or row_is_newer(enriched, prev):
             latest_by_job[ev.job_id] = enriched
 
-    for row in latest_by_job.values():
-        upsert_ledger(conn, row)
+    if conn is not None:
+        for row in latest_by_job.values():
+            upsert_ledger(conn, row)
 
     # --- Process expired events (ACTIVE→INACTIVE transitions from the sheet) ---
     expired_count = 0
@@ -539,28 +541,34 @@ def main(argv: Optional[List[str]] = None) -> None:
             if not job_id:
                 continue
             closed_at = raw.get("expired_at") or now_iso()
-            conn.execute(
-                "UPDATE ledger SET closed_at = ?, updated_at = ? "
-                "WHERE job_id = ? AND (closed_at IS NULL OR closed_at = '')",
-                [closed_at, now_iso(), job_id],
-            )
+            if conn is not None:
+                conn.execute(
+                    "UPDATE ledger SET closed_at = ?, updated_at = ? "
+                    "WHERE job_id = ? AND (closed_at IS NULL OR closed_at = '')",
+                    [closed_at, now_iso(), job_id],
+                )
             if job_id in latest_by_job:
                 latest_by_job[job_id]["closed_at"] = closed_at
                 latest_by_job[job_id]["updated_at"] = now_iso()
             expired_count += 1
 
-    conn.commit()
-    conn.close()
+    if conn is not None:
+        conn.commit()
+        conn.close()
 
     rows = list(latest_by_job.values())
     mirror_to_primary_db(Path(args.db), args.candidate_id, rows, event_rows)
     rows.sort(key=lambda r: (r.get("applicationDue") or "9999-99-99", -(r.get("final_confidence") or 0), r.get("title") or ""))
     write_csv(csv_path, rows)
 
-    print("=== JobPipe Ledger ===")
+    print("=== JobPipe Evaluation Sync ===")
     print(f"out_runs: {out_dir.resolve()}")
-    print(f"SQLite:   {sqlite_path.resolve()}")
+    if sqlite_path is not None:
+        print(f"SQLite:   {sqlite_path.resolve()}")
+    else:
+        print("SQLite:   disabled")
     print(f"CSV:      {csv_path.resolve()}")
+    print(f"Primary:  {Path(args.db).resolve()}")
     print(f"Events scanned: {events_scanned}")
     print(f"Unique jobs (latest): {len(rows)}")
     if expired_count:
