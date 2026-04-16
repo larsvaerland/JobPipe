@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
 from jobpipe.core.io import load_env_file
 
 load_env_file(".env")
+
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from jobpipe.core.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db
@@ -82,6 +87,9 @@ def _summary(conn: sqlite3.Connection, candidate_id: str) -> dict[str, Any]:
             "application_summary": _count(conn, "application_summary"),
             "generated_documents": _count(conn, "generated_documents"),
             "suggestion_leads": _count(conn, "suggestion_leads"),
+            "jobs": _count(conn, "jobs"),
+            "job_source_records": _count(conn, "job_source_records"),
+            "pipeline_runs": _count(conn, "pipeline_runs"),
             "job_evaluations": _count(conn, "job_evaluations"),
             "job_run_events": _count(conn, "job_run_events"),
         },
@@ -236,6 +244,57 @@ def _evaluations_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -
     )
 
 
+def _jobs_view(conn: sqlite3.Connection, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT job_id, title, employer, work_city, applicationDue, source_url,
+               first_seen_at, last_seen_at, closed_at, updated_at
+        FROM jobs
+        ORDER BY updated_at DESC, last_seen_at DESC, job_id ASC
+        LIMIT ?
+        """,
+        [limit],
+    )
+    return rows
+
+
+def _source_records_view(conn: sqlite3.Connection, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT source_record_id, source_name, source_job_key, job_id, is_active,
+               seen_at, last_seen_at, applicationDue, source_url, updated_at
+        FROM job_source_records
+        ORDER BY updated_at DESC, last_seen_at DESC, source_name ASC
+        LIMIT ?
+        """,
+        [limit],
+    )
+    return rows
+
+
+def _pipeline_runs_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT run_id, candidate_id, profile_version_id, config_version, jobs_path,
+               max_jobs, status, started_at, finished_at, jobs_seen, jobs_failed, source_batch_json, updated_at
+        FROM pipeline_runs
+        WHERE candidate_id = ?
+        ORDER BY started_at DESC, updated_at DESC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+    for row in rows:
+        try:
+            row["source_batch_json"] = json.loads(row.get("source_batch_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
 def _job_events_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
     return _rows(
         conn,
@@ -265,6 +324,9 @@ def _print_summary(data: dict[str, Any], db_path: Path) -> None:
         f"app_summary={counts.get('application_summary', 0)}, "
         f"documents={counts.get('generated_documents', 0)}, "
         f"suggestions={counts.get('suggestion_leads', 0)}, "
+        f"jobs={counts.get('jobs', 0)}, "
+        f"source_records={counts.get('job_source_records', 0)}, "
+        f"pipeline_runs={counts.get('pipeline_runs', 0)}, "
         f"evaluations={counts.get('job_evaluations', 0)}, "
         f"job_events={counts.get('job_run_events', 0)}"
     )
@@ -336,7 +398,7 @@ def main() -> None:
     ap.add_argument(
         "--show",
         action="append",
-        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions", "evaluations", "job_events"],
+        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions", "jobs", "source_records", "runs", "evaluations", "job_events"],
         help="Which view(s) to show. Default: summary",
     )
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
@@ -363,6 +425,12 @@ def main() -> None:
                 payload["documents"] = _documents_view(conn, args.candidate_id, args.limit)
             elif view == "suggestions":
                 payload["suggestions"] = _suggestions_view(conn, args.candidate_id, args.limit)
+            elif view == "jobs":
+                payload["jobs"] = _jobs_view(conn, args.limit)
+            elif view == "source_records":
+                payload["source_records"] = _source_records_view(conn, args.limit)
+            elif view == "runs":
+                payload["runs"] = _pipeline_runs_view(conn, args.candidate_id, args.limit)
             elif view == "evaluations":
                 payload["evaluations"] = _evaluations_view(conn, args.candidate_id, args.limit)
             elif view == "job_events":
@@ -389,6 +457,12 @@ def main() -> None:
             _print_rows("Generated Documents", payload.get("documents", []))
         elif view == "suggestions":
             _print_rows("Suggestion Leads", payload.get("suggestions", []))
+        elif view == "jobs":
+            _print_rows("Canonical Jobs", payload.get("jobs", []))
+        elif view == "source_records":
+            _print_rows("Job Source Records", payload.get("source_records", []))
+        elif view == "runs":
+            _print_rows("Pipeline Runs", payload.get("runs", []))
         elif view == "evaluations":
             _print_rows("Job Evaluations", payload.get("evaluations", []))
         elif view == "job_events":

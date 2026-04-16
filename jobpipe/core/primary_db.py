@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 
 def _json_text(value: Any) -> str:
@@ -133,6 +133,74 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
             ON suggestion_leads(candidate_id, platform, external_id);
         CREATE INDEX IF NOT EXISTS idx_suggestion_leads_candidate_status
             ON suggestion_leads(candidate_id, status, platform, updated_at);
+
+        CREATE TABLE IF NOT EXISTS jobs (
+            job_id TEXT PRIMARY KEY,
+            dedupe_key TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            employer TEXT NOT NULL DEFAULT '',
+            work_city TEXT NOT NULL DEFAULT '',
+            work_county TEXT NOT NULL DEFAULT '',
+            work_postalCode TEXT NOT NULL DEFAULT '',
+            applicationDue TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            description_text TEXT NOT NULL DEFAULT '',
+            description_html TEXT NOT NULL DEFAULT '',
+            sector TEXT NOT NULL DEFAULT '',
+            job_metadata_json TEXT NOT NULL DEFAULT '{}',
+            content_hash TEXT NOT NULL DEFAULT '',
+            first_seen_at TEXT NOT NULL DEFAULT '',
+            last_seen_at TEXT NOT NULL DEFAULT '',
+            closed_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_jobs_dedupe_key
+            ON jobs(dedupe_key);
+        CREATE INDEX IF NOT EXISTS idx_jobs_employer_title
+            ON jobs(employer, title);
+
+        CREATE TABLE IF NOT EXISTS job_source_records (
+            source_record_id TEXT PRIMARY KEY,
+            source_name TEXT NOT NULL,
+            source_job_key TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            source_url TEXT NOT NULL DEFAULT '',
+            work_city TEXT NOT NULL DEFAULT '',
+            work_county TEXT NOT NULL DEFAULT '',
+            work_postalCode TEXT NOT NULL DEFAULT '',
+            applicationDue TEXT NOT NULL DEFAULT '',
+            content_hash TEXT NOT NULL DEFAULT '',
+            raw_payload_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(job_id) REFERENCES jobs(job_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_job_source_records_source_key
+            ON job_source_records(source_name, source_job_key);
+        CREATE INDEX IF NOT EXISTS idx_job_source_records_job_id
+            ON job_source_records(job_id, is_active, last_seen_at);
+
+        CREATE TABLE IF NOT EXISTS pipeline_runs (
+            run_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            profile_version_id TEXT NOT NULL DEFAULT '',
+            config_version TEXT NOT NULL DEFAULT '',
+            jobs_path TEXT NOT NULL DEFAULT '',
+            max_jobs INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT '',
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL DEFAULT '',
+            jobs_seen INTEGER NOT NULL DEFAULT 0,
+            jobs_failed INTEGER NOT NULL DEFAULT 0,
+            source_batch_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_candidate_started
+            ON pipeline_runs(candidate_id, started_at DESC);
 
         CREATE TABLE IF NOT EXISTS job_evaluations (
             candidate_id TEXT NOT NULL,
@@ -331,6 +399,109 @@ def insert_generated_document(conn: sqlite3.Connection, row: Mapping[str, Any]) 
     payload = dict(row)
     payload["document_json"] = _json_text(payload.get("document_json"))
     _upsert(conn, "generated_documents", payload, ["document_id"])
+
+
+def upsert_job(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["job_metadata_json"] = _json_text(payload.get("job_metadata_json"))
+
+    existing = conn.execute(
+        "SELECT first_seen_at FROM jobs WHERE job_id = ? LIMIT 1",
+        [payload["job_id"]],
+    ).fetchone()
+    if existing and existing[0]:
+        payload["first_seen_at"] = existing[0]
+
+    _upsert(conn, "jobs", payload, ["job_id"])
+
+
+def upsert_job_source_record(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["raw_payload_json"] = _json_text(payload.get("raw_payload_json"))
+    _upsert(conn, "job_source_records", payload, ["source_record_id"])
+
+
+def mark_source_records_inactive(
+    conn: sqlite3.Connection,
+    source_name: str,
+    source_job_keys: Iterable[str],
+    *,
+    seen_at: str,
+) -> None:
+    keys = [str(k).strip() for k in source_job_keys if str(k).strip()]
+    if not keys:
+        return
+
+    placeholders = ", ".join(["?"] * len(keys))
+    conn.execute(
+        f"""
+        UPDATE job_source_records
+        SET is_active = 0,
+            last_seen_at = ?,
+            updated_at = ?
+        WHERE source_name = ?
+          AND source_job_key IN ({placeholders})
+        """,
+        [seen_at, seen_at, source_name, *keys],
+    )
+
+    related_job_ids = [
+        row[0]
+        for row in conn.execute(
+            f"""
+            SELECT DISTINCT job_id
+            FROM job_source_records
+            WHERE source_name = ?
+              AND source_job_key IN ({placeholders})
+            """,
+            [source_name, *keys],
+        ).fetchall()
+    ]
+
+    for job_id in related_job_ids:
+        active_count = conn.execute(
+            "SELECT COUNT(*) FROM job_source_records WHERE job_id = ? AND is_active = 1",
+            [job_id],
+        ).fetchone()[0]
+        if active_count == 0:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET closed_at = CASE WHEN closed_at = '' THEN ? ELSE closed_at END,
+                    updated_at = ?
+                WHERE job_id = ?
+                """,
+                [seen_at, seen_at, job_id],
+            )
+
+
+def upsert_pipeline_run(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["source_batch_json"] = _json_text(payload.get("source_batch_json"))
+    _upsert(conn, "pipeline_runs", payload, ["run_id"])
+
+
+def mark_pipeline_run_finished(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    status: str,
+    finished_at: str,
+    jobs_seen: int,
+    jobs_failed: int,
+) -> None:
+    conn.execute(
+        """
+        UPDATE pipeline_runs
+        SET status = ?,
+            finished_at = ?,
+            jobs_seen = ?,
+            jobs_failed = ?,
+            updated_at = ?
+        WHERE run_id = ?
+        """,
+        [status, finished_at, jobs_seen, jobs_failed, finished_at, run_id],
+    )
 
 
 def upsert_suggestion_lead(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:

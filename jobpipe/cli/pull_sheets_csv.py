@@ -13,7 +13,18 @@ from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.io import now_iso, stable_job_id
+from jobpipe.core.io import now_iso, stable_job_id, load_env_file
+
+load_env_file(".env")
+
+from jobpipe.core.job_catalog import canonical_job_row, job_source_record_row
+from jobpipe.core.paths import primary_db_path
+from jobpipe.core.primary_db import (
+    connect_primary_db,
+    mark_source_records_inactive,
+    upsert_job,
+    upsert_job_source_record,
+)
 
 
 def fetch_text_with_retries(url: str, timeout: int = 120, retries: int = 4) -> str:
@@ -121,7 +132,7 @@ def main():
     ap.add_argument(
         "--expired-out",
         default="jobs_expired.jsonl",
-        help="Output JSONL for expired (ACTIVE→INACTIVE) job events (default: jobs_expired.jsonl). "
+        help="Output JSONL for expired (ACTIVE->INACTIVE) job events (default: jobs_expired.jsonl). "
              "Set to '' to disable expiry tracking.",
     )
     ap.add_argument(
@@ -134,8 +145,11 @@ def main():
         "--no-skip-expired-deadline",
         dest="skip_expired_deadline",
         action="store_false",
-        help="Disable deadline filtering — include jobs with past deadlines.",
+        help="Disable deadline filtering; include jobs with past deadlines.",
     )
+    ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe DB path for canonical job/source mirroring")
+    ap.add_argument("--source-name", default="nav_sheet", help="Source name to store in job_source_records (default: nav_sheet)")
+    ap.add_argument("--no-mirror-db", action="store_true", help="Skip mirroring canonical job/source data into the primary DB")
     args = ap.parse_args()
 
     if not args.csv_url and not args.sheet_url:
@@ -165,6 +179,8 @@ def main():
     # Dedupe bucket: job_id -> best_job
     best: dict[str, dict] = {}
     best_dt: dict[str, datetime] = {}
+    catalog_best: dict[str, dict] = {}
+    catalog_best_dt: dict[str, datetime] = {}
     status_skipped = 0
     deadline_skipped = 0
     inactive_ids: set[str] = set()   # job_ids that are INACTIVE in current sheet
@@ -174,7 +190,7 @@ def main():
         if status_filter:
             row_status = (row.get("status") or "").strip().upper()
             if row_status != status_filter:
-                # Track INACTIVE job_ids for ACTIVE→INACTIVE transition detection
+                # Track INACTIVE job_ids for ACTIVE->INACTIVE transition detection
                 uuid = (row.get("uuid") or "").strip()
                 if uuid:
                     inactive_ids.add(uuid)
@@ -186,7 +202,7 @@ def main():
             due_raw = (row.get("applicationDue") or "").strip()
             if due_raw and due_raw.lower() not in ("snarest", "asap", "fortløpende"):
                 due_dt = parse_iso(due_raw)
-                # parse_iso returns epoch if unparseable — treat epoch as unknown, don't skip
+                # parse_iso returns epoch if unparseable; treat epoch as unknown, don't skip
                 if due_dt.year > 1970 and due_dt < now_utc:
                     deadline_skipped += 1
                     continue
@@ -261,6 +277,16 @@ def main():
         # Choose "newest" version per job_id
         dt = parse_iso(job.get("ad_updated") or job.get("sistEndret") or "")
 
+        prev_catalog = catalog_best.get(job_id)
+        if prev_catalog is None:
+            catalog_best[job_id] = dict(job)
+            catalog_best_dt[job_id] = dt
+        else:
+            cur_dt = catalog_best_dt[job_id]
+            if dt > cur_dt or (dt == cur_dt and len(job["description_html"]) > len(prev_catalog["description_html"])):
+                catalog_best[job_id] = dict(job)
+                catalog_best_dt[job_id] = dt
+
         if args.no_dedupe:
             # keep everything (but still needs unique key in dict -> append counter)
             unique = job_id + "-" + hashlib.sha1(json.dumps(row, sort_keys=True).encode("utf-8")).hexdigest()[:8]
@@ -318,7 +344,7 @@ def main():
     with open(args.state, "w", encoding="utf-8") as f:
         json.dump(new_state, f, ensure_ascii=False, indent=2)
 
-    # --- Detect ACTIVE → INACTIVE transitions ---
+    # --- Detect ACTIVE -> INACTIVE transitions ---
     # If a job_id was in the *previous* state (which only tracks ACTIVE jobs)
     # and is now INACTIVE in the sheet, that job has expired on NAV.
     expired_events: list[dict] = []
@@ -338,11 +364,26 @@ def main():
             for evt in expired_events:
                 f.write(json.dumps(evt, ensure_ascii=False) + "\n")
 
+    if not args.no_mirror_db:
+        mirrored_at = now_iso()
+        conn = connect_primary_db(args.db)
+        try:
+            for job in catalog_best.values():
+                upsert_job(conn, canonical_job_row(job, mirrored_at))
+                upsert_job_source_record(conn, job_source_record_row(job, args.source_name, mirrored_at))
+            if inactive_ids:
+                mark_source_records_inactive(conn, args.source_name, inactive_ids, seen_at=mirrored_at)
+            conn.commit()
+        finally:
+            conn.close()
+
     print(f"CSV URL used: {csv_url}")
     print(f"Status filter: {status_filter or 'none (all rows)'} - skipped {status_skipped} rows")
     print(f"Deadline filter: {'on' if args.skip_expired_deadline else 'off'} - skipped {deadline_skipped} rows with past deadlines")
     print(f"Read rows: {len(best)} (dedupe={'off' if args.no_dedupe else 'on'})")
     print(f"Wrote {len(out_lines)} rows to {args.out}. only_changed={args.only_changed}")
+    if not args.no_mirror_db:
+        print(f"Mirrored canonical jobs: {len(catalog_best)} -> {args.db}")
     if expired_out:
         print(f"Expired events: {len(expired_events)} (ACTIVE->INACTIVE transitions) -> {expired_out}")
 

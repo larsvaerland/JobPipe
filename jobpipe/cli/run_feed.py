@@ -25,6 +25,12 @@ load_env_file(".env")
 from jobpipe.core.candidate_data import default_candidate_id, load_candidate_profile_pack
 from jobpipe.core.config import load_config
 from jobpipe.core.paths import primary_db_path
+from jobpipe.core.primary_db import (
+    connect_primary_db,
+    ensure_candidate,
+    mark_pipeline_run_finished,
+    upsert_pipeline_run,
+)
 from jobpipe.core.schema import (
     JobContext, RunMeta,
     TriageOut, ReverseTriageOut, JobParse, ProfileMatchOut,
@@ -160,84 +166,142 @@ def main() -> None:
 
     runner = PipelineRunner(build_stages(cfg, profile_pack=profile_pack))
     meta = RunMeta(run_id=run_id, pipeline_name=cfg.pipeline_name, created_at=now_iso())
+    started_at = meta.created_at
 
     count = 0
     errors = 0
-    for job in iter_jobs(args.jobs):
-        count += 1
-        if args.max and count > args.max:
-            break
-
-        job_id = stable_job_id(job)
-        job_dir = os.path.join(run_dir, job_id)
-        ctx = JobContext(meta=meta, job_id=job_id, job=job, profile_pack=profile_pack)
-
-        try:
-            ctx = runner.run_job(ctx, job_dir=job_dir, overwrite=args.overwrite)
-        except Exception as exc:
-            errors += 1
-            ensure_dir(job_dir)
-            write_json(
-                os.path.join(job_dir, "pipeline_error.json"),
-                {"job_id": job_id, "error": str(exc), "traceback": traceback.format_exc()},
-            )
-            print(f"[ERROR] job {job_id} failed: {exc}", flush=True)
-
-        try:
-            runner.append_index(run_dir, ctx)
-        except Exception as idx_exc:
-            print(f"[WARN] index write failed for {job_id}: {idx_exc}", flush=True)
-
-    # ── Post-run self-heal: repair any missing index entries ──────────────────
-    # Catches cases where append_index silently failed mid-run (e.g. file lock,
-    # exception after run_job completed successfully).
+    run_status = "completed"
+    db_conn = None
     try:
-        index_path = os.path.join(run_dir, "index.jsonl")
-        existing_ids: set = set()
-        if os.path.exists(index_path):
-            with open(index_path, encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        rec = json.loads(line)
-                        if rec.get("job_id"):
-                            existing_ids.add(rec["job_id"])
-                    except Exception:
-                        pass
+        db_conn = connect_primary_db(args.db)
+        ensure_candidate(db_conn, candidate_id=args.candidate_id)
+        profile_row = db_conn.execute(
+            """
+            SELECT profile_version_id
+            FROM candidate_profiles
+            WHERE candidate_id = ? AND is_active = 1
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            [args.candidate_id],
+        ).fetchone()
+        upsert_pipeline_run(
+            db_conn,
+            {
+                "run_id": run_id,
+                "candidate_id": args.candidate_id,
+                "profile_version_id": profile_row[0] if profile_row else "",
+                "config_version": cfg.pipeline_name,
+                "jobs_path": args.jobs,
+                "max_jobs": args.max,
+                "status": "running",
+                "started_at": started_at,
+                "finished_at": "",
+                "jobs_seen": 0,
+                "jobs_failed": 0,
+                "source_batch_json": {
+                    "jobs_path": args.jobs,
+                    "out_dir": args.out,
+                    "config_path": args.config,
+                    "overwrite": bool(args.overwrite),
+                },
+                "updated_at": started_at,
+            },
+        )
+        db_conn.commit()
 
-        repaired = 0
-        for entry in sorted(os.scandir(run_dir), key=lambda e: e.name):
-            if not entry.is_dir():
-                continue
-            jid = entry.name
-            if jid in existing_ids:
-                continue
-            # Reconstruct a minimal summary from artifacts
+        for job in iter_jobs(args.jobs):
+            count += 1
+            if args.max and count > args.max:
+                break
+
+            job_id = stable_job_id(job)
+            job_dir = os.path.join(run_dir, job_id)
+            ctx = JobContext(meta=meta, job_id=job_id, job=job, profile_pack=profile_pack)
+
             try:
-                inp = read_json_safe(os.path.join(entry.path, "00_input.json")) or {}
-                triage = read_json_safe(os.path.join(entry.path, "01_triage.json")) or {}
-                mod = read_json_safe(os.path.join(entry.path, "05_moderator.json")) or {}
-                rec = {
-                    "job_id": jid,
-                    "title": inp.get("title", ""),
-                    "employer": inp.get("employer_name", ""),
-                    "triage_decision": triage.get("decision", ""),
-                    "triage_confidence": triage.get("confidence"),
-                    "triage_signals": triage.get("signals", []),
-                    "final_decision": mod.get("final_decision", ""),
-                    "fit_score": mod.get("fit_score"),
-                    "pivot_score": mod.get("pivot_score"),
-                    "repaired": True,
-                }
-                with open(index_path, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                repaired += 1
-            except Exception as rep_exc:
-                print(f"[WARN] repair failed for {jid}: {rep_exc}", flush=True)
+                ctx = runner.run_job(ctx, job_dir=job_dir, overwrite=args.overwrite)
+            except Exception as exc:
+                errors += 1
+                ensure_dir(job_dir)
+                write_json(
+                    os.path.join(job_dir, "pipeline_error.json"),
+                    {"job_id": job_id, "error": str(exc), "traceback": traceback.format_exc()},
+                )
+                print(f"[ERROR] job {job_id} failed: {exc}", flush=True)
 
-        if repaired:
-            print(f"[INFO] Repaired {repaired} missing index entries.", flush=True)
-    except Exception as heal_exc:
-        print(f"[WARN] Post-run index repair failed: {heal_exc}", flush=True)
+            try:
+                runner.append_index(run_dir, ctx)
+            except Exception as idx_exc:
+                print(f"[WARN] index write failed for {job_id}: {idx_exc}", flush=True)
+
+        # ── Post-run self-heal: repair any missing index entries ──────────────────
+        # Catches cases where append_index silently failed mid-run (e.g. file lock,
+        # exception after run_job completed successfully).
+        try:
+            index_path = os.path.join(run_dir, "index.jsonl")
+            existing_ids: set = set()
+            if os.path.exists(index_path):
+                with open(index_path, encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            rec = json.loads(line)
+                            if rec.get("job_id"):
+                                existing_ids.add(rec["job_id"])
+                        except Exception:
+                            pass
+
+            repaired = 0
+            for entry in sorted(os.scandir(run_dir), key=lambda e: e.name):
+                if not entry.is_dir():
+                    continue
+                jid = entry.name
+                if jid in existing_ids:
+                    continue
+                # Reconstruct a minimal summary from artifacts
+                try:
+                    inp = read_json_safe(os.path.join(entry.path, "00_input.json")) or {}
+                    triage = read_json_safe(os.path.join(entry.path, "01_triage.json")) or {}
+                    mod = read_json_safe(os.path.join(entry.path, "05_moderator.json")) or {}
+                    rec = {
+                        "job_id": jid,
+                        "title": inp.get("title", ""),
+                        "employer": inp.get("employer_name", ""),
+                        "triage_decision": triage.get("decision", ""),
+                        "triage_confidence": triage.get("confidence"),
+                        "triage_signals": triage.get("signals", []),
+                        "final_decision": mod.get("final_decision", ""),
+                        "fit_score": mod.get("fit_score"),
+                        "pivot_score": mod.get("pivot_score"),
+                        "repaired": True,
+                    }
+                    with open(index_path, "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    repaired += 1
+                except Exception as rep_exc:
+                    print(f"[WARN] repair failed for {jid}: {rep_exc}", flush=True)
+
+            if repaired:
+                print(f"[INFO] Repaired {repaired} missing index entries.", flush=True)
+        except Exception as heal_exc:
+            print(f"[WARN] Post-run index repair failed: {heal_exc}", flush=True)
+    except Exception:
+        run_status = "failed"
+        raise
+    finally:
+        if db_conn is not None:
+            finished_at = now_iso()
+            jobs_seen = min(count, args.max) if args.max else count
+            mark_pipeline_run_finished(
+                db_conn,
+                run_id=run_id,
+                status=run_status,
+                finished_at=finished_at,
+                jobs_seen=jobs_seen,
+                jobs_failed=errors,
+            )
+            db_conn.commit()
+            db_conn.close()
 
     suffix = f" ({errors} errors)" if errors else ""
     print(f"Done. Run dir: {run_dir}{suffix}")
