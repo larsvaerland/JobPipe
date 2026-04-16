@@ -30,9 +30,9 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import random
 import re
-import sqlite3
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -41,6 +41,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.io import load_env_file
+from jobpipe.core.paths import primary_db_path
+
+load_env_file(".env")
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -63,6 +69,8 @@ except Exception:
 DEFAULT_OUT_PATH       = Path("./jobs_delta.jsonl")
 DEFAULT_LEDGER_PATH    = Path("./reports/ledger.sqlite")
 DEFAULT_CONFIG_PATH    = Path("./configs/pipeline.v1.yaml")
+DEFAULT_DB_PATH        = primary_db_path()
+DEFAULT_CANDIDATE_ID   = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 _DAYTIME_START = 9
 _DAYTIME_END   = 19
@@ -321,23 +329,6 @@ def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Option
 
 
 # ---------------------------------------------------------------------------
-# Ledger helpers
-# ---------------------------------------------------------------------------
-
-def _load_ledger_ids(ledger_path: Path) -> set:
-    if not ledger_path.exists():
-        return set()
-    try:
-        conn = sqlite3.connect(str(ledger_path))
-        rows = conn.execute("SELECT job_id FROM ledger").fetchall()
-        conn.close()
-        return {r[0] for r in rows}
-    except Exception as e:
-        print(f"Warning: could not read ledger: {e}", file=sys.stderr)
-        return set()
-
-
-# ---------------------------------------------------------------------------
 # Config loading (reads finn_search section from pipeline.v1.yaml if present)
 # ---------------------------------------------------------------------------
 
@@ -393,7 +384,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--config",   default=str(DEFAULT_CONFIG_PATH), help="Pipeline YAML config")
     ap.add_argument("--out",      default=str(DEFAULT_OUT_PATH),    help="Output JSONL to append to")
-    ap.add_argument("--ledger",   default=str(DEFAULT_LEDGER_PATH), help="Ledger SQLite for dedup")
+    ap.add_argument("--ledger",   default=str(DEFAULT_LEDGER_PATH), help="Legacy ledger SQLite fallback for dedup")
+    ap.add_argument("--db",       default=str(DEFAULT_DB_PATH),     help="Primary jobpipe.sqlite path for dedup")
+    ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help="Candidate ID for primary DB dedup")
     ap.add_argument("--max",      type=int, default=40,             help="Max full-content fetches per run (default: 40)")
     ap.add_argument("--max-pages",type=int, default=2,              help="Max FINN search result pages per query (default: 2)")
     ap.add_argument("--min-delay",type=float, default=3.0,          help="Min seconds between content fetches")
@@ -425,8 +418,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     queries  = _load_queries_from_config(config_path) or DEFAULT_QUERIES
     location = _load_location_from_config(config_path) or DEFAULT_LOCATION
 
-    ledger_ids = _load_ledger_ids(Path(args.ledger))
-    print(f"Ledger: {len(ledger_ids)} known job IDs")
+    processed_ids = load_processed_job_ids(
+        primary_db_path=Path(args.db),
+        candidate_id=args.candidate_id,
+        ledger_path=Path(args.ledger),
+    )
+    print(f"Known jobs: {len(processed_ids)} (db={args.db}, fallback={args.ledger})")
 
     # --- Phase 1: Scrape search pages for new finnkodes ---
     print(f"\n=== Phase 1: Scraping {len(queries)} FINN search queries (max {args.max_pages} pages each) ===")
@@ -451,7 +448,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
             for fk in finnkodes:
                 jid = f"finn_{fk}"
-                if fk not in seen and jid not in ledger_ids:
+                if fk not in seen and jid not in processed_ids:
                     seen.add(fk)
                     all_new_finnkodes.append(fk)
                     query_new += 1

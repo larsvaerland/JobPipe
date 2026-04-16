@@ -45,13 +45,13 @@ import io
 import json
 import os
 import re
-import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from jobpipe.cli.mark_status import add_stage
+from jobpipe.core.evaluation_state import load_job_catalog, load_processed_job_ids
 from jobpipe.core.io import load_env_file
 from jobpipe.core.paths import (
     application_state_path,
@@ -887,21 +887,16 @@ def scan(
 
     print(f"Found {len(msg_ids)} candidate emails across all queries.")
 
-    # Load ledger for matching
-    ledger = []
-    if ledger_path.exists():
-        try:
-            conn = sqlite3.connect(str(ledger_path))
-            conn.row_factory = sqlite3.Row
-            ledger = [dict(r) for r in conn.execute(
-                "SELECT job_id, title, employer, work_city, final_decision FROM ledger"
-            )]
-            conn.close()
-            print(f"Loaded {len(ledger)} jobs from ledger for employer matching.")
-        except Exception as e:
-            print(f"Warning: could not read ledger: {e}", file=sys.stderr)
+    # Load job catalog for matching from the primary DB first, with ledger fallback.
+    ledger = load_job_catalog(
+        primary_db_path=db_path,
+        candidate_id=candidate_id,
+        ledger_path=ledger_path,
+    )
+    if ledger:
+        print(f"Loaded {len(ledger)} jobs from evaluation state for employer matching.")
     else:
-        print(f"Warning: ledger not found at {ledger_path}. Employer matching disabled.")
+        print(f"Warning: no evaluation state found in primary DB or ledger fallback. Employer matching disabled.")
 
     state = _load_state(state_path)
     apps = state.setdefault("applications", {})
@@ -1082,21 +1077,19 @@ def scan_suggestions(
 
     print(f"Found {len(msg_ids)} candidate suggestion emails.")
 
-    # Build ledger lookup: finnkode/linkedin_id → job_id (for cross-referencing)
+    # Build processed-job lookup: finnkode/linkedin_id → job_id (for cross-referencing)
     ledger_finnkodes: Dict[str, str] = {}
     ledger_linkedin_ids: Dict[str, str] = {}
-    if ledger_path.exists():
-        try:
-            conn = sqlite3.connect(str(ledger_path))
-            for (job_id,) in conn.execute("SELECT job_id FROM ledger").fetchall():
-                if job_id.startswith("finn_"):
-                    ledger_finnkodes[job_id[5:]] = job_id
-                elif job_id.startswith("linkedin_"):
-                    ledger_linkedin_ids[job_id[9:]] = job_id
-            conn.close()
-        except Exception as e:
-            if verbose:
-                print(f"Warning: ledger read failed: {e}", file=sys.stderr)
+    processed_ids = load_processed_job_ids(
+        primary_db_path=db_path,
+        candidate_id=candidate_id,
+        ledger_path=ledger_path,
+    )
+    for job_id in processed_ids:
+        if job_id.startswith("finn_"):
+            ledger_finnkodes[job_id[5:]] = job_id
+        elif job_id.startswith("linkedin_"):
+            ledger_linkedin_ids[job_id[9:]] = job_id
 
     # Load existing queue to avoid duplicates across runs.
     # Prefer the primary DB, but still include the legacy JSONL sidecar as a bridge.
@@ -1260,7 +1253,7 @@ def scan_suggestions(
         f"  Emails with job URLs:   {emails_with_jobs}\n"
         f"  FINN jobs found:        {finn_total}\n"
         f"  LinkedIn jobs found:    {linkedin_total}\n"
-        f"  Already in ledger:      {already_in_ledger}\n"
+        f"  Already known:          {already_in_ledger}\n"
         f"  New / queued:           {len(new_queued)}\n"
     )
     if new_queued and not dry_run:

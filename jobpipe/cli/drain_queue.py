@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from jobpipe.core.io import load_env_file, read_jsonl_lines, write_jsonl_lines, stable_job_id
+from jobpipe.core.paths import primary_db_path
+from jobpipe.core.evaluation_state import load_processed_job_ids
 
 
 def run(cmd: list[str]) -> None:
@@ -22,31 +24,6 @@ def run(cmd: list[str]) -> None:
 
 def _job_id_from_json(obj: dict[str, Any]) -> str:
     return stable_job_id(obj)
-
-
-def load_processed_ids(sqlite_path: Path) -> set[str]:
-    """
-    Returns job_ids present in the ledger SQLite.
-    If the DB doesn't exist yet, returns empty set.
-    """
-    if not sqlite_path.exists():
-        return set()
-    try:
-        con = sqlite3.connect(str(sqlite_path))
-        cur = con.cursor()
-        # Ledger schema created by jobpipe.cli.sync_ledger
-        cur.execute("SELECT job_id FROM ledger")
-        rows = cur.fetchall()
-        return {str(r[0]) for r in rows if r and r[0]}
-    except Exception:
-        # If table doesn't exist yet, treat as empty.
-        return set()
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
 
 def _ledger_summary(ledger_path: Path) -> str:
     """Return a one-line decision breakdown from ledger.sqlite, e.g. 'SKIP=480 | REVIEW_LOW=12 | APPLY=3'."""
@@ -103,7 +80,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(
         description=(
             "Drain JobPipe queue: pull delta from Sheets and run the pipeline in batches until there are no new/changed rows.\n"
-            "This version can skip jobs already present in the SQLite ledger (so you can reset state safely)."
+            "This version can skip jobs already present in the primary DB, with legacy ledger fallback."
         )
     )
     ap.add_argument("--csv-url", default="", help="Published CSV URL for the EXPORT sheet (optional if JOBPIPE_CSV_URL is set).")
@@ -136,9 +113,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                     help="Include jobs with past applicationDue dates (default: skip them).")
 
     # --- Ledger filtering ---
-    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in SQLite ledger (default: on).")
-    ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable ledger filtering.")
-    ap.add_argument("--ledger-sqlite", default="", help="SQLite ledger path (default: reports/ledger.sqlite or JOBPIPE_LEDGER_SQLITE).")
+    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB / legacy ledger fallback (default: on).")
+    ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable processed-job filtering.")
+    ap.add_argument("--ledger-sqlite", default="", help="Legacy ledger SQLite fallback path (default: reports/ledger.sqlite or JOBPIPE_LEDGER_SQLITE).")
+    ap.add_argument("--db", default=str(primary_db_path()), help="Primary jobpipe.sqlite path for processed-job filtering")
     ap.add_argument("--sync-ledger-before", action="store_true", default=True, help="Sync ledger from out_runs before pulling (default: on).")
     ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
     ap.add_argument("--sync-ledger-after", action="store_true", default=True, help="Sync ledger from out_runs after processing (default: on).")
@@ -163,6 +141,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     ledger_sqlite = (args.ledger_sqlite or os.environ.get("JOBPIPE_LEDGER_SQLITE", "")).strip()
     ledger_path = Path(ledger_sqlite) if ledger_sqlite else (reports_dir / "ledger.sqlite")
+    db_path = Path(args.db)
 
     state_path = Path(args.state)
     if args.reset_state and state_path.exists():
@@ -175,14 +154,18 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Optional: keep ledger up to date before we decide what's "processed"
     if args.sync_ledger_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path)]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
 
-    processed_ids = load_processed_ids(ledger_path) if args.skip_processed else set()
+    processed_ids = load_processed_job_ids(
+        primary_db_path=db_path,
+        candidate_id=candidate_id,
+        ledger_path=ledger_path,
+    ) if args.skip_processed else set()
     if args.skip_processed:
-        print(f"[drain_queue] ledger filter ON: {len(processed_ids)} job_ids already in {ledger_path}")
+        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already known (db={db_path}, fallback={ledger_path})")
 
     loops = 0
     total_rows_processed = 0
@@ -234,10 +217,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                     # Also dedupe within this run (helps if the sheet contains dupes)
                     processed_ids.add(jid)
             lines = kept
-            print(f"[drain_queue] ledger filter: skipped={skipped}, remaining={len(lines)}")
+            print(f"[drain_queue] processed-job filter: skipped={skipped}, remaining={len(lines)}")
 
         if not lines:
-            print("[drain_queue] All pulled jobs already in ledger -> done.")
+            print("[drain_queue] All pulled jobs already known -> done.")
             break
 
         # Process the pulled delta fully, even if it contains more than batch-size rows.
@@ -283,7 +266,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     # Update ledger at the end (so the next run won't reprocess even after reset-state)
     if args.sync_ledger_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path)]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)

@@ -23,12 +23,18 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.io import load_env_file
+from jobpipe.core.paths import primary_db_path
+
+load_env_file(".env")
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -36,6 +42,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
+DEFAULT_DB_PATH = primary_db_path()
+DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 # Default location of FINN Chrome Extension output (Lars's machine)
 DEFAULT_FINN_EXT_JOBS = (
@@ -173,22 +181,6 @@ def _normalize(raw: dict) -> Optional[dict]:
     }
 
 
-# --- Ledger deduplication ---
-
-def _load_ledger_ids(ledger_path: Path) -> set:
-    """Return set of job_ids already processed in the ledger."""
-    if not ledger_path.exists():
-        return set()
-    try:
-        conn = sqlite3.connect(str(ledger_path))
-        rows = conn.execute("SELECT job_id FROM ledger").fetchall()
-        conn.close()
-        return {r[0] for r in rows}
-    except Exception as e:
-        print(f"Warning: could not read ledger ({e}). Deduplication disabled.", file=sys.stderr)
-        return set()
-
-
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -215,7 +207,17 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--ledger",
         default=str(DEFAULT_LEDGER_PATH),
-        help="Ledger SQLite path for deduplication (default: reports/ledger.sqlite)",
+        help="Legacy ledger SQLite fallback for deduplication (default: reports/ledger.sqlite)",
+    )
+    ap.add_argument(
+        "--db",
+        default=str(DEFAULT_DB_PATH),
+        help="Primary jobpipe.sqlite path for deduplication",
+    )
+    ap.add_argument(
+        "--candidate-id",
+        default=DEFAULT_CANDIDATE_ID,
+        help="Candidate ID for primary DB deduplication",
     )
     ap.add_argument(
         "--no-dedupe",
@@ -240,8 +242,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(1)
 
-    ledger_ids = set() if args.no_dedupe else _load_ledger_ids(Path(args.ledger))
-    print(f"Loaded {len(ledger_ids)} job IDs from ledger for deduplication.")
+    processed_ids = set() if args.no_dedupe else load_processed_job_ids(
+        primary_db_path=Path(args.db),
+        candidate_id=args.candidate_id,
+        ledger_path=Path(args.ledger),
+    )
+    print(f"Loaded {len(processed_ids)} known job IDs for deduplication.")
 
     # Read raw FINN extension records
     raw_jobs: List[dict] = []
@@ -275,7 +281,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             continue
         seen_ids.add(jid)
 
-        if jid in ledger_ids:
+        if jid in processed_ids:
             stats["in_ledger"] += 1
             if args.verbose:
                 print(f"  [skip-ledger] {jid}  {job['title'][:50]}")
@@ -311,7 +317,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(
         f"\nSummary:\n"
         f"  New (written):           {stats['new']}\n"
-        f"  Already in ledger:       {stats['in_ledger']}\n"
+        f"  Already known:           {stats['in_ledger']}\n"
         f"  Intra-file duplicates:   {stats['duplicate']}\n"
         f"  No finnkode (skipped):   {stats['no_id']}\n"
     )

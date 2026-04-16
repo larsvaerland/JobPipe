@@ -32,7 +32,6 @@ import json
 import os
 import random
 import re
-import sqlite3
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -41,6 +40,7 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.evaluation_state import load_processed_job_ids
 from jobpipe.core.io import load_env_file
 from jobpipe.core.paths import primary_db_path, suggested_jobs_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, list_suggestion_leads, mark_suggestion_lead_status
@@ -395,21 +395,6 @@ def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Option
     return None
 
 
-# --- Ledger helpers ---
-
-def _load_ledger_ids(ledger_path: Path) -> set:
-    if not ledger_path.exists():
-        return set()
-    try:
-        conn = sqlite3.connect(str(ledger_path))
-        rows = conn.execute("SELECT job_id FROM ledger").fetchall()
-        conn.close()
-        return {r[0] for r in rows}
-    except Exception as e:
-        print(f"Warning: could not read ledger ({e}).", file=sys.stderr)
-        return set()
-
-
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -444,7 +429,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--ledger",
         default=str(DEFAULT_LEDGER_PATH),
-        help="Ledger SQLite for deduplication",
+        help="Legacy ledger SQLite fallback for deduplication",
     )
     ap.add_argument(
         "--max",
@@ -509,13 +494,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(0)
 
     # Filter to FINN jobs that haven't been fetched yet and aren't in ledger
-    ledger_ids = _load_ledger_ids(Path(args.ledger))
+    processed_ids = load_processed_job_ids(
+        primary_db_path=db_path,
+        candidate_id=args.candidate_id,
+        ledger_path=Path(args.ledger),
+    )
     finn_pending = [
         j for j in queue
         if j.get("platform") == "finn"
         and (j.get("status", "queued") == "queued")
         and not j.get("fetched_at")
-        and f"finn_{j.get('finnkode', '')}" not in ledger_ids
+        and f"finn_{j.get('finnkode', '')}" not in processed_ids
         and j.get("finnkode")
     ]
     linkedin_pending = [
