@@ -109,7 +109,12 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--csv-url", default="", help="Published CSV URL for the EXPORT sheet (optional if JOBPIPE_CSV_URL is set).")
     ap.add_argument("--sheet-url", default="", help="Google Sheets edit URL (optional alternative to --csv-url).")
     ap.add_argument("--env-file", default=".env", help="Optional .env file (default: .env).")
-    ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
+    ap.add_argument("--profile", default="", help="Optional path to profile_pack.md override")
+    ap.add_argument(
+        "--candidate-id",
+        default="",
+        help="Candidate ID for DB-backed profile reads",
+    )
     ap.add_argument("--config", default="", help="Path to pipeline YAML (optional).")
     ap.add_argument("--out", default="./out_runs", help="Output folder for runs (default: ./out_runs)")
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
@@ -142,6 +147,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = ap.parse_args(argv)
 
     load_env_file(Path(args.env_file))
+    candidate_id = (args.candidate_id or os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
     csv_url = (args.csv_url or os.environ.get("JOBPIPE_CSV_URL", "")).strip()
     sheet_url = (args.sheet_url or os.environ.get("JOBPIPE_SHEET_URL", "")).strip()
@@ -247,13 +253,15 @@ def main(argv: Optional[list[str]] = None) -> None:
                 "jobpipe.cli.run_feed",
                 "--jobs",
                 str(batch_file),
-                "--profile",
-                args.profile,
+                "--candidate-id",
+                candidate_id,
                 "--out",
                 str(out_dir),
                 "--max",
                 str(len(batch)),
             ]
+            if args.profile:
+                run_cmd += ["--profile", args.profile]
             if args.config:
                 run_cmd += ["--config", args.config]
             if args.overwrite:

@@ -17,12 +17,14 @@ def read_json_safe(path: str) -> dict | None:
     except Exception:
         return None
 
-from jobpipe.core.io import ensure_dir, iter_jobs, load_env_file, load_profile_pack, stable_job_id, now_iso, write_json
+from jobpipe.core.io import ensure_dir, iter_jobs, load_env_file, stable_job_id, now_iso, write_json
 
 # Load .env (OPENAI_API_KEY, etc.) before importing/initializing anything that might rely on env
 load_env_file(".env")
 
+from jobpipe.core.candidate_data import default_candidate_id, load_candidate_profile_pack
 from jobpipe.core.config import load_config
+from jobpipe.core.paths import primary_db_path
 from jobpipe.core.schema import (
     JobContext, RunMeta,
     TriageOut, ReverseTriageOut, JobParse, ProfileMatchOut,
@@ -132,7 +134,13 @@ def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs", required=True, help="Path to jobs .jsonl/.json/.csv")
-    ap.add_argument("--profile", required=True, help="Path to profile_pack.md")
+    ap.add_argument("--profile", default="", help="Optional path to profile_pack.md override")
+    ap.add_argument("--db", default=str(primary_db_path()), help="Path to primary jobpipe.sqlite")
+    ap.add_argument(
+        "--candidate-id",
+        default=default_candidate_id(),
+        help=f"Candidate ID for primary DB profile reads (default: {default_candidate_id()})",
+    )
     ap.add_argument("--out", default="out_runs", help="Output directory")
     ap.add_argument("--config", default="configs/pipeline.v1.yaml", help="Pipeline config YAML")
     ap.add_argument("--max", type=int, default=0, help="Max number of jobs (0 = all)")
@@ -140,7 +148,11 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    profile_pack = load_profile_pack(args.profile)
+    profile_pack = load_candidate_profile_pack(
+        args.profile or None,
+        candidate_id=args.candidate_id,
+        db_path=args.db,
+    )
 
     run_id = f"{cfg.pipeline_name}_{uuid.uuid4().hex[:8]}"
     run_dir = os.path.join(args.out, run_id)

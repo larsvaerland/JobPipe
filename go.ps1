@@ -51,12 +51,15 @@ if (-not (Test-Path $py)) {
 
 $env:OPENAI_AGENTS_DISABLE_TRACING = "1"
 $maxJobs = if ($DryRun) { 2 } else { 100 }
+$candidateId = if ($env:JOBPIPE_CANDIDATE_ID) {
+    $env:JOBPIPE_CANDIDATE_ID
+} else {
+    "default"
+}
 $profilePath = if ($env:JOBPIPE_PROFILE_PATH) {
     $env:JOBPIPE_PROFILE_PATH
-} elseif ($env:JOBPIPE_DATA_DIR) {
-    Join-Path $env:JOBPIPE_DATA_DIR "profile_pack.md"
 } else {
-    ".\profile_pack.md"
+    ""
 }
 
 Write-Host ""
@@ -104,13 +107,19 @@ if ($WithSuggestions) {
 
 # 1. Pull + process
 Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.drain_queue `
-    --profile $profilePath `
-    --config .\configs\pipeline.v1.yaml `
-    --out .\out_runs `
-    --state .\jobs_state.json `
-    --batch-size $maxJobs `
-    --overwrite
+$drainArgs = @(
+    "-m", "jobpipe.cli.drain_queue",
+    "--candidate-id", $candidateId,
+    "--config", ".\configs\pipeline.v1.yaml",
+    "--out", ".\out_runs",
+    "--state", ".\jobs_state.json",
+    "--batch-size", $maxJobs,
+    "--overwrite"
+)
+if ($profilePath) {
+    $drainArgs += @("--profile", $profilePath)
+}
+& $py @drainArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "drain_queue failed (exit $LASTEXITCODE)"

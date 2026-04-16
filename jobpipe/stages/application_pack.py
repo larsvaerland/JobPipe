@@ -3,23 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from pathlib import Path
 
 from agents import Agent
 
+from jobpipe.core.candidate_data import default_candidate_id, load_candidate_resume_json
 from jobpipe.core.io import now_iso
-from jobpipe.core.paths import primary_db_path, resume_json_path
+from jobpipe.core.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, insert_generated_document
 from jobpipe.core.schema import JobContext, ApplicationPackOut
 from jobpipe.stages._common import run_agent
 
 logger = logging.getLogger(__name__)
 
-# Path to the candidate's JSON Resume (standard jsonresume.org format)
-_RESUME_JSON_PATH = resume_json_path()
 _PRIMARY_DB_PATH = primary_db_path()
-_DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+_DEFAULT_CANDIDATE_ID = default_candidate_id()
 
 PACK_INSTRUCTIONS = """Du er en norsk søknadsassistent. Du mottar kontekst som JSON og
 produserer en komplett søknadspakke for kandidaten.
@@ -46,11 +44,10 @@ Vær troverdig og kompakt. Skriv handlingsorientert norsk.
 
 def _load_resume_context() -> dict:
     """Load JSON Resume and extract work + projects for the prompt."""
-    if not _RESUME_JSON_PATH.exists():
-        return {"resume_work": [], "resume_projects": []}
     try:
-        with open(_RESUME_JSON_PATH, encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_candidate_resume_json(candidate_id=_DEFAULT_CANDIDATE_ID)
+        if not data:
+            return {"resume_work": [], "resume_projects": []}
         # Compact work entries: keep name, position, dates, summary, highlights
         work = []
         for w in data.get("work", []):
@@ -69,7 +66,7 @@ def _load_resume_context() -> dict:
         ]
         return {"resume_work": work, "resume_projects": projects}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[application_pack] could not load resume.json: %s", exc)
+        logger.warning("[application_pack] could not load candidate resume context: %s", exc)
         return {"resume_work": [], "resume_projects": []}
 
 
