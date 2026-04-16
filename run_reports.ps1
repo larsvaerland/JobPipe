@@ -20,8 +20,7 @@ $argsList = @(
     "-m", "jobpipe.cli.sync_ledger",
     "--out", $OutRuns,
     "--reports", $Reports,
-    "--detailed-report",
-    "--skip-sqlite"
+    "--detailed-report"
 )
 
 if (-not $IncludeExpired) {

@@ -2,9 +2,9 @@
 
 ## Data source
 
-Primary: `reports/ledger.sqlite` — two tables:
+Primary: `jobpipe.sqlite` — two tables:
 
-### `ledger` table (4,255 rows — one row per unique job, latest state)
+### `job_evaluations` table (one row per unique job, latest state for a candidate)
 Key columns:
 - `job_id` (TEXT, PK) — unique job identifier
 - `title` (TEXT) — job title
@@ -28,8 +28,8 @@ Key columns:
 - `description_snip` (TEXT) — first ~500 chars of job description
 - `raw_index_json`, `raw_match_json`, `raw_pivot_json`, `raw_moderator_json` (TEXT) — full JSON from each stage
 
-### `events` table (4,704 rows — one row per run × job)
-Same core fields as ledger but tracks every run, useful for history/trends.
+### `job_run_events` table (one row per run × job)
+Same core fields as `job_evaluations` but tracks every run, useful for history/trends.
 
 ### Current distribution (as of 2026-04-13)
 - Total unique jobs: 7,898
@@ -81,7 +81,7 @@ Visual showing job counts at each stage:
 
 Show as horizontal bar chart or Sankey diagram. Key metric: **triage pass rate** (% of jobs that survive triage). Target: 5–15%.
 
-To compute this from the ledger:
+To compute this from `job_evaluations`:
 - Geo-blocked: WHERE triage_signals LIKE '%geo_postal_skip%' OR triage_signals LIKE '%geo_skip%'
 - Hard-no blocked: WHERE triage_signals LIKE '%hard_no_title%'
 - AI-SKIP: WHERE triage_decision = 'SKIP' AND above conditions not met
@@ -98,7 +98,7 @@ Why jobs were filtered:
 Histogram or scatter plot of `fit_score` vs `pivot_score` for all jobs that passed triage. Color by final_decision. This shows whether the scoring is well-calibrated or if everything clusters in one zone.
 
 ### 5. Run history (timeline)
-Line chart of runs over time (from events table, grouped by run_id → run_seen_at):
+Line chart of runs over time (from `job_run_events`, grouped by `run_id` → `seen_at`):
 - Jobs processed per run
 - Pass rate per run
 - Number of APPLY+ decisions per run
@@ -119,16 +119,8 @@ Filtered view of action-list items where `applicationDue` is within the next 7 d
 Add a step to the pipeline's RunAll.cmd:
 
 ```powershell
-python -m jobpipe.cli.sync_ledger --out .\out_runs --sqlite .\reports\ledger.sqlite
-python -c "
-import sqlite3, json
-db = sqlite3.connect('reports/ledger.sqlite')
-db.row_factory = sqlite3.Row
-jobs = [dict(r) for r in db.execute('SELECT * FROM ledger ORDER BY fit_score DESC')]
-events = [dict(r) for r in db.execute('SELECT run_id, job_id, run_mtime, seen_at, final_decision, fit_score, pivot_score, triage_decision FROM events ORDER BY run_mtime')]
-with open('reports/dashboard_data.json', 'w') as f:
-    json.dump({'jobs': jobs, 'events': events, 'generated_at': __import__('datetime').datetime.now().isoformat()}, f, default=str)
-"
+python -m jobpipe.cli.sync_ledger --out .\out_runs --db C:\path\to\jobpipe.sqlite
+python -m jobpipe.cli.export_dashboard --db C:\path\to\jobpipe.sqlite
 ```
 
 ### Triage signals parsing

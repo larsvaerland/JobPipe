@@ -25,15 +25,22 @@ def run(cmd: list[str]) -> None:
 def _job_id_from_json(obj: dict[str, Any]) -> str:
     return stable_job_id(obj)
 
-def _ledger_summary(ledger_path: Path) -> str:
-    """Return a one-line decision breakdown from ledger.sqlite, e.g. 'SKIP=480 | REVIEW_LOW=12 | APPLY=3'."""
-    if not ledger_path.exists():
+def _evaluation_summary(db_path: Path, candidate_id: str) -> str:
+    """Return a one-line decision breakdown from the primary DB."""
+    if not db_path.exists():
         return ""
     try:
-        con = sqlite3.connect(str(ledger_path))
+        con = sqlite3.connect(str(db_path))
         cur = con.cursor()
         cur.execute(
-            "SELECT final_decision, COUNT(*) AS n FROM ledger GROUP BY final_decision ORDER BY n DESC"
+            """
+            SELECT final_decision, COUNT(*) AS n
+            FROM job_evaluations
+            WHERE candidate_id = ?
+            GROUP BY final_decision
+            ORDER BY n DESC
+            """,
+            [candidate_id],
         )
         rows = cur.fetchall()
         con.close()
@@ -44,20 +51,20 @@ def _ledger_summary(ledger_path: Path) -> str:
     return ""
 
 
-def update_agent_status(project_root: Path, ledger_path: Path, total_rows: int, loops: int) -> None:
+def update_agent_status(project_root: Path, db_path: Path, candidate_id: str, total_rows: int, loops: int) -> None:
     """Overwrite the '## Last pipeline run' block in AGENT_STATUS.md with fresh stats."""
     status_file = project_root / "AGENT_STATUS.md"
     if not status_file.exists():
         return
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    ledger_line = _ledger_summary(ledger_path)
+    ledger_line = _evaluation_summary(db_path, candidate_id)
 
     run_block = (
         "\n\n---\n\n"
         "## Last pipeline run\n\n"
         f"**{now}** - {total_rows} jobs processed in {loops} loop(s)  \n"
-        + (f"Ledger totals: {ledger_line}  \n" if ledger_line else "")
+        + (f"Evaluation totals: {ledger_line}  \n" if ledger_line else "")
     )
 
     try:
@@ -80,7 +87,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(
         description=(
             "Drain JobPipe queue: pull delta from Sheets and run the pipeline in batches until there are no new/changed rows.\n"
-            "This version can skip jobs already present in the primary DB, with legacy ledger fallback."
+            "This version can skip jobs already present in the primary DB."
         )
     )
     ap.add_argument("--csv-url", default="", help="Published CSV URL for the EXPORT sheet (optional if JOBPIPE_CSV_URL is set).")
@@ -112,10 +119,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--no-skip-expired-deadline", action="store_true", default=False,
                     help="Include jobs with past applicationDue dates (default: skip them).")
 
-    # --- Ledger filtering ---
-    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB / legacy ledger fallback (default: on).")
+    # --- Processed-job filtering ---
+    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB (default: on).")
     ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable processed-job filtering.")
-    ap.add_argument("--ledger-sqlite", default="", help="Legacy ledger SQLite fallback path (default: reports/ledger.sqlite or JOBPIPE_LEDGER_SQLITE).")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary jobpipe.sqlite path for processed-job filtering")
     ap.add_argument("--sync-ledger-before", action="store_true", default=True, help="Sync ledger from out_runs before pulling (default: on).")
     ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
@@ -139,8 +145,6 @@ def main(argv: Optional[list[str]] = None) -> None:
     reports_dir = Path(args.reports)
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    ledger_sqlite = (args.ledger_sqlite or os.environ.get("JOBPIPE_LEDGER_SQLITE", "")).strip()
-    ledger_path = Path(ledger_sqlite) if ledger_sqlite else (reports_dir / "ledger.sqlite")
     db_path = Path(args.db)
 
     state_path = Path(args.state)
@@ -152,9 +156,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     tmp_dir = Path(".jobpipe_tmp")
     tmp_dir.mkdir(exist_ok=True)
 
-    # Optional: keep ledger up to date before we decide what's "processed"
+    # Optional: keep evaluation state up to date before we decide what's "processed"
     if args.sync_ledger_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--skip-sqlite", "--db", str(db_path), "--candidate-id", candidate_id]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
@@ -162,10 +166,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     processed_ids = load_processed_job_ids(
         primary_db_path=db_path,
         candidate_id=candidate_id,
-        ledger_path=ledger_path,
     ) if args.skip_processed else set()
     if args.skip_processed:
-        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already known (db={db_path}, fallback={ledger_path})")
+        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already known in {db_path}")
 
     loops = 0
     total_rows_processed = 0
@@ -198,7 +201,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             print("[drain_queue] No changes -> done.")
             break
 
-        # Ledger filter: remove already-processed job_ids
+        # Processed-job filter: remove already-processed job_ids
         if args.skip_processed:
             kept: list[str] = []
             skipped = 0
@@ -264,19 +267,19 @@ def main(argv: Optional[list[str]] = None) -> None:
         if args.sleep and args.sleep > 0:
             time.sleep(args.sleep)
 
-    # Update ledger at the end (so the next run won't reprocess even after reset-state)
+    # Update evaluation state at the end (so the next run won't reprocess even after reset-state)
     if args.sync_ledger_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--sqlite", str(ledger_path), "--skip-sqlite", "--db", str(db_path), "--candidate-id", candidate_id]
+        sync_cmd = [py, "-m", "jobpipe.cli.sync_ledger", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
 
     # Write run summary to AGENT_STATUS.md so any Cowork session sees current state immediately
     project_root = Path(__file__).resolve().parents[2]
-    update_agent_status(project_root, ledger_path, total_rows_processed, loops)
+    update_agent_status(project_root, db_path, candidate_id, total_rows_processed, loops)
 
     print(
-        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, db={db_path}, ledger_fallback={ledger_path}"
+        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, db={db_path}"
     )
 
 

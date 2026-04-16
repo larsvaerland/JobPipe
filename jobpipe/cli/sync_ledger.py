@@ -4,7 +4,6 @@ import argparse
 import csv
 import json
 import os
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -249,108 +248,43 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
     }
 
 
-LEDGER_COLUMNS: List[Tuple[str, str]] = [
-    ("job_id", "TEXT PRIMARY KEY"),
-    ("run_id", "TEXT"),
-    ("run_mtime", "REAL"),
-    ("run_seen_at", "TEXT"),
-    ("title", "TEXT"),
-    ("employer", "TEXT"),
-    ("sector", "TEXT"),
-    ("work_city", "TEXT"),
-    ("work_county", "TEXT"),
-    ("work_postalCode", "TEXT"),
-    ("applicationDue", "TEXT"),
-    ("source_url", "TEXT"),
-    ("application_url", "TEXT"),
-    ("triage_decision", "TEXT"),
-    ("triage_confidence", "REAL"),
-    ("triage_explanation", "TEXT"),
-    ("triage_signals", "TEXT"),
-    ("reverse_decision", "TEXT"),
-    ("reverse_confidence", "REAL"),
-    ("reverse_rationale", "TEXT"),
-    ("fit_score", "INTEGER"),
-    ("pivot_score", "INTEGER"),
-    ("final_decision", "TEXT"),
-    ("final_confidence", "REAL"),
-    ("recommendation_reason", "TEXT"),
-    ("cv_focus", "TEXT"),
-    ("feedback_flags", "TEXT"),
-    ("description_snip", "TEXT"),
-    ("skip_reason", "TEXT"),
-    ("raw_index_json", "TEXT"),
-    ("raw_match_json", "TEXT"),
-    ("raw_pivot_json", "TEXT"),
-    ("raw_moderator_json", "TEXT"),
-    ("closed_at", "TEXT"),
-    ("updated_at", "TEXT"),
+CSV_COLUMNS: List[str] = [
+    "job_id",
+    "run_id",
+    "run_mtime",
+    "run_seen_at",
+    "title",
+    "employer",
+    "sector",
+    "work_city",
+    "work_county",
+    "work_postalCode",
+    "applicationDue",
+    "source_url",
+    "application_url",
+    "triage_decision",
+    "triage_confidence",
+    "triage_explanation",
+    "triage_signals",
+    "reverse_decision",
+    "reverse_confidence",
+    "reverse_rationale",
+    "fit_score",
+    "pivot_score",
+    "final_decision",
+    "final_confidence",
+    "recommendation_reason",
+    "cv_focus",
+    "feedback_flags",
+    "description_snip",
+    "skip_reason",
+    "raw_index_json",
+    "raw_match_json",
+    "raw_pivot_json",
+    "raw_moderator_json",
+    "closed_at",
+    "updated_at",
 ]
-
-EVENTS_COLUMNS: List[Tuple[str, str]] = [
-    ("run_id", "TEXT"),
-    ("job_id", "TEXT"),
-    ("run_mtime", "REAL"),
-    ("seen_at", "TEXT"),
-    ("final_decision", "TEXT"),
-    ("final_confidence", "REAL"),
-    ("triage_decision", "TEXT"),
-    ("triage_confidence", "REAL"),
-    ("fit_score", "INTEGER"),
-    ("pivot_score", "INTEGER"),
-    ("applicationDue", "TEXT"),
-    ("title", "TEXT"),
-    ("employer", "TEXT"),
-    ("work_city", "TEXT"),
-    ("work_county", "TEXT"),
-    ("work_postalCode", "TEXT"),
-    ("source_url", "TEXT"),
-    ("application_url", "TEXT"),
-    ("raw_index_json", "TEXT"),
-]
-
-
-def init_db(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-
-    cols = ", ".join([f"{n} {t}" for n, t in LEDGER_COLUMNS])
-    conn.execute(f"CREATE TABLE IF NOT EXISTS ledger ({cols});")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_due ON ledger(applicationDue);")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_decision ON ledger(final_decision);")
-
-    # Migrate existing databases: add new columns if missing
-    for _col, _type in [("closed_at", "TEXT"), ("skip_reason", "TEXT")]:
-        try:
-            conn.execute(f"ALTER TABLE ledger ADD COLUMN {_col} {_type};")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_ledger_skip_reason ON ledger(skip_reason);")
-
-    ecols = ", ".join([f"{n} {t}" for n, t in EVENTS_COLUMNS])
-    conn.execute(f"CREATE TABLE IF NOT EXISTS events ({ecols}, PRIMARY KEY (run_id, job_id));")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id);")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_run_mtime ON events(run_mtime);")
-    return conn
-
-
-def upsert_ledger(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
-    row = dict(row)
-    row["updated_at"] = now_iso()
-
-    names = [c[0] for c in LEDGER_COLUMNS]
-    placeholders = ", ".join(["?"] * len(names))
-    assignments = ", ".join([f"{n}=excluded.{n}" for n in names if n != "job_id"])
-    sql = f"INSERT INTO ledger ({', '.join(names)}) VALUES ({placeholders}) ON CONFLICT(job_id) DO UPDATE SET {assignments};"
-    conn.execute(sql, [row.get(n) for n in names])
-
-
-def insert_event(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
-    names = [c[0] for c in EVENTS_COLUMNS]
-    placeholders = ", ".join(["?"] * len(names))
-    conn.execute(f"INSERT OR IGNORE INTO events ({', '.join(names)}) VALUES ({placeholders});", [row.get(n) for n in names])
 
 
 def mirror_to_primary_db(
@@ -455,20 +389,17 @@ def row_is_newer(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
 def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as f:
-        fieldnames = [c[0] for c in LEDGER_COLUMNS]
-        w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        w = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
         w.writeheader()
         for r in rows:
-            w.writerow({k: r.get(k) for k in fieldnames})
+            w.writerow({k: r.get(k) for k in CSV_COLUMNS})
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state from out_runs/*/index.jsonl and per-job stage artifacts.")
+    ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state and report CSVs from out_runs/*/index.jsonl and per-job stage artifacts.")
     ap.add_argument("--out", default="./out_runs", help="Path to out_runs (default: ./out_runs)")
     ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
     ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/ledger_latest.csv)")
-    ap.add_argument("--sqlite", default="", help="Legacy ledger SQLite output path (default: <reports>/ledger.sqlite)")
-    ap.add_argument("--skip-sqlite", action="store_true", help="Skip writing the legacy ledger.sqlite artifact")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe SQLite DB for mirrored evaluation state")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB mirroring (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
@@ -486,8 +417,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     out_dir = Path(args.out)
     reports_dir = Path(args.reports)
     csv_path = Path(args.csv) if args.csv else (reports_dir / "ledger_latest.csv")
-    sqlite_path = None if args.skip_sqlite else (Path(args.sqlite) if args.sqlite else (reports_dir / "ledger.sqlite"))
-    conn = init_db(sqlite_path) if sqlite_path is not None else None
 
     latest_by_job: Dict[str, Dict[str, Any]] = {}
     event_rows: List[Dict[str, Any]] = []
@@ -517,18 +446,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             "application_url": enriched.get("application_url"),
             "raw_index_json": enriched.get("raw_index_json"),
         }
-        if conn is not None:
-            insert_event(conn, event_row)
         event_rows.append(event_row)
         events_scanned += 1
 
         prev = latest_by_job.get(ev.job_id)
         if prev is None or row_is_newer(enriched, prev):
             latest_by_job[ev.job_id] = enriched
-
-    if conn is not None:
-        for row in latest_by_job.values():
-            upsert_ledger(conn, row)
 
     # --- Process expired events (ACTIVE→INACTIVE transitions from the sheet) ---
     expired_count = 0
@@ -541,20 +464,10 @@ def main(argv: Optional[List[str]] = None) -> None:
             if not job_id:
                 continue
             closed_at = raw.get("expired_at") or now_iso()
-            if conn is not None:
-                conn.execute(
-                    "UPDATE ledger SET closed_at = ?, updated_at = ? "
-                    "WHERE job_id = ? AND (closed_at IS NULL OR closed_at = '')",
-                    [closed_at, now_iso(), job_id],
-                )
             if job_id in latest_by_job:
                 latest_by_job[job_id]["closed_at"] = closed_at
                 latest_by_job[job_id]["updated_at"] = now_iso()
             expired_count += 1
-
-    if conn is not None:
-        conn.commit()
-        conn.close()
 
     rows = list(latest_by_job.values())
     mirror_to_primary_db(Path(args.db), args.candidate_id, rows, event_rows)
@@ -563,10 +476,6 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     print("=== JobPipe Evaluation Sync ===")
     print(f"out_runs: {out_dir.resolve()}")
-    if sqlite_path is not None:
-        print(f"SQLite:   {sqlite_path.resolve()}")
-    else:
-        print("SQLite:   disabled")
     print(f"CSV:      {csv_path.resolve()}")
     print(f"Primary:  {Path(args.db).resolve()}")
     print(f"Events scanned: {events_scanned}")

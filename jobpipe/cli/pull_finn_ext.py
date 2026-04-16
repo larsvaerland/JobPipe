@@ -5,7 +5,7 @@ captures jobs as you browse FINN.no and POSTs them to a local Flask server
 (server.py, port 5071). The server writes them to a jobs.jsonl file.
 
 This script reads that output, normalizes it to pipeline-compatible JSONL,
-deduplicates against the ledger, and writes to jobs_delta.jsonl.
+deduplicates against the primary JobPipe DB, and writes to jobs_delta.jsonl.
 
 These jobs are from YOUR browsing — not platform suggestions — so they carry
 suggested_by_platform=false. The pipeline processes them normally.
@@ -40,7 +40,6 @@ load_env_file(".env")
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
 DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
@@ -205,11 +204,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Append to output file instead of overwriting",
     )
     ap.add_argument(
-        "--ledger",
-        default=str(DEFAULT_LEDGER_PATH),
-        help="Legacy ledger SQLite fallback for deduplication (default: reports/ledger.sqlite)",
-    )
-    ap.add_argument(
         "--db",
         default=str(DEFAULT_DB_PATH),
         help="Primary jobpipe.sqlite path for deduplication",
@@ -222,7 +216,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--no-dedupe",
         action="store_true",
-        help="Disable ledger deduplication (include all jobs, even already processed)",
+        help="Disable primary-DB deduplication (include all jobs, even already processed)",
     )
     ap.add_argument(
         "--dry-run",
@@ -245,7 +239,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     processed_ids = set() if args.no_dedupe else load_processed_job_ids(
         primary_db_path=Path(args.db),
         candidate_id=args.candidate_id,
-        ledger_path=Path(args.ledger),
     )
     print(f"Loaded {len(processed_ids)} known job IDs for deduplication.")
 
@@ -266,7 +259,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Normalize and deduplicate
     normalized: List[dict] = []
     seen_ids: set = set()
-    stats = {"no_id": 0, "in_ledger": 0, "duplicate": 0, "new": 0}
+    stats = {"no_id": 0, "known": 0, "duplicate": 0, "new": 0}
 
     for raw in raw_jobs:
         job = _normalize(raw)
@@ -282,9 +275,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         seen_ids.add(jid)
 
         if jid in processed_ids:
-            stats["in_ledger"] += 1
+            stats["known"] += 1
             if args.verbose:
-                print(f"  [skip-ledger] {jid}  {job['title'][:50]}")
+                print(f"  [skip-known] {jid}  {job['title'][:50]}")
             continue
 
         normalized.append(job)
@@ -317,7 +310,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(
         f"\nSummary:\n"
         f"  New (written):           {stats['new']}\n"
-        f"  Already known:           {stats['in_ledger']}\n"
+        f"  Already known:           {stats['known']}\n"
         f"  Intra-file duplicates:   {stats['duplicate']}\n"
         f"  No finnkode (skipped):   {stats['no_id']}\n"
     )

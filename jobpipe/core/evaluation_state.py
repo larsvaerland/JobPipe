@@ -22,9 +22,8 @@ def load_job_catalog(
     *,
     primary_db_path: Optional[Path],
     candidate_id: str,
-    ledger_path: Optional[Path] = None,
 ) -> List[Dict[str, Any]]:
-    """Load the latest job catalog from the primary DB, with ledger fallback."""
+    """Load the latest job catalog from the primary DB."""
     if primary_db_path and primary_db_path.exists():
         try:
             rows = _rows_as_dicts(
@@ -41,18 +40,6 @@ def load_job_catalog(
         except Exception:
             pass
 
-    if ledger_path and ledger_path.exists():
-        try:
-            return _rows_as_dicts(
-                ledger_path,
-                """
-                SELECT job_id, title, employer, work_city, final_decision
-                FROM ledger
-                """,
-            )
-        except Exception:
-            pass
-
     return []
 
 
@@ -60,15 +47,13 @@ def load_processed_job_ids(
     *,
     primary_db_path: Optional[Path],
     candidate_id: str,
-    ledger_path: Optional[Path] = None,
 ) -> set[str]:
-    """Return known job_ids from the primary DB, with ledger fallback."""
+    """Return known job_ids from the primary DB."""
     return {
         str(row.get("job_id") or "").strip()
         for row in load_job_catalog(
             primary_db_path=primary_db_path,
             candidate_id=candidate_id,
-            ledger_path=ledger_path,
         )
         if str(row.get("job_id") or "").strip()
     }

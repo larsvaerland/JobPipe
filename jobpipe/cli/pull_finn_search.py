@@ -7,13 +7,13 @@ It is designed to run on a schedule (e.g., daily via go.ps1 -WithSuggestions).
 How it works:
   1. For each configured search query, fetches FINN search result pages
   2. Extracts finnkodes from <article id="card-{finnkode}"> elements (public SSR HTML)
-  3. Cross-references against ledger.sqlite — skips already-processed jobs
+  3. Cross-references against the primary JobPipe DB — skips already-processed jobs
   4. Fetches full job content for new jobs (JSON-LD → Next.js → HTML fallback)
   5. Appends to jobs_delta.jsonl with suggested_by_platform=true, source=finn_search
 
 Jobs from this source are tagged platform_suggested in triage signals, which:
   - Bypasses the semantic pre-filter (let the LLM decide on algorithm-curated jobs)
-  - Enables calibration analysis (query ledger for platform_suggested + SKIP)
+  - Enables calibration analysis (query job_evaluations for platform_suggested + SKIP)
 
 Anti-bot: time guard 09:00-19:00 Oslo. Random delays (3-9s). Max 40 fetches/run.
 Search page fetches have shorter delays (0.5-1.5s) — they're public listing pages.
@@ -67,7 +67,6 @@ except Exception:
     _OSLO_TZ = timezone(timedelta(hours=1))
 
 DEFAULT_OUT_PATH       = Path("./jobs_delta.jsonl")
-DEFAULT_LEDGER_PATH    = Path("./reports/ledger.sqlite")
 DEFAULT_CONFIG_PATH    = Path("./configs/pipeline.v1.yaml")
 DEFAULT_DB_PATH        = primary_db_path()
 DEFAULT_CANDIDATE_ID   = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
@@ -384,7 +383,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--config",   default=str(DEFAULT_CONFIG_PATH), help="Pipeline YAML config")
     ap.add_argument("--out",      default=str(DEFAULT_OUT_PATH),    help="Output JSONL to append to")
-    ap.add_argument("--ledger",   default=str(DEFAULT_LEDGER_PATH), help="Legacy ledger SQLite fallback for dedup")
     ap.add_argument("--db",       default=str(DEFAULT_DB_PATH),     help="Primary jobpipe.sqlite path for dedup")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help="Candidate ID for primary DB dedup")
     ap.add_argument("--max",      type=int, default=40,             help="Max full-content fetches per run (default: 40)")
@@ -421,9 +419,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     processed_ids = load_processed_job_ids(
         primary_db_path=Path(args.db),
         candidate_id=args.candidate_id,
-        ledger_path=Path(args.ledger),
     )
-    print(f"Known jobs: {len(processed_ids)} (db={args.db}, fallback={args.ledger})")
+    print(f"Known jobs: {len(processed_ids)} (db={args.db})")
 
     # --- Phase 1: Scrape search pages for new finnkodes ---
     print(f"\n=== Phase 1: Scraping {len(queries)} FINN search queries (max {args.max_pages} pages each) ===")
@@ -454,7 +451,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                     query_new += 1
 
             already = len(finnkodes) - query_new
-            print(f"    Page {page}: {len(finnkodes)} cards  ({query_new} new, {already} already in ledger)")
+            print(f"    Page {page}: {len(finnkodes)} cards  ({query_new} new, {already} already known)")
 
             if len(finnkodes) < 10:
                 # Last page (short result set)
@@ -463,7 +460,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(f"\nTotal new finnkodes found: {len(all_new_finnkodes)}")
 
     if not all_new_finnkodes:
-        print("Nothing new — all jobs already in ledger.")
+        print("Nothing new — all jobs already known.")
         return
 
     if args.dry_run:

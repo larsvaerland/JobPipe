@@ -83,7 +83,6 @@ except ImportError:
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 DEFAULT_STATE_PATH = application_state_path()
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 DEFAULT_TOKEN_PATH = gmail_token_path()
 DEFAULT_CREDS_PATH = gmail_credentials_path()
 DEFAULT_DB_PATH = primary_db_path()
@@ -845,7 +844,6 @@ def _persist_gmail_status(
 def scan(
     days: int = 90,
     state_path: Path = DEFAULT_STATE_PATH,
-    ledger_path: Path = DEFAULT_LEDGER_PATH,
     token_path: Path = DEFAULT_TOKEN_PATH,
     creds_path: Path = DEFAULT_CREDS_PATH,
     db_path: Path = DEFAULT_DB_PATH,
@@ -891,7 +889,6 @@ def scan(
     ledger = load_job_catalog(
         primary_db_path=db_path,
         candidate_id=candidate_id,
-        ledger_path=ledger_path,
     )
     if ledger:
         print(f"Loaded {len(ledger)} jobs from evaluation state for employer matching.")
@@ -1026,7 +1023,6 @@ def scan(
 def scan_suggestions(
     days: int = 90,
     suggested_path: Path = DEFAULT_SUGGESTED_PATH,
-    ledger_path: Path = DEFAULT_LEDGER_PATH,
     db_path: Path = DEFAULT_DB_PATH,
     candidate_id: str = DEFAULT_CANDIDATE_ID,
     token_path: Path = DEFAULT_TOKEN_PATH,
@@ -1083,7 +1079,6 @@ def scan_suggestions(
     processed_ids = load_processed_job_ids(
         primary_db_path=db_path,
         candidate_id=candidate_id,
-        ledger_path=ledger_path,
     )
     for job_id in processed_ids:
         if job_id.startswith("finn_"):
@@ -1308,7 +1303,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--days", type=int, default=90, help="Days back to scan (default: 90)")
     ap.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to application_state.json")
-    ap.add_argument("--ledger", default=str(DEFAULT_LEDGER_PATH), help="Path to ledger.sqlite")
     ap.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to primary jobpipe.sqlite")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB writes (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--token", default=str(DEFAULT_TOKEN_PATH), help="OAuth token path (gmail_token.json)")
@@ -1340,7 +1334,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         scan_suggestions(
             days=args.days,
             suggested_path=Path(args.suggested),
-            ledger_path=Path(args.ledger),
             db_path=Path(args.db),
             candidate_id=args.candidate_id,
             token_path=Path(args.token),
@@ -1353,7 +1346,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     scan(
         days=args.days,
         state_path=Path(args.state),
-        ledger_path=Path(args.ledger),
         token_path=Path(args.token),
         creds_path=Path(args.creds),
         db_path=Path(args.db),

@@ -1,7 +1,7 @@
-"""Export ledger.sqlite to a self-contained dashboard HTML file.
+"""Export primary DB evaluation state to a self-contained dashboard HTML file.
 
 Enriches actionable jobs with URLs/deadlines from per-job 00_input.json files
-when the ledger has empty values (common with cross-platform SQLite issues).
+when evaluation rows have empty values.
 """
 from __future__ import annotations
 
@@ -70,11 +70,6 @@ _DETAIL_COLS = (
 
 _ACTIONABLE = {"APPLY_STRONGLY", "APPLY", "REVIEW_HIGH", "REVIEW_LOW"}
 _DATA_PLACEHOLDER = "/*__DASHBOARD_DATA__*/"
-
-
-def _rows_as_dicts(conn: sqlite3.Connection, sql: str) -> List[Dict[str, Any]]:
-    conn.row_factory = sqlite3.Row
-    return [dict(r) for r in conn.execute(sql)]
 
 
 def _parse_raw_json(val: Any) -> Dict[str, Any]:
@@ -315,11 +310,7 @@ def _load_jobs_and_events_from_primary_db(
     db_path: Path,
     candidate_id: str,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Load dashboard job/event rows from the primary DB.
-
-    Returns empty lists when the DB is missing or unreadable. The dashboard can
-    then fall back to the legacy ledger.sqlite path.
-    """
+    """Load dashboard job/event rows from the primary DB."""
     if not db_path.exists():
         return [], []
 
@@ -375,43 +366,7 @@ def _load_jobs_and_events_from_primary_db(
     return jobs, events
 
 
-def _load_jobs_and_events_from_ledger(sqlite_path: Path) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    conn = sqlite3.connect(str(sqlite_path))
-    jobs = _rows_as_dicts(conn, """
-        SELECT job_id, title, employer, work_city, work_county, work_postalCode,
-               applicationDue, source_url, application_url,
-               triage_decision, triage_confidence, triage_explanation, triage_signals,
-               reverse_decision, reverse_confidence, reverse_rationale,
-               fit_score, pivot_score,
-               final_decision, final_confidence, recommendation_reason,
-               cv_focus, feedback_flags, description_snip,
-               skip_reason,
-               run_id, run_seen_at, updated_at,
-               raw_match_json, raw_pivot_json, raw_moderator_json
-        FROM ledger
-        ORDER BY
-            CASE final_decision
-                WHEN 'APPLY_STRONGLY' THEN 0
-                WHEN 'APPLY' THEN 1
-                WHEN 'REVIEW_HIGH' THEN 2
-                WHEN 'REVIEW_LOW' THEN 3
-                ELSE 4
-            END,
-            fit_score DESC NULLS LAST
-    """)
-    events = _rows_as_dicts(conn, """
-        SELECT run_id, job_id, run_mtime, seen_at,
-               final_decision, triage_decision, triage_confidence,
-               fit_score, pivot_score
-        FROM events
-        ORDER BY run_mtime
-    """)
-    conn.close()
-    return jobs, events
-
-
 def build_payload(
-    sqlite_path: Path,
     out_dir: Path,
     state_path: Optional[Path] = None,
     primary_db_path_: Optional[Path] = None,
@@ -431,10 +386,6 @@ def build_payload(
         primary_db_path_ or _PRIMARY_DB_PATH,
         candidate_id,
     )
-    if not jobs_raw:
-        jobs_raw, events = _load_jobs_and_events_from_ledger(sqlite_path)
-    elif not events and sqlite_path.exists():
-        _, events = _load_jobs_and_events_from_ledger(sqlite_path)
 
     jobs = []
     for row in jobs_raw:
@@ -477,12 +428,11 @@ def build_payload(
     }
 
 
-def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path,
+def export(out_dir: Path, template_path: Path, out_path: Path,
            state_path: Optional[Path] = None,
            primary_db_path_: Optional[Path] = None,
            candidate_id: str = _DEFAULT_CANDIDATE_ID) -> None:
     payload = build_payload(
-        sqlite_path,
         out_dir,
         state_path=state_path,
         primary_db_path_=primary_db_path_,
@@ -514,8 +464,7 @@ def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    ap = argparse.ArgumentParser(description="Build a self-contained dashboard HTML from ledger SQLite.")
-    ap.add_argument("--sqlite", default="./reports/ledger.sqlite", help="Path to ledger.sqlite")
+    ap = argparse.ArgumentParser(description="Build a self-contained dashboard HTML from the primary JobPipe DB.")
     ap.add_argument("--out-runs", default="./out_runs", help="Path to out_runs directory")
     ap.add_argument("--template", default="./reports/dashboard_template.html", help="HTML template")
     ap.add_argument("--out", default="./reports/dashboard.html", help="Output HTML path")
@@ -525,7 +474,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = ap.parse_args(argv)
     state_path = Path(args.app_state) if args.app_state else None
     export(
-        Path(args.sqlite),
         Path(args.out_runs),
         Path(args.template),
         Path(args.out),

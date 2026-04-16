@@ -102,7 +102,7 @@ jobs_delta.jsonl
     ↓
 out_runs/<run_id>/<job_id>/ (per-job artifacts)
     ↓ sync_ledger.py
-reports/ledger.sqlite (deduplicated, latest state per job)
+jobpipe.sqlite (job_evaluations + job_run_events)
     ↓ export_dashboard.py
 reports/dashboard.html (self-contained, opens in browser)
 ```
@@ -172,7 +172,7 @@ The same job frequently appears on NAV, LinkedIn, and Finn.no simultaneously. St
 
 | Concern | Source of truth |
 |---------|----------------|
-| Job data (title, employer, description, scores) | `ledger.sqlite` |
+| Job data (title, employer, description, scores) | `jobpipe.sqlite` (`job_evaluations`, `job_run_events`) |
 | Application status (applied, interview, rejected) | `reports/application_state.json` |
 | Raw job input (immutable) | `out_runs/*/00_input.json` |
 

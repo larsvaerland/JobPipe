@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import sqlite3
-
 from jobpipe.core.evaluation_state import load_job_catalog, load_processed_job_ids
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, upsert_job_evaluation
 
 
-def test_load_job_catalog_prefers_primary_db(tmp_path):
+def test_load_job_catalog_reads_primary_db(tmp_path):
     db_path = tmp_path / "jobpipe.sqlite"
-    ledger_path = tmp_path / "ledger.sqlite"
 
     conn = connect_primary_db(db_path)
     ensure_candidate(conn, candidate_id="candidate-a")
@@ -56,21 +53,9 @@ def test_load_job_catalog_prefers_primary_db(tmp_path):
     conn.commit()
     conn.close()
 
-    ledger = sqlite3.connect(str(ledger_path))
-    ledger.execute(
-        "CREATE TABLE ledger (job_id TEXT, title TEXT, employer TEXT, work_city TEXT, final_decision TEXT)"
-    )
-    ledger.execute(
-        "INSERT INTO ledger (job_id, title, employer, work_city, final_decision) VALUES (?, ?, ?, ?, ?)",
-        ["job-ledger", "Ledger Job", "Fallback AS", "Bergen", "REVIEW_HIGH"],
-    )
-    ledger.commit()
-    ledger.close()
-
     rows = load_job_catalog(
         primary_db_path=db_path,
         candidate_id="candidate-a",
-        ledger_path=ledger_path,
     )
 
     assert [row["job_id"] for row in rows] == ["job-db"]
@@ -78,34 +63,17 @@ def test_load_job_catalog_prefers_primary_db(tmp_path):
     assert load_processed_job_ids(
         primary_db_path=db_path,
         candidate_id="candidate-a",
-        ledger_path=ledger_path,
     ) == {"job-db"}
 
 
-def test_load_job_catalog_falls_back_to_ledger(tmp_path):
-    ledger_path = tmp_path / "ledger.sqlite"
-
-    ledger = sqlite3.connect(str(ledger_path))
-    ledger.execute(
-        "CREATE TABLE ledger (job_id TEXT, title TEXT, employer TEXT, work_city TEXT, final_decision TEXT)"
-    )
-    ledger.execute(
-        "INSERT INTO ledger (job_id, title, employer, work_city, final_decision) VALUES (?, ?, ?, ?, ?)",
-        ["job-ledger", "Ledger Job", "Fallback AS", "Bergen", "REVIEW_HIGH"],
-    )
-    ledger.commit()
-    ledger.close()
-
+def test_load_job_catalog_returns_empty_when_db_missing(tmp_path):
     rows = load_job_catalog(
         primary_db_path=tmp_path / "missing.sqlite",
         candidate_id="candidate-a",
-        ledger_path=ledger_path,
     )
 
-    assert [row["job_id"] for row in rows] == ["job-ledger"]
-    assert rows[0]["title"] == "Ledger Job"
+    assert rows == []
     assert load_processed_job_ids(
         primary_db_path=tmp_path / "missing.sqlite",
         candidate_id="candidate-a",
-        ledger_path=ledger_path,
-    ) == {"job-ledger"}
+    ) == set()

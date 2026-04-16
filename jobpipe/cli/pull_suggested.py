@@ -69,7 +69,6 @@ except Exception:
 DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
 DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
-DEFAULT_LEDGER_PATH = Path("./reports/ledger.sqlite")
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 _DAYTIME_START = 9   # 09:00 Oslo — start of allowed window
@@ -427,11 +426,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Output JSONL path to append fetched jobs to (default: jobs_delta.jsonl)",
     )
     ap.add_argument(
-        "--ledger",
-        default=str(DEFAULT_LEDGER_PATH),
-        help="Legacy ledger SQLite fallback for deduplication",
-    )
-    ap.add_argument(
         "--max",
         type=int,
         default=20,
@@ -493,11 +487,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(0)
 
-    # Filter to FINN jobs that haven't been fetched yet and aren't in ledger
+    # Filter to FINN jobs that haven't been fetched yet and aren't already known
     processed_ids = load_processed_job_ids(
         primary_db_path=db_path,
         candidate_id=args.candidate_id,
-        ledger_path=Path(args.ledger),
     )
     finn_pending = [
         j for j in queue

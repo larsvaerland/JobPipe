@@ -132,7 +132,6 @@ Write-Host "[2/3] sync_ledger..." -ForegroundColor Yellow
 & $py -m jobpipe.cli.sync_ledger `
     --out .\out_runs `
     --csv .\reports\ledger_latest.csv `
-    --skip-sqlite `
     --candidate-id $candidateId
 
 if ($LASTEXITCODE -ne 0) {
