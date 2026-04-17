@@ -6,293 +6,1038 @@
 <title>JobPipe Dashboard</title>
 <style>
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface2: #242836;
-  --border: #2e3346;
-  --text: #e1e4ed;
-  --text-dim: #8b90a0;
-  --green: #34d399;
-  --green-bg: rgba(52,211,153,0.12);
-  --blue: #60a5fa;
-  --blue-bg: rgba(96,165,250,0.12);
-  --amber: #fbbf24;
-  --amber-bg: rgba(251,191,36,0.12);
-  --purple: #a78bfa;
-  --purple-bg: rgba(167,139,250,0.12);
-  --red: #f87171;
-  --red-bg: rgba(248,113,113,0.12);
-  --gray: #6b7280;
+  color-scheme: light dark;
+  --font-ui: "IBM Plex Sans", "Public Sans", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+
+  --bg: #f6f3ed;
+  --surface: #ffffff;
+  --surface-alt: #efeae1;
+  --surface-strong: #e7dfd2;
+  --border: #d9d1c6;
+  --border-strong: #b9afa1;
+  --text: #1f2937;
+  --text-soft: #5f6b7a;
+  --text-faint: #7b8795;
+  --shadow: 0 16px 32px rgba(35, 36, 43, 0.08);
+
+  --green: #2f7d61;
+  --green-bg: rgba(47, 125, 97, 0.12);
+  --blue: #426b8c;
+  --blue-bg: rgba(66, 107, 140, 0.12);
+  --amber: #a56a18;
+  --amber-bg: rgba(165, 106, 24, 0.12);
+  --red: #b4534b;
+  --red-bg: rgba(180, 83, 75, 0.12);
+  --violet: #7566a8;
+  --violet-bg: rgba(117, 102, 168, 0.12);
+  --gray: #68717d;
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
 }
 
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171a1f;
+    --surface: #20252c;
+    --surface-alt: #272d36;
+    --surface-strong: #303845;
+    --border: #38414d;
+    --border-strong: #4b5767;
+    --text: #edf2f7;
+    --text-soft: #b5c0cc;
+    --text-faint: #8e99a6;
+    --shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
 
-.container { max-width:1440px; margin:0 auto; padding:24px; }
-
-/* Header */
-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; flex-wrap:wrap; gap:16px; }
-header h1 { font-size:24px; font-weight:700; }
-header h1 span { color:var(--green); }
-.meta { color:var(--text-dim); font-size:13px; }
-
-/* Badges */
-.badges { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; }
-.badge { padding:8px 16px; border-radius:8px; font-size:14px; font-weight:600; }
-.badge-green { background:var(--green-bg); color:var(--green); }
-.badge-blue { background:var(--blue-bg); color:var(--blue); }
-.badge-amber { background:var(--amber-bg); color:var(--amber); }
-.badge-purple { background:var(--purple-bg); color:var(--purple); }
-.badge-red { background:var(--red-bg); color:var(--red); }
-
-/* Urgent banner */
-.urgent-banner { background:var(--red-bg); border:1px solid rgba(248,113,113,0.3); border-radius:10px; padding:14px 20px; margin-bottom:24px; display:none; }
-.urgent-banner h3 { color:var(--red); font-size:15px; margin-bottom:8px; }
-.urgent-banner .urgent-list { font-size:13px; }
-.urgent-banner .urgent-item { padding:4px 0; border-bottom:1px solid rgba(248,113,113,0.1); }
-.urgent-banner .urgent-item:last-child { border:none; }
-.urgent-banner a { color:var(--red); }
-
-/* Tabs */
-.tabs { display:flex; gap:4px; margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:0; }
-.tab { padding:10px 18px; background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:14px; font-weight:500; border-bottom:2px solid transparent; transition:all .15s; }
-.tab:hover { color:var(--text); }
-.tab.active { color:var(--green); border-bottom-color:var(--green); }
-
-.tab-content { display:none; }
-.tab-content.active { display:block; }
-
-/* Cards grid */
-.grid { display:grid; gap:20px; margin-bottom:32px; }
-.grid-2 { grid-template-columns:1fr 1fr; }
-.grid-3 { grid-template-columns:1fr 1fr 1fr; }
-@media(max-width:900px) { .grid-2, .grid-3 { grid-template-columns:1fr; } }
-
-.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
-.card h3 { font-size:15px; font-weight:600; margin-bottom:16px; color:var(--text-dim); }
-
-/* Funnel */
-.funnel-bar { display:flex; align-items:center; margin-bottom:10px; }
-.funnel-label { width:180px; font-size:13px; color:var(--text-dim); flex-shrink:0; }
-.funnel-track { flex:1; height:28px; background:var(--surface2); border-radius:6px; overflow:hidden; position:relative; }
-.funnel-fill { height:100%; border-radius:6px; transition:width 0.5s ease; display:flex; align-items:center; padding-left:10px; font-size:12px; font-weight:600; color:var(--bg); min-width:40px; }
-.funnel-count { margin-left:10px; font-size:13px; color:var(--text-dim); min-width:60px; }
-
-/* Donut chart (CSS-based) */
-.donut-container { display:flex; align-items:center; gap:24px; }
-.donut-svg { width:160px; height:160px; }
-.donut-legend { font-size:13px; }
-.donut-legend-item { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-.donut-legend-swatch { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
-
-/* Scatter canvas */
-.scatter-canvas { width:100%; height:360px; background:var(--surface2); border-radius:8px; }
-
-/* Timeline canvas */
-.timeline-canvas { width:100%; height:280px; background:var(--surface2); border-radius:8px; }
-
-/* Employer bar chart */
-.emp-bar { display:flex; align-items:center; margin-bottom:6px; }
-.emp-name { width:200px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.emp-track { flex:1; height:20px; background:var(--surface2); border-radius:4px; overflow:hidden; }
-.emp-fill { height:100%; background:var(--blue); border-radius:4px; transition:width 0.4s; }
-.emp-count { margin-left:8px; font-size:12px; color:var(--text-dim); min-width:24px; }
-
-/* Table */
-.table-controls { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
-.table-controls input, .table-controls select {
-  background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:13px;
+    --green: #6ec8a5;
+    --green-bg: rgba(110, 200, 165, 0.14);
+    --blue: #8bb6d7;
+    --blue-bg: rgba(139, 182, 215, 0.14);
+    --amber: #d4a055;
+    --amber-bg: rgba(212, 160, 85, 0.14);
+    --red: #d6827a;
+    --red-bg: rgba(214, 130, 122, 0.14);
+    --violet: #b0a0ea;
+    --violet-bg: rgba(176, 160, 234, 0.14);
+    --gray: #9ca7b4;
+  }
 }
-.table-controls input { width:260px; }
 
-table { width:100%; border-collapse:collapse; font-size:13px; }
-thead th { text-align:left; padding:10px 12px; border-bottom:2px solid var(--border); color:var(--text-dim); font-weight:600; cursor:pointer; white-space:nowrap; user-select:none; }
-thead th:hover { color:var(--text); }
-thead th.sorted-asc::after { content:' \u25B2'; font-size:10px; }
-thead th.sorted-desc::after { content:' \u25BC'; font-size:10px; }
-tbody tr { border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
-tbody tr:hover { background:var(--surface2); }
-tbody td { padding:10px 12px; vertical-align:top; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(circle at top left, rgba(66, 107, 140, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(47, 125, 97, 0.07), transparent 24%),
+    var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
 
-.decision-pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
-.pill-APPLY_STRONGLY { background:var(--green-bg); color:var(--green); }
-.pill-APPLY { background:var(--blue-bg); color:var(--blue); }
-.pill-REVIEW_HIGH { background:var(--amber-bg); color:var(--amber); }
-.pill-REVIEW_LOW { background:var(--purple-bg); color:var(--purple); }
+.container {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 32px 24px 40px;
+}
 
-.score-bar { display:inline-block; width:50px; height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; vertical-align:middle; margin-right:6px; }
-.score-fill { height:100%; border-radius:4px; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
 
-a.apply-link { color:var(--green); text-decoration:none; font-weight:600; }
-a.apply-link:hover { text-decoration:underline; }
+.brand-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
 
-/* Expanded detail row */
-.detail-row { display:none; }
-.detail-row.open { display:table-row; }
-.detail-row td { padding:16px 20px; background:var(--surface2); }
-.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.detail-section h4 { font-size:13px; color:var(--text-dim); margin-bottom:6px; }
-.detail-section ul { padding-left:18px; font-size:13px; }
-.detail-section li { margin-bottom:4px; }
-.detail-section p { font-size:13px; color:var(--text); }
-@media(max-width:800px) { .detail-grid { grid-template-columns:1fr; } }
+.brand-eyebrow::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
 
-/* Due date coloring */
-.due-urgent { color:var(--red); font-weight:600; }
-.due-soon { color:var(--amber); }
-.due-ok { color:var(--text-dim); }
+.brand-block h1 {
+  font-size: clamp(30px, 3.6vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  margin-bottom: 10px;
+}
 
-.empty-state { text-align:center; padding:48px; color:var(--text-dim); font-size:15px; }
+.brand-block h1 span { color: var(--green); }
 
-/* Health cards */
-.health-value { font-size:32px; font-weight:700; margin-bottom:6px; }
-.health-sub { font-size:12px; color:var(--text-dim); }
+.brand-copy {
+  max-width: 760px;
+  font-size: 16px;
+  color: var(--text-soft);
+}
 
-/* Scatter tooltip */
-.scatter-tooltip { position:fixed; pointer-events:none; display:none; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:12px; max-width:280px; z-index:100; line-height:1.7; box-shadow:0 4px 16px rgba(0,0,0,0.4); }
-.scatter-tooltip strong { display:block; color:var(--text); margin-bottom:2px; }
+.meta-panel {
+  min-width: 280px;
+  max-width: 360px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 18px 16px;
+  box-shadow: var(--shadow);
+}
 
-/* Triage signal tags */
-.sig-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; margin:2px; background:rgba(0,0,0,0.2); }
+.meta-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
 
-/* Application status */
-.app-pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; }
-.app-shortlisted    { background:var(--amber-bg); color:var(--amber); }
-.app-applied        { background:var(--blue-bg); color:var(--blue); }
-.app-interview      { background:var(--green-bg); color:var(--green); }
-.app-second_interview { background:#7c3aed22; color:#7c3aed; }
-.app-called         { background:#f0f9ff; color:#0369a1; }
-.app-accepted       { background:var(--green-bg); color:var(--green); }
-.app-rejected       { background:var(--red-bg); color:var(--red); }
-.app-dismissed      { background:rgba(107,114,128,0.15); color:var(--gray); }
+.meta-info {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
 
-/* Milestone timeline */
-.milestone-track { display:flex; align-items:center; gap:0; margin:10px 0 6px 0; flex-wrap:wrap; }
-.milestone-step { display:flex; align-items:center; gap:4px; }
-.milestone-dot { width:22px; height:22px; border-radius:50%; border:2px solid var(--border); background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:11px; transition:all .15s; }
-.milestone-dot.done   { border-color:var(--blue); background:var(--blue-bg); }
-.milestone-dot.outcome-accepted { border-color:var(--green); background:var(--green-bg); }
-.milestone-dot.outcome-rejected { border-color:var(--red); background:var(--red-bg); }
-.milestone-dot.outcome-dismissed { border-color:var(--gray); background:rgba(107,114,128,0.15); }
-.milestone-label { font-size:10px; color:var(--text-dim); white-space:nowrap; }
-.milestone-label.done { color:var(--text); font-weight:600; }
-.milestone-connector { width:20px; height:2px; background:var(--border); margin:0 2px; flex-shrink:0; }
-.milestone-connector.done { background:var(--blue); }
+.meta-sub {
+  font-size: 13px;
+  color: var(--text-soft);
+}
 
-.status-buttons { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
-.status-btn { padding:4px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text-dim); font-size:11px; cursor:pointer; transition:all .15s; }
-.status-btn:hover { color:var(--text); border-color:var(--text-dim); }
-.status-btn.done-stage  { background:var(--blue-bg); color:var(--blue); border-color:var(--blue); }
-.status-btn.active-accepted  { background:var(--green-bg); color:var(--green); border-color:var(--green); }
-.status-btn.active-rejected  { background:var(--red-bg); color:var(--red); border-color:var(--red); }
-.status-btn.active-dismissed { background:rgba(107,114,128,0.15); color:var(--gray); border-color:var(--gray); }
-.status-divider { width:1px; height:20px; background:var(--border); margin:0 4px; }
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 26px;
+}
 
-.copy-toast { font-size:11px; color:var(--green); margin-left:8px; opacity:0; transition:opacity .3s; }
-.copy-toast.show { opacity:1; }
+.summary-card {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.summary-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+
+.summary-value {
+  font-size: 31px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+
+.summary-note {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  margin-bottom: 22px;
+}
+
+.tab {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.tab:hover { color: var(--text); }
+.tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.95fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.stack { display: grid; gap: 20px; }
+
+.grid {
+  display: grid;
+  gap: 20px;
+}
+
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.card {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.card-emphasis {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 98%, transparent), color-mix(in srgb, var(--surface-alt) 44%, transparent));
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.section-head h2,
+.section-head h3 {
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.section-head p {
+  font-size: 14px;
+  color: var(--text-soft);
+  max-width: 700px;
+}
+
+.card h3 {
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.card-copy {
+  font-size: 14px;
+  color: var(--text-soft);
+  margin-bottom: 16px;
+}
+
+.filter-panel {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.filter-panel input,
+.filter-panel select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.filter-panel input { width: 280px; }
+
+.filter-panel label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.decision-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.decision-chip {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.decision-chip .count {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chip-APPLY_STRONGLY { border-color: color-mix(in srgb, var(--green) 36%, var(--border)); color: var(--green); }
+.chip-APPLY { border-color: color-mix(in srgb, var(--blue) 36%, var(--border)); color: var(--blue); }
+.chip-REVIEW_HIGH { border-color: color-mix(in srgb, var(--amber) 40%, var(--border)); color: var(--amber); }
+.chip-REVIEW_LOW { border-color: color-mix(in srgb, var(--violet) 40%, var(--border)); color: var(--violet); }
+
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  text-align: left;
+  padding: 0 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  user-select: none;
+}
+
+thead th[data-col] { cursor: pointer; }
+thead th[data-col]:hover { color: var(--text); }
+thead th.sorted-asc::after { content: " ▲"; font-size: 10px; }
+thead th.sorted-desc::after { content: " ▼"; font-size: 10px; }
+
+tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s ease; }
+tbody tr.summary-row { cursor: pointer; }
+tbody tr.summary-row:hover { background: color-mix(in srgb, var(--surface-alt) 65%, transparent); }
+tbody td {
+  padding: 14px 10px;
+  vertical-align: top;
+}
+
+.job-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.table-sub {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.table-sub + .table-sub { margin-top: 3px; }
+
+.decision-pill,
+.confidence-badge,
+.app-pill,
+.due-tag,
+.signal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.decision-pill { border: 1px solid transparent; }
+.pill-APPLY_STRONGLY { background: var(--green-bg); color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, transparent); }
+.pill-APPLY { background: var(--blue-bg); color: var(--blue); border-color: color-mix(in srgb, var(--blue) 30%, transparent); }
+.pill-REVIEW_HIGH { background: var(--amber-bg); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 32%, transparent); }
+.pill-REVIEW_LOW { background: var(--violet-bg); color: var(--violet); border-color: color-mix(in srgb, var(--violet) 30%, transparent); }
+.pill-SKIP { background: color-mix(in srgb, var(--surface-alt) 70%, transparent); color: var(--gray); border-color: var(--border); }
+
+.confidence-high { background: var(--green-bg); color: var(--green); }
+.confidence-medium { background: var(--blue-bg); color: var(--blue); }
+.confidence-low { background: var(--amber-bg); color: var(--amber); }
+.confidence-none { background: color-mix(in srgb, var(--surface-alt) 70%, transparent); color: var(--gray); }
+
+.due-urgent { background: var(--red-bg); color: var(--red); }
+.due-soon { background: var(--amber-bg); color: var(--amber); }
+.due-ok { background: color-mix(in srgb, var(--surface-alt) 80%, transparent); color: var(--text-soft); }
+
+.app-shortlisted { background: var(--amber-bg); color: var(--amber); }
+.app-called,
+.app-applied { background: var(--blue-bg); color: var(--blue); }
+.app-interview,
+.app-second_interview { background: var(--green-bg); color: var(--green); }
+.app-accepted { background: var(--green-bg); color: var(--green); }
+.app-rejected,
+.app-dismissed { background: var(--red-bg); color: var(--red); }
+.app-none { background: color-mix(in srgb, var(--surface-alt) 80%, transparent); color: var(--text-soft); }
+
+.action-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.action-primary {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.action-link {
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+  text-decoration: none;
+}
+
+.action-link:hover { text-decoration: underline; }
+
+.detail-row { display: none; }
+.detail-row.open { display: table-row; }
+.detail-row td {
+  padding: 18px 18px 22px;
+  background: color-mix(in srgb, var(--surface-alt) 60%, transparent);
+}
+
+.detail-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.detail-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+
+.detail-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.detail-hero h4 {
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.detail-hero p {
+  font-size: 14px;
+  color: var(--text-soft);
+  max-width: 880px;
+}
+
+.detail-next {
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.detail-next .label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.detail-next strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.detail-next p {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.detail-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.detail-card.full-width { grid-column: 1 / -1; }
+
+.detail-card h5 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+}
+
+.detail-card p,
+.detail-card li {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.detail-card ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.detail-card p + p { margin-top: 8px; }
+
+.detail-note {
+  font-size: 12px;
+  color: var(--text-soft);
+  margin-top: 10px;
+}
+
+.signal-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.signal-pill {
+  background: color-mix(in srgb, var(--surface-alt) 88%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+}
+
+.signal-good { color: var(--green); border-color: color-mix(in srgb, var(--green) 28%, var(--border)); }
+.signal-watch { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 28%, var(--border)); }
+.signal-risk { color: var(--red); border-color: color-mix(in srgb, var(--red) 28%, var(--border)); }
+.signal-info { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 28%, var(--border)); }
+
+.milestone-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  margin: 12px 0 6px;
+}
+
+.milestone-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.milestone-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-alt);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.milestone-dot.done {
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--border-strong));
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.milestone-dot.outcome-accepted {
+  border-color: color-mix(in srgb, var(--green) 34%, var(--border-strong));
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.milestone-dot.outcome-rejected,
+.milestone-dot.outcome-dismissed {
+  border-color: color-mix(in srgb, var(--red) 34%, var(--border-strong));
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.milestone-label {
+  font-size: 11px;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.milestone-label.done { color: var(--text); font-weight: 700; }
+
+.milestone-connector {
+  width: 20px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+.milestone-connector.done { background: var(--blue); }
+
+.status-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.status-btn {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.status-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.status-btn.done-stage { background: var(--blue-bg); color: var(--blue); border-color: color-mix(in srgb, var(--blue) 28%, var(--border)); }
+.status-btn.active-accepted { background: var(--green-bg); color: var(--green); border-color: color-mix(in srgb, var(--green) 28%, var(--border)); }
+.status-btn.active-rejected,
+.status-btn.active-dismissed { background: var(--red-bg); color: var(--red); border-color: color-mix(in srgb, var(--red) 28%, var(--border)); }
+
+.status-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.copy-toast {
+  font-size: 11px;
+  color: var(--green);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.copy-toast.show { opacity: 1; }
+
+.item-list {
+  display: grid;
+  gap: 12px;
+}
+
+.item-row {
+  display: grid;
+  gap: 4px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.item-row.emphasis { border-color: color-mix(in srgb, var(--amber) 34%, var(--border)); background: color-mix(in srgb, var(--amber-bg) 28%, var(--surface)); }
+.item-row.good { border-color: color-mix(in srgb, var(--green) 34%, var(--border)); }
+.item-row.watch { border-color: color-mix(in srgb, var(--amber) 34%, var(--border)); }
+.item-row.risk { border-color: color-mix(in srgb, var(--red) 34%, var(--border)); }
+
+.item-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.item-meta {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.item-detail {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.item-link {
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+  text-decoration: none;
+}
+
+.item-link:hover { text-decoration: underline; }
+
+.empty-state,
+.empty-block {
+  color: var(--text-soft);
+  font-size: 14px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 72px 24px;
+}
+
+.chart-grid { display: grid; gap: 20px; }
+
+.health-value {
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+
+.health-sub {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.funnel-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.funnel-label {
+  width: 170px;
+  font-size: 13px;
+  color: var(--text-soft);
+  flex-shrink: 0;
+}
+
+.funnel-track {
+  flex: 1;
+  height: 28px;
+  background: var(--surface-alt);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.funnel-fill {
+  height: 100%;
+  min-width: 34px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--surface);
+}
+
+.funnel-count {
+  min-width: 60px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.donut-container {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.donut-svg { width: 172px; height: 172px; }
+
+.donut-legend {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.donut-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.timeline-canvas {
+  width: 100%;
+  height: 280px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+@media (max-width: 1180px) {
+  .summary-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .workspace-layout { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 820px) {
+  .container { padding: 24px 16px 32px; }
+  .summary-strip,
+  .grid-2,
+  .grid-3,
+  .detail-grid { grid-template-columns: 1fr; }
+  .tabs { display: flex; width: 100%; overflow-x: auto; }
+  .filter-panel input { width: 100%; }
+  .funnel-bar { flex-direction: column; align-items: stretch; }
+  .funnel-label,
+  .funnel-count { width: auto; min-width: 0; text-align: left; }
+  thead th,
+  tbody td { padding-left: 8px; padding-right: 8px; }
+}
 </style>
 </head>
 <body>
 <div class="container">
-  <header>
-    <h1>Job<span>Pipe</span> Dashboard</h1>
-    <div class="meta" id="metaInfo"></div>
+  <header class="page-header">
+    <div class="brand-block">
+      <div class="brand-eyebrow">Candidate-first and hiring-aware</div>
+      <h1>Job<span>Pipe</span></h1>
+      <p class="brand-copy">A local-first decision workbench for reviewing what deserves action now, what needs follow-up, and what changed since the last pass.</p>
+    </div>
+    <div class="meta-panel">
+      <div class="meta-kicker">Generated locally</div>
+      <div class="meta-info" id="metaInfo"></div>
+      <div class="meta-sub" id="metaSub"></div>
+    </div>
   </header>
 
-  <div id="urgentBanner" class="urgent-banner">
-    <h3>Expiring within 7 days</h3>
-    <div class="urgent-list" id="urgentList"></div>
-  </div>
-
-  <div class="badges" id="badges"></div>
+  <section class="summary-strip" id="summaryStrip"></section>
 
   <div class="tabs" id="tabBar">
-    <button class="tab active" data-tab="action">Action List</button>
-    <button class="tab" data-tab="pipeline">Pipeline</button>
-    <button class="tab" data-tab="scores">Scores</button>
-    <button class="tab" data-tab="timeline">Timeline</button>
-    <button class="tab" data-tab="employers">Employers</button>
+    <button class="tab active" data-tab="now">Now</button>
+    <button class="tab" data-tab="monitor">Monitor</button>
+    <button class="tab" data-tab="insights">Insights</button>
   </div>
 
-  <!-- TAB: Action List -->
-  <div class="tab-content active" id="tab-action">
-    <div class="table-controls">
-      <input type="text" id="searchInput" placeholder="Search title, employer...">
-      <select id="decisionFilter">
-        <option value="apply_plus" selected>APPLY+ (no expired)</option>
-        <option value="all">All actionable</option>
-        <option value="APPLY_STRONGLY">APPLY STRONGLY</option>
-        <option value="APPLY">APPLY</option>
-        <option value="REVIEW_HIGH">REVIEW HIGH</option>
-        <option value="REVIEW_LOW">REVIEW LOW</option>
-      </select>
-      <label style="margin-left:12px; font-size:13px; color:var(--text-dim); cursor:pointer;">
-        <input type="checkbox" id="hideExpired" checked style="margin-right:4px;">
-        Hide expired
-      </label>
-    </div>
-    <div style="overflow-x:auto;">
-      <table id="actionTable">
-        <thead>
-          <tr>
-            <th data-col="final_decision">Decision</th>
-            <th data-col="app_status">Status</th>
-            <th data-col="title">Title</th>
-            <th data-col="employer">Employer</th>
-            <th data-col="work_city">Location</th>
-            <th data-col="fit_score">Fit</th>
-            <th data-col="pivot_score">Pivot</th>
-            <th data-col="final_confidence">Conf</th>
-            <th data-col="applicationDue">Deadline</th>
-            <th>Apply</th>
-          </tr>
-        </thead>
-        <tbody id="actionBody"></tbody>
-      </table>
-    </div>
-  </div>
+  <div class="tab-content active" id="tab-now">
+    <div class="workspace-layout">
+      <section class="card card-emphasis">
+        <div class="section-head">
+          <div>
+            <h2>Decision queue</h2>
+            <p>Review the roles that deserve attention now. Open a row to inspect evidence, risks, monitoring state, and the next recommended move.</p>
+          </div>
+        </div>
 
-  <!-- TAB: Pipeline -->
-  <div class="tab-content" id="tab-pipeline">
-    <div class="grid grid-3" id="healthCards" style="margin-bottom:20px;"></div>
-    <div class="grid grid-2">
-      <div class="card">
-        <h3>Pipeline Funnel</h3>
-        <div id="funnelChart"></div>
+        <div class="filter-panel">
+          <input type="text" id="searchInput" placeholder="Search title, employer, or location">
+          <select id="decisionFilter">
+            <option value="apply_plus" selected>Action now</option>
+            <option value="all">All actionable</option>
+            <option value="APPLY_STRONGLY">Apply strongly</option>
+            <option value="APPLY">Apply</option>
+            <option value="REVIEW_HIGH">Review high</option>
+            <option value="REVIEW_LOW">Review low</option>
+          </select>
+          <label>
+            <input type="checkbox" id="hideExpired" checked>
+            Hide expired
+          </label>
+        </div>
+
+        <div class="decision-summary" id="decisionSummary"></div>
+
+        <div class="table-wrap">
+          <table id="actionTable">
+            <thead>
+              <tr>
+                <th data-col="final_decision">Decision</th>
+                <th data-col="title">Role</th>
+                <th data-col="employer">Employer</th>
+                <th data-col="final_confidence">Confidence</th>
+                <th data-col="app_status">Status</th>
+                <th data-col="applicationDue">Deadline</th>
+                <th>Next action</th>
+              </tr>
+            </thead>
+            <tbody id="actionBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3>Attention now</h3>
+              <p>Deadlines, high-confidence roles, and active items that should not drift.</p>
+            </div>
+          </div>
+          <div class="item-list" id="attentionNow"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3>Monitoring snapshot</h3>
+              <p>Follow-up and recent movement worth keeping in view without leaving the queue.</p>
+            </div>
+          </div>
+          <div class="item-list" id="monitorNow"></div>
+        </section>
       </div>
-      <div class="card">
-        <h3>SKIP Breakdown</h3>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-monitor">
+    <div class="grid grid-3">
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Expiring soon</h3>
+            <p>Actionable roles with deadlines that need review or submission soon.</p>
+          </div>
+        </div>
+        <div class="item-list" id="monitorDeadlines"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Application follow-up</h3>
+            <p>Active applications and process stages that should be kept moving.</p>
+          </div>
+        </div>
+        <div class="item-list" id="monitorApplications"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Recent updates</h3>
+            <p>Fresh listing or application activity surfaced in the local state.</p>
+          </div>
+        </div>
+        <div class="item-list" id="monitorChanges"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-insights">
+    <div class="grid grid-3" id="healthCards" style="margin-bottom:20px;"></div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Review funnel</h3>
+            <p>Where the local flow narrows from intake to a smaller actionable set.</p>
+          </div>
+        </div>
+        <div id="funnelChart"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Decision distribution</h3>
+            <p>How the current local review set is distributed across actionable and skipped outcomes.</p>
+          </div>
+        </div>
         <div class="donut-container">
-          <svg class="donut-svg" viewBox="0 0 160 160" id="donutSvg"></svg>
+          <svg class="donut-svg" viewBox="0 0 172 172" id="donutSvg"></svg>
           <div class="donut-legend" id="donutLegend"></div>
         </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h3>Run history</h3>
+          <p>Trend context for total jobs seen, non-skip outcomes, and stronger apply decisions across recent runs.</p>
+        </div>
       </div>
-    </div>
-  </div>
-
-  <!-- TAB: Scores -->
-  <div class="tab-content" id="tab-scores">
-    <div class="card">
-      <h3>Fit Score vs Pivot Score (non-SKIP jobs)</h3>
-      <canvas class="scatter-canvas" id="scatterCanvas"></canvas>
-      <div class="scatter-tooltip" id="scatterTooltip"></div>
-    </div>
-  </div>
-
-  <!-- TAB: Timeline -->
-  <div class="tab-content" id="tab-timeline">
-    <div class="card">
-      <h3>Run History</h3>
       <canvas class="timeline-canvas" id="timelineCanvas"></canvas>
-    </div>
-  </div>
-
-  <!-- TAB: Employers -->
-  <div class="tab-content" id="tab-employers">
-    <div class="card">
-      <h3>Top Employers (APPLY+ decisions)</h3>
-      <div id="employerChart"></div>
-    </div>
+    </section>
   </div>
 </div>
 
@@ -300,455 +1045,727 @@ a.apply-link:hover { text-decoration:underline; }
 // Data is injected inline by export_dashboard.py — no fetch needed.
 // The placeholder below is replaced at build time with the full JSON payload.
 let DATA = /*__DASHBOARD_DATA__*/;
-let sortCol = 'fit_score';
-let sortDir = -1; // -1 = desc
+let sortCol = "priority";
+let sortDir = 1;
+
+const ACTIONABLE = ["APPLY_STRONGLY", "APPLY", "REVIEW_HIGH", "REVIEW_LOW"];
+const DECISION_ORDER = { APPLY_STRONGLY: 0, APPLY: 1, REVIEW_HIGH: 2, REVIEW_LOW: 3, SKIP: 4 };
+const APP_STAGES = [
+  { key: "shortlisted", short: "S", label: "Shortlisted" },
+  { key: "called", short: "C", label: "Called" },
+  { key: "applied", short: "A", label: "Applied" },
+  { key: "interview", short: "I", label: "Interview" },
+  { key: "second_interview", short: "II", label: "Round 2" },
+];
+const APP_OUTCOMES = [
+  { key: "accepted", short: "OK", label: "Accepted" },
+  { key: "rejected", short: "NO", label: "Rejected" },
+  { key: "dismissed", short: "X", label: "Closed" },
+];
 
 function loadData() {
-  if (!DATA) {
-    document.querySelector('.container').innerHTML = `<div class="empty-state">
-      <p>No data embedded. Rebuild with:</p>
-      <p style="margin-top:8px;font-size:13px;color:var(--text-dim)"><code>python -m jobpipe.cli.export_dashboard</code></p>
-    </div>`;
+  if (!DATA || !Array.isArray(DATA.jobs)) {
+    document.querySelector(".container").innerHTML = '<div class="empty-state"><p>No dashboard data is embedded yet.</p><p style="margin-top:8px">Rebuild with <code>python -m jobpipe.cli.export_dashboard</code>.</p></div>';
     return;
   }
   render();
 }
 
-// ── Pipeline Health ──
-function renderPipelineHealth() {
-  const el = document.getElementById('healthCards');
-  if (!el) return;
-  const jobs = DATA.jobs;
-  const total = jobs.length;
-  if (!total) return;
-
-  const actionable = jobs.filter(j => classifyJob(j) === 'actionable').length;
-  const geo        = jobs.filter(j => classifyJob(j) === 'geo').length;
-
-  // Token waste: triage LLM said non-SKIP, but moderator still SKIP'd (low fit after parsing)
-  const llmSeen   = jobs.filter(j => j.triage_decision && j.triage_decision !== 'SKIP');
-  const llmWasted = llmSeen.filter(j => j.final_decision === 'SKIP');
-  const wasteRate  = llmSeen.length ? (llmWasted.length / llmSeen.length * 100) : null;
-
-  const passRate = (actionable / total * 100).toFixed(1);
-  const geoRate  = (geo / total * 100).toFixed(1);
-
-  const passColor  = actionable >= 10 ? 'var(--green)' : actionable >= 3 ? 'var(--amber)' : 'var(--text-dim)';
-  const wasteColor = wasteRate === null ? 'var(--text-dim)'
-    : wasteRate <= 30 ? 'var(--green)' : wasteRate <= 50 ? 'var(--amber)' : 'var(--red)';
-
-  const cards = [
-    { label: 'Overall pass rate',
-      value: passRate + '%',
-      sub: actionable + ' of ' + total.toLocaleString() + ' jobs are actionable',
-      color: passColor },
-    { label: 'Geo-block rate',
-      value: geoRate + '%',
-      sub: geo.toLocaleString() + ' blocked by location filter',
-      color: 'var(--purple)' },
-    { label: 'Token waste rate',
-      value: wasteRate !== null ? wasteRate.toFixed(1) + '%' : '—',
-      sub: llmWasted.length + ' of ' + llmSeen.length + ' LLM-triaged jobs → final SKIP',
-      color: wasteColor },
-  ];
-
-  el.innerHTML = cards.map(c =>
-    '<div class="card"><h3>' + c.label + '</h3>' +
-    '<div class="health-value" style="color:' + c.color + '">' + c.value + '</div>' +
-    '<div class="health-sub">' + c.sub + '</div></div>'
-  ).join('');
-}
-
 function render() {
   renderMeta();
-  renderBadges();
-  renderUrgent();
+  renderSummaryStrip();
+  renderDecisionSummary();
   renderActionTable();
+  renderNowRail();
+  renderMonitor();
   renderPipelineHealth();
   renderFunnel();
-  renderDonut();
-  renderScatter();
-  renderTimeline();
-  renderEmployers();
-}
-
-// ── Meta ──
-function renderMeta() {
-  const d = new Date(DATA.generated_at);
-  document.getElementById('metaInfo').textContent =
-    `${DATA.jobs.length.toLocaleString()} jobs \u00b7 Generated ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
-}
-
-// ── Badges ──
-function renderBadges() {
-  const counts = {};
-  DATA.jobs.forEach(j => { counts[j.final_decision] = (counts[j.final_decision]||0)+1; });
-  const el = document.getElementById('badges');
-  const items = [
-    ['APPLY_STRONGLY', 'badge-green'],
-    ['APPLY', 'badge-blue'],
-    ['REVIEW_HIGH', 'badge-amber'],
-    ['REVIEW_LOW', 'badge-purple'],
-  ];
-  el.innerHTML = items.map(([d,cls]) =>
-    `<span class="badge ${cls}" style="cursor:pointer" title="Filter to ${d.replace('_',' ')}" onclick="setFilter('${d}')">${counts[d]||0} ${d.replace('_',' ')}</span>`
-  ).join('');
-}
-
-function setFilter(val) {
-  document.getElementById('decisionFilter').value = val;
-  document.getElementById('hideExpired').checked = false;
-  renderActionTable();
-}
-
-// ── Urgent (expiring soon) ──
-function renderUrgent() {
-  const now = new Date();
-  const week = new Date(now.getTime() + 7*86400000);
-  const actionable = DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
-  const urgent = actionable.filter(j => {
-    if (!j.applicationDue || j.applicationDue.length < 10) return false;
-    const d = new Date(j.applicationDue);
-    return d >= now && d <= week;
-  }).sort((a,b) => new Date(a.applicationDue) - new Date(b.applicationDue));
-
-  const banner = document.getElementById('urgentBanner');
-  if (urgent.length === 0) { banner.style.display='none'; return; }
-  banner.style.display='block';
-  document.getElementById('urgentList').innerHTML = urgent.map(j => {
-    const days = Math.ceil((new Date(j.applicationDue) - now) / 86400000);
-    const label = days <= 1 ? 'TODAY' : days + 'd';
-    const link = j.application_url || j.source_url || '#';
-    return `<div class="urgent-item">${label} \u2014 <strong>${esc(j.title)}</strong> @ ${esc(j.employer)} (fit ${j.fit_score||'?'}) <a href="${esc(link)}" target="_blank">Apply \u2192</a></div>`;
-  }).join('');
-}
-
-// ── Action Table ──
-function getActionable() {
-  return DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
-}
-
-function isJobExpired(j) {
-  if (!j.applicationDue || j.applicationDue.length < 10) return false;
-  return new Date(j.applicationDue) < new Date();
-}
-
-function renderActionTable() {
-  const search = document.getElementById('searchInput').value.toLowerCase();
-  const filter = document.getElementById('decisionFilter').value;
-  const hideExpired = document.getElementById('hideExpired').checked;
-
-  let rows = getActionable();
-  if (filter === 'apply_plus') {
-    rows = rows.filter(j => j.final_decision === 'APPLY_STRONGLY' || j.final_decision === 'APPLY');
-  } else if (filter !== 'all') {
-    rows = rows.filter(j => j.final_decision === filter);
+  renderDistribution();
+  if (document.getElementById("tab-insights").classList.contains("active")) {
+    renderTimeline();
   }
-  if (hideExpired) rows = rows.filter(j => !isJobExpired(j));
-  if (search) rows = rows.filter(j =>
-    (j.title||'').toLowerCase().includes(search) ||
-    (j.employer||'').toLowerCase().includes(search) ||
-    (j.work_city||'').toLowerCase().includes(search)
-  );
-
-  rows.sort((a,b) => {
-    let av = a[sortCol], bv = b[sortCol];
-    if (sortCol === 'final_decision') {
-      const ord = {APPLY_STRONGLY:0,APPLY:1,REVIEW_HIGH:2,REVIEW_LOW:3};
-      av = ord[av] ?? 9; bv = ord[bv] ?? 9;
-    }
-    if (av == null) return 1; if (bv == null) return -1;
-    if (typeof av === 'string') return av.localeCompare(bv) * (sortDir === -1 ? -1 : 1);
-    return (av - bv) * sortDir;
-  });
-
-  // Update sort indicators
-  document.querySelectorAll('#actionTable th').forEach(th => {
-    th.classList.remove('sorted-asc','sorted-desc');
-    if (th.dataset.col === sortCol) {
-      th.classList.add(sortDir === 1 ? 'sorted-asc' : 'sorted-desc');
-    }
-  });
-
-  const tbody = document.getElementById('actionBody');
-  tbody.innerHTML = rows.map((j, i) => {
-    const due = formatDue(j.applicationDue);
-    const link = j.application_url || j.source_url || '';
-    const loc = esc(j.work_city || j.work_county || '');
-    return `<tr data-idx="${i}" onclick="toggleDetail(this)">
-      <td><span class="decision-pill pill-${j.final_decision}">${j.final_decision.replace('_',' ')}</span></td>
-      <td>${appStatusPill(j)}</td>
-      <td>${esc(j.title||'')}</td>
-      <td>${esc(j.employer||'')}</td>
-      <td style="color:var(--text-dim)">${loc}</td>
-      <td>${scoreCell(j.fit_score)}</td>
-      <td>${scoreCell(j.pivot_score)}</td>
-      <td>${j.final_confidence != null ? (j.final_confidence*100).toFixed(0)+'%' : ''}</td>
-      <td class="${due.cls}">${due.text}</td>
-      <td>${link ? `<a class="apply-link" href="${esc(link)}" target="_blank" onclick="event.stopPropagation()">Apply \u2192</a>` : ''}</td>
-    </tr>
-    <tr class="detail-row" id="detail-${i}"><td colspan="10">${renderDetail(j)}</td></tr>`;
-  }).join('');
 }
 
-function scoreCell(v) {
-  if (v == null) return '<span style="color:var(--text-dim)">-</span>';
-  const pct = Math.min(100, v);
-  const color = v >= 75 ? 'var(--green)' : v >= 55 ? 'var(--blue)' : v >= 25 ? 'var(--amber)' : 'var(--gray)';
-  return `<span class="score-bar"><span class="score-fill" style="width:${pct}%;background:${color}"></span></span>${v}`;
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function formatDue(d) {
-  if (!d) return {text:'-', cls:'due-ok'};
-  // Try to parse as a date; fall back to showing the raw text for Norwegian
-  // freeform values like "Snarest", "Fortløpende", "Snarest, vi vurderer…"
-  const due = new Date(d);
-  if (isNaN(due.getTime())) {
-    // Treat "Snarest" / "Fortløpende" as rolling — show as a neutral badge
-    const short = d.length > 20 ? d.slice(0, 18) + '…' : d;
-    return {text: short, cls:'due-ok'};
-  }
-  const now = new Date();
-  const days = Math.ceil((due - now) / 86400000);
-  if (days < 0) return {text:'Expired', cls:'due-urgent'};
-  if (days === 0) return {text:'TODAY', cls:'due-urgent'};
-  if (days <= 3) return {text:due.toLocaleDateString(), cls:'due-urgent'};
-  if (days <= 14) return {text:due.toLocaleDateString(), cls:'due-soon'};
-  return {text:due.toLocaleDateString(), cls:'due-ok'};
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s || "";
+  return d.innerHTML;
 }
 
-// ── Application status ──
-const APP_STAGES = [
-  { key:'shortlisted',      icon:'⭐', label:'Shortlisted' },
-  { key:'called',           icon:'📞', label:'Ringt' },
-  { key:'applied',          icon:'📤', label:'Søkt' },
-  { key:'interview',        icon:'🗣', label:'Intervju' },
-  { key:'second_interview', icon:'🔄', label:'2. runde' },
-];
-const APP_OUTCOMES = [
-  { key:'accepted',  icon:'✅', label:'Takket ja' },
-  { key:'rejected',  icon:'❌', label:'Avslag' },
-  { key:'dismissed', icon:'⚫', label:'Ikke aktuell' },
-];
-
-function _parseStages(j) {
-  try { return JSON.parse(j.app_stages || '[]'); } catch(e) { return []; }
-}
-
-function appStatusPill(j_or_status) {
-  // Accept either a job object (new) or a plain status string (legacy table column)
-  const status = (typeof j_or_status === 'string') ? j_or_status : (j_or_status.app_outcome || j_or_status.app_status || '');
-  if (!status) return '<span style="color:var(--text-dim);font-size:11px">—</span>';
-  const found = [...APP_STAGES, ...APP_OUTCOMES].find(x => x.key === status);
-  const label = found ? found.icon + ' ' + found.label : status;
-  return `<span class="app-pill app-${status}">${label}</span>`;
-}
-
-function copyStatusCmd(jobId, token) {
-  const cmd = `python -m jobpipe.cli.mark_status ${jobId} ${token}`;
-  navigator.clipboard.writeText(cmd).then(() => {
-    const toast = document.getElementById('copyToast');
-    if (toast) {
-      toast.textContent = `✓ Kopiert: ${cmd}`;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 3000);
-    }
-  }).catch(() => {
-    prompt('Kopier og kjør i terminalen:', cmd);
-  });
-}
-
-function renderMilestoneTrack(stages, outcome) {
-  let html = '<div class="milestone-track">';
-  APP_STAGES.forEach((s, i) => {
-    const done = stages.includes(s.key);
-    const dotCls = done ? ' done' : '';
-    const lblCls = done ? ' done' : '';
-    const connCls = (i < APP_STAGES.length - 1 && done && stages.includes(APP_STAGES[i+1].key)) ? ' done' : '';
-    html += `<div class="milestone-step">
-      <div class="milestone-dot${dotCls}" title="${s.label}">${done ? s.icon : ''}</div>
-      <span class="milestone-label${lblCls}">${s.label}</span>
-    </div>`;
-    if (i < APP_STAGES.length - 1) {
-      html += `<div class="milestone-connector${connCls}"></div>`;
-    }
-  });
-  if (outcome) {
-    const o = APP_OUTCOMES.find(x => x.key === outcome);
-    if (o) {
-      html += `<div class="milestone-connector done"></div>
-        <div class="milestone-step">
-          <div class="milestone-dot outcome-${outcome}">${o.icon}</div>
-          <span class="milestone-label done">${o.label}</span>
-        </div>`;
-    }
-  }
-  html += '</div>';
-  return html;
-}
-
-function renderStatusButtons(j) {
-  const stages = _parseStages(j);
-  const outcome = j.app_outcome || '';
-
-  // Stage buttons (additive)
-  const stageBtns = APP_STAGES.map(s => {
-    const active = stages.includes(s.key) ? ' done-stage' : '';
-    const tick = stages.includes(s.key) ? '✓ ' : '';
-    return `<button class="status-btn${active}" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','${s.key}')">${tick}${s.icon} ${s.label}</button>`;
-  }).join('');
-
-  // Outcome buttons (terminal)
-  const outcomeBtns = APP_OUTCOMES.map(o => {
-    const active = outcome === o.key ? ` active-${o.key}` : '';
-    return `<button class="status-btn${active}" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','${o.key}')">${o.icon} ${o.label}</button>`;
-  }).join('');
-
-  const hasAny = stages.length > 0 || outcome;
-  const clearBtn = hasAny
-    ? `<button class="status-btn" style="margin-left:4px;color:var(--red)" onclick="event.stopPropagation();copyStatusCmd('${esc(j.job_id||'')}','clear')">✕ Fjern alt</button>`
-    : '';
-
-  const src = j.app_source === 'email' ? ' <span style="color:var(--text-dim);font-size:11px">(fra e-post)</span>' : '';
-  const updated = j.app_updated_at ? ' <span style="color:var(--text-dim);font-size:11px">' + (j.app_updated_at||'').slice(0,10) + '</span>' : '';
-
-  const timeline = hasAny ? renderMilestoneTrack(stages, outcome) : '';
-  const notes = j.app_notes ? `<p style="font-size:12px;color:var(--text-dim);margin:6px 0 4px 0;font-style:italic">"${esc(j.app_notes)}"</p>` : '';
-
-  return `<div class="detail-section" style="grid-column:1/-1">
-    <h4>Søknadsstatus${src}${updated}</h4>
-    ${timeline}
-    ${notes}
-    <div class="status-buttons">
-      ${stageBtns}
-      <div class="status-divider"></div>
-      ${outcomeBtns}
-      ${clearBtn}
-      <span class="copy-toast" id="copyToast"></span>
-    </div>
-    <p style="font-size:11px;color:var(--text-dim);margin-top:6px">Klikk en knapp → kommando kopieres til utklippstavlen → kjør i terminalen → kjør go.ps1 for å oppdatere dashbordet.</p>
-  </div>`;
+function jsArg(value) {
+  return JSON.stringify(String(value || ""));
 }
 
 function parseTags(raw) {
   if (!raw) return [];
-  try { const a = JSON.parse(raw); if (Array.isArray(a)) return a; } catch(e) {}
-  return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {}
+  return String(raw).split(",").map(s => s.trim()).filter(Boolean);
 }
 
-function sigTag(t) {
-  const col = t.startsWith('safety:') ? 'var(--green)'
-    : t.includes('geo') ? 'var(--purple)'
-    : t.includes('hard_no') ? 'var(--red)'
-    : 'var(--text-dim)';
-  return '<span class="sig-tag" style="border:1px solid '+col+';color:'+col+'">'+esc(t)+'</span>';
+function parseJson(val) {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function asDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function today() {
+  return new Date();
+}
+
+function daysBetween(a, b) {
+  return Math.ceil((a.getTime() - b.getTime()) / 86400000);
+}
+
+function getActionable() {
+  return DATA.jobs.filter(j => ACTIONABLE.includes(j.final_decision));
+}
+
+function isTerminalOutcome(j) {
+  return Boolean(j.app_outcome);
+}
+
+function hasApplicationActivity(j) {
+  return parseJson(j.app_stages).length > 0 || Boolean(j.app_status) || Boolean(j.app_outcome);
+}
+
+function isActiveApplication(j) {
+  return hasApplicationActivity(j) && !isTerminalOutcome(j);
+}
+
+function isJobExpired(j) {
+  const due = asDate(j.applicationDue);
+  return due ? due < today() : false;
+}
+
+function getDueInfo(j) {
+  if (!j.applicationDue) return { text: "No fixed deadline", cls: "due-ok", days: null, raw: "" };
+  const due = asDate(j.applicationDue);
+  if (!due) {
+    const raw = String(j.applicationDue);
+    const short = raw.length > 24 ? raw.slice(0, 22) + "…" : raw;
+    return { text: short, cls: "due-ok", days: null, raw };
+  }
+  const delta = daysBetween(due, today());
+  if (delta < 0) return { text: "Expired", cls: "due-urgent", days: delta, raw: due.toLocaleDateString() };
+  if (delta === 0) return { text: "Today", cls: "due-urgent", days: delta, raw: due.toLocaleDateString() };
+  if (delta <= 7) return { text: due.toLocaleDateString(), cls: "due-urgent", days: delta, raw: due.toLocaleDateString() };
+  if (delta <= 14) return { text: due.toLocaleDateString(), cls: "due-soon", days: delta, raw: due.toLocaleDateString() };
+  return { text: due.toLocaleDateString(), cls: "due-ok", days: delta, raw: due.toLocaleDateString() };
+}
+
+function confidenceLevel(j) {
+  const c = Number(j.final_confidence);
+  if (!Number.isFinite(c)) return { text: "Unscored", cls: "confidence-none" };
+  const pct = Math.round(c * 100);
+  if (pct >= 80) return { text: pct + "%", cls: "confidence-high" };
+  if (pct >= 60) return { text: pct + "%", cls: "confidence-medium" };
+  return { text: pct + "%", cls: "confidence-low" };
+}
+
+function appStatusMeta(j) {
+  const status = j.app_outcome || j.app_status || "";
+  if (!status) return { text: "Untracked", cls: "app-none" };
+  const found = [...APP_STAGES, ...APP_OUTCOMES].find(x => x.key === status);
+  return {
+    text: found ? found.label : status,
+    cls: "app-" + status,
+  };
+}
+
+function getEvidenceItems(j) {
+  if (!j.detail) return [];
+  const items = [];
+  (j.detail.overlaps || []).slice(0, 3).forEach(x => items.push(x));
+  (j.detail.pivot_why || []).slice(0, 2).forEach(x => items.push(x));
+  if (j.cv_focus) items.push(j.cv_focus);
+  return items.filter(Boolean).slice(0, 4);
+}
+
+function getRiskItems(j) {
+  if (!j.detail) return [];
+  const items = [];
+  (j.detail.hard_blockers || []).slice(0, 3).forEach(x => items.push(x));
+  (j.detail.gaps || []).slice(0, 3).forEach(x => items.push(x));
+  if (j.detail.pivot_risk) items.push("Pivot risk: " + j.detail.pivot_risk);
+  if (j.feedback_flags) items.push("Feedback flags: " + j.feedback_flags);
+  return items.filter(Boolean).slice(0, 5);
+}
+
+function getMonitoringItems(j) {
+  const items = [];
+  const due = getDueInfo(j);
+  if (j.applicationDue) items.push("Deadline: " + (due.raw || due.text));
+  if (j.app_updated_at) items.push("Application updated: " + String(j.app_updated_at).slice(0, 10));
+  if (j.updated_at) items.push("Listing updated: " + String(j.updated_at).slice(0, 10));
+  if (j.run_seen_at) items.push("Seen in run: " + String(j.run_seen_at).slice(0, 10));
+  if (j.app_source) items.push("Tracking source: " + j.app_source);
+  return items.slice(0, 4);
+}
+
+function getSignalPills(j) {
+  const tags = parseTags(j.triage_signals);
+  return tags.slice(0, 5).map(t => {
+    let cls = "signal-pill";
+    if (t.includes("hard_no")) cls += " signal-risk";
+    else if (t.startsWith("safety:")) cls += " signal-good";
+    else if (t.includes("geo")) cls += " signal-info";
+    else cls += " signal-watch";
+    return '<span class="' + cls + '">' + esc(t) + "</span>";
+  }).join("");
+}
+
+function getNextAction(j) {
+  const link = j.application_url || j.source_url || "";
+  if (j.app_outcome === "accepted") {
+    return { label: "Keep as reference", hint: "Outcome is already recorded.", link: "" };
+  }
+  if (j.app_outcome === "rejected" || j.app_outcome === "dismissed") {
+    return { label: "Capture learning", hint: "Keep the role for calibration and review.", link: "" };
+  }
+  if (j.app_status === "interview" || j.app_status === "second_interview") {
+    return { label: "Prepare for interview", hint: "Review supporting evidence and likely gaps before the next step.", link };
+  }
+  if (isActiveApplication(j)) {
+    return { label: "Follow up on application", hint: "Update status or note the next process milestone.", link };
+  }
+  if (j.final_decision === "APPLY_STRONGLY" || j.final_decision === "APPLY") {
+    return { label: "Tailor and apply", hint: "Open the listing and work from the strongest evidence first.", link };
+  }
+  if (j.final_decision === "REVIEW_HIGH") {
+    return { label: "Review before applying", hint: "Check the main gaps and decide whether the case is strong enough.", link };
+  }
+  return { label: "Hold and revisit", hint: "Keep the role visible, but wait for stronger support or a clearer opening.", link };
+}
+
+function getPriorityValue(j) {
+  let score = DECISION_ORDER[j.final_decision] != null ? DECISION_ORDER[j.final_decision] * 100 : 900;
+  const due = getDueInfo(j);
+  if (due.days != null) {
+    if (due.days < 0) score += 140;
+    else score += Math.min(due.days, 30);
+  } else {
+    score += 26;
+  }
+  if (isActiveApplication(j)) score -= 35;
+  if (needsFollowUp(j)) score -= 25;
+  if (Number(j.final_confidence) >= 0.8) score -= 18;
+  if (j.final_decision === "REVIEW_LOW") score += 18;
+  return score;
+}
+
+function needsFollowUp(j) {
+  if (!isActiveApplication(j) || !j.app_updated_at) return false;
+  const updated = asDate(j.app_updated_at);
+  if (!updated) return false;
+  return daysBetween(today(), updated) >= 10;
+}
+
+function isRecentlyUpdated(j) {
+  const updated = asDate(j.app_updated_at) || asDate(j.updated_at);
+  if (!updated) return false;
+  return daysBetween(today(), updated) <= 7;
+}
+
+function buildMonitoringBuckets() {
+  const actionable = getActionable().filter(j => !isJobExpired(j));
+  const deadlines = actionable
+    .filter(j => getDueInfo(j).days != null && getDueInfo(j).days >= 0 && getDueInfo(j).days <= 14)
+    .sort((a, b) => (getDueInfo(a).days || 0) - (getDueInfo(b).days || 0));
+
+  const applications = DATA.jobs
+    .filter(j => hasApplicationActivity(j))
+    .sort((a, b) => {
+      const aTerminal = isTerminalOutcome(a) ? 1 : 0;
+      const bTerminal = isTerminalOutcome(b) ? 1 : 0;
+      if (aTerminal !== bTerminal) return aTerminal - bTerminal;
+      const aDate = asDate(a.app_updated_at) || new Date(0);
+      const bDate = asDate(b.app_updated_at) || new Date(0);
+      return bDate - aDate;
+    });
+
+  const recent = DATA.jobs
+    .filter(j => isRecentlyUpdated(j))
+    .sort((a, b) => {
+      const aDate = asDate(a.app_updated_at) || asDate(a.updated_at) || new Date(0);
+      const bDate = asDate(b.app_updated_at) || asDate(b.updated_at) || new Date(0);
+      return bDate - aDate;
+    });
+
+  return { deadlines, applications, recent };
+}
+
+function renderMeta() {
+  const d = new Date(DATA.generated_at);
+  const actionable = getActionable().length;
+  document.getElementById("metaInfo").textContent =
+    DATA.jobs.length.toLocaleString() + " jobs in local review state · " + actionable.toLocaleString() + " actionable";
+  document.getElementById("metaSub").textContent =
+    "Generated " + d.toLocaleDateString() + " " + d.toLocaleTimeString() + " from the current local JobPipe state.";
+}
+
+function renderSummaryStrip() {
+  const actionableNow = getActionable().filter(j => (j.final_decision === "APPLY_STRONGLY" || j.final_decision === "APPLY") && !isJobExpired(j));
+  const reviewQueue = getActionable().filter(j => (j.final_decision === "REVIEW_HIGH" || j.final_decision === "REVIEW_LOW") && !isJobExpired(j));
+  const { deadlines, applications, recent } = buildMonitoringBuckets();
+  const followUp = applications.filter(j => needsFollowUp(j));
+
+  const cards = [
+    {
+      label: "Action now",
+      value: actionableNow.length.toLocaleString(),
+      note: actionableNow.length ? "High-priority roles currently worth applying to." : "No apply-level roles are active right now.",
+      color: "var(--green)",
+    },
+    {
+      label: "Review queue",
+      value: reviewQueue.length.toLocaleString(),
+      note: reviewQueue.length ? "Roles that still need a decision before they become action or noise." : "No review queue at the moment.",
+      color: "var(--blue)",
+    },
+    {
+      label: "Expiring soon",
+      value: deadlines.filter(j => (getDueInfo(j).days || 99) <= 7).length.toLocaleString(),
+      note: deadlines.length ? "Deadlines within the next two weeks stay visible in monitoring." : "No near-term deadlines are currently active.",
+      color: "var(--amber)",
+    },
+    {
+      label: "Active applications",
+      value: applications.filter(j => isActiveApplication(j)).length.toLocaleString(),
+      note: applications.length ? "Tracked application state lives alongside the queue." : "No application activity is currently tracked.",
+      color: "var(--blue)",
+    },
+    {
+      label: "Recent movement",
+      value: recent.length.toLocaleString(),
+      note: followUp.length ? followUp.length + " items need follow-up soon." : "Nothing currently stands out as stale.",
+      color: "var(--violet)",
+    },
+  ];
+
+  document.getElementById("summaryStrip").innerHTML = cards.map(card =>
+    '<div class="summary-card">' +
+      '<span class="summary-label">' + card.label + "</span>" +
+      '<div class="summary-value" style="color:' + card.color + '">' + card.value + "</div>" +
+      '<div class="summary-note">' + card.note + "</div>" +
+    "</div>"
+  ).join("");
+}
+
+function renderDecisionSummary() {
+  const counts = {};
+  DATA.jobs.forEach(j => { counts[j.final_decision] = (counts[j.final_decision] || 0) + 1; });
+  const items = [
+    ["APPLY_STRONGLY", "Apply strongly"],
+    ["APPLY", "Apply"],
+    ["REVIEW_HIGH", "Review high"],
+    ["REVIEW_LOW", "Review low"],
+  ];
+  document.getElementById("decisionSummary").innerHTML = items.map(([key, label]) =>
+    '<button class="decision-chip chip-' + key + '" onclick="setFilter(\'' + key + '\')">' +
+      '<span>' + label + "</span>" +
+      '<span class="count">' + (counts[key] || 0) + "</span>" +
+    "</button>"
+  ).join("");
+}
+
+function setFilter(val) {
+  document.getElementById("decisionFilter").value = val;
+  document.getElementById("hideExpired").checked = false;
+  renderActionTable();
+}
+
+function getFilteredRows() {
+  const search = document.getElementById("searchInput").value.toLowerCase();
+  const filter = document.getElementById("decisionFilter").value;
+  const hideExpired = document.getElementById("hideExpired").checked;
+
+  let rows = getActionable();
+  if (filter === "apply_plus") {
+    rows = rows.filter(j => j.final_decision === "APPLY_STRONGLY" || j.final_decision === "APPLY");
+  } else if (filter !== "all") {
+    rows = rows.filter(j => j.final_decision === filter);
+  }
+  if (hideExpired) rows = rows.filter(j => !isJobExpired(j));
+  if (search) {
+    rows = rows.filter(j =>
+      String(j.title || "").toLowerCase().includes(search) ||
+      String(j.employer || "").toLowerCase().includes(search) ||
+      String(j.work_city || "").toLowerCase().includes(search) ||
+      String(j.work_county || "").toLowerCase().includes(search)
+    );
+  }
+  return rows;
+}
+
+function renderActionTable() {
+  const rows = getFilteredRows().sort((a, b) => compareRows(a, b));
+
+  document.querySelectorAll("#actionTable th").forEach(th => {
+    th.classList.remove("sorted-asc", "sorted-desc");
+    if (th.dataset.col === sortCol) {
+      th.classList.add(sortDir === 1 ? "sorted-asc" : "sorted-desc");
+    }
+  });
+
+  const tbody = document.getElementById("actionBody");
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-block">No jobs match the current filter.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((j, i) => {
+    const due = getDueInfo(j);
+    const next = getNextAction(j);
+    const confidence = confidenceLevel(j);
+    const status = appStatusMeta(j);
+    const evidenceItems = getEvidenceItems(j);
+    const riskItems = getRiskItems(j);
+    const supportSummary = evidenceItems.length ? evidenceItems.length + " support point" + (evidenceItems.length === 1 ? "" : "s") : "No extracted support yet";
+    const riskSummary = riskItems.length ? riskItems.length + " risk item" + (riskItems.length === 1 ? "" : "s") : "No strong blockers flagged";
+    const employerSub = [j.work_city || j.work_county || "", j.applicationDue ? "Deadline: " + due.text : ""].filter(Boolean).join(" · ");
+
+    return '<tr class="summary-row" data-idx="' + i + '" onclick="toggleDetail(this)">' +
+      '<td><span class="decision-pill pill-' + esc(j.final_decision) + '">' + esc(j.final_decision.replace("_", " ")) + "</span></td>" +
+      '<td>' +
+        '<div class="job-title">' + esc(j.title || "") + "</div>" +
+        '<div class="table-sub">' + esc(supportSummary) + "</div>" +
+        '<div class="table-sub">' + esc(riskSummary) + "</div>" +
+      "</td>" +
+      '<td>' +
+        '<div class="job-title">' + esc(j.employer || "") + "</div>" +
+        '<div class="table-sub">' + esc(employerSub || "No location or deadline captured") + "</div>" +
+      "</td>" +
+      '<td><span class="confidence-badge ' + confidence.cls + '">' + esc(confidence.text) + "</span></td>" +
+      '<td><span class="app-pill ' + status.cls + '">' + esc(status.text) + "</span></td>" +
+      '<td><span class="due-tag ' + due.cls + '">' + esc(due.text) + "</span></td>" +
+      '<td>' +
+        '<div class="action-cell">' +
+          '<span class="action-primary">' + esc(next.label) + "</span>" +
+          '<span class="table-sub">' + esc(next.hint) + "</span>" +
+          (next.link ? '<a class="action-link" href="' + esc(next.link) + '" target="_blank" onclick="event.stopPropagation()">Open listing →</a>' : "") +
+        "</div>" +
+      "</td>" +
+    "</tr>" +
+    '<tr class="detail-row" id="detail-' + i + '"><td colspan="7">' + renderDetail(j) + "</td></tr>";
+  }).join("");
+}
+
+function compareRows(a, b) {
+  if (sortCol === "priority") {
+    return (getPriorityValue(a) - getPriorityValue(b)) * sortDir;
+  }
+  if (sortCol === "final_decision") {
+    return ((DECISION_ORDER[a.final_decision] ?? 9) - (DECISION_ORDER[b.final_decision] ?? 9)) * sortDir;
+  }
+  if (sortCol === "applicationDue") {
+    const aInfo = getDueInfo(a);
+    const bInfo = getDueInfo(b);
+    const aVal = aInfo.days == null ? 999 : aInfo.days;
+    const bVal = bInfo.days == null ? 999 : bInfo.days;
+    return (aVal - bVal) * sortDir;
+  }
+  if (sortCol === "final_confidence") {
+    return ((Number(a.final_confidence) || 0) - (Number(b.final_confidence) || 0)) * sortDir;
+  }
+  if (sortCol === "app_status") {
+    return String(a.app_outcome || a.app_status || "").localeCompare(String(b.app_outcome || b.app_status || "")) * sortDir;
+  }
+  if (sortCol === "title" || sortCol === "employer") {
+    return String(a[sortCol] || "").localeCompare(String(b[sortCol] || "")) * sortDir;
+  }
+  return 0;
 }
 
 function renderDetail(j) {
-  if (!j.detail) return '<p style="color:var(--text-dim)">No detail data</p>';
-  const d = j.detail;
-  const tags = parseTags(j.triage_signals);
-  const tagHtml = tags.length ? tags.map(sigTag).join('') : '';
-  return `<div class="detail-grid">
-    <div class="detail-section">
-      <h4>Overlaps (what matches)</h4>
-      ${d.overlaps.length ? '<ul>'+d.overlaps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '<p>-</p>'}
-    </div>
-    <div class="detail-section">
-      <h4>Gaps</h4>
-      ${d.gaps.length ? '<ul>'+d.gaps.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '<p>-</p>'}
-    </div>
-    <div class="detail-section">
-      <h4>Pivot potential</h4>
-      <p>${esc(d.pivot_type||'-')} (risk: ${esc(d.pivot_risk||'-')})</p>
-      ${d.pivot_why.length ? '<ul>'+d.pivot_why.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : ''}
-    </div>
-    <div class="detail-section">
-      <h4>Recommendation</h4>
-      <p>${esc(j.recommendation_reason||'-')}</p>
-      ${j.cv_focus ? '<h4 style="margin-top:12px">CV focus</h4><p>'+esc(j.cv_focus)+'</p>' : ''}
-    </div>
-    ${d.hard_blockers.length ? '<div class="detail-section"><h4 style="color:var(--red)">Hard blockers</h4><ul>'+d.hard_blockers.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>' : ''}
-    ${tagHtml ? '<div class="detail-section"><h4>Triage signals</h4><p>'+tagHtml+'</p></div>' : ''}
-    ${j.triage_explanation ? '<div class="detail-section"><h4>Triage reasoning</h4><p>'+esc(j.triage_explanation)+'</p></div>' : ''}
-    ${renderStatusButtons(j)}
-  </div>`;
+  const evidence = getEvidenceItems(j);
+  const risks = getRiskItems(j);
+  const monitoring = getMonitoringItems(j);
+  const confidence = confidenceLevel(j);
+  const status = appStatusMeta(j);
+  const next = getNextAction(j);
+  const signalHtml = getSignalPills(j);
+  const due = getDueInfo(j);
+
+  return '<div class="detail-shell">' +
+    '<div class="detail-hero">' +
+      '<div>' +
+        '<div class="detail-meta">' +
+          '<span class="decision-pill pill-' + esc(j.final_decision) + '">' + esc(j.final_decision.replace("_", " ")) + "</span>" +
+          '<span class="confidence-badge ' + confidence.cls + '">' + esc(confidence.text) + "</span>" +
+          '<span class="app-pill ' + status.cls + '">' + esc(status.text) + "</span>" +
+          (j.applicationDue ? '<span class="due-tag ' + due.cls + '">' + esc(due.text) + "</span>" : "") +
+        "</div>" +
+        '<h4>' + esc(j.title || "") + " · " + esc(j.employer || "") + "</h4>" +
+        '<p>' + esc(j.recommendation_reason || j.triage_explanation || "No recommendation narrative is stored for this role yet.") + "</p>" +
+      "</div>" +
+      '<div class="detail-next">' +
+        '<span class="label">Next action</span>' +
+        '<strong>' + esc(next.label) + "</strong>" +
+        '<p>' + esc(next.hint) + "</p>" +
+        (next.link ? '<p style="margin-top:10px"><a class="action-link" href="' + esc(next.link) + '" target="_blank" onclick="event.stopPropagation()">Open listing →</a></p>' : "") +
+      "</div>" +
+    "</div>" +
+
+    '<div class="detail-grid">' +
+      '<div class="detail-card">' +
+        '<h5>Evidence</h5>' +
+        (evidence.length ? '<ul>' + evidence.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "<p>No strong supporting evidence was extracted yet.</p>") +
+        (j.cv_focus ? '<p class="detail-note">Suggested focus: ' + esc(j.cv_focus) + "</p>" : "") +
+      "</div>" +
+      '<div class="detail-card">' +
+        '<h5>Risks</h5>' +
+        (risks.length ? '<ul>' + risks.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "<p>No hard blockers are currently highlighted.</p>") +
+        (j.detail && j.detail.match_notes ? '<p class="detail-note">' + esc(j.detail.match_notes) + "</p>" : "") +
+      "</div>" +
+      '<div class="detail-card">' +
+        '<h5>Monitoring</h5>' +
+        (monitoring.length ? '<ul>' + monitoring.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "<p>No active monitoring notes are stored for this role yet.</p>") +
+        (j.app_notes ? '<p class="detail-note">Notes: ' + esc(j.app_notes) + "</p>" : "") +
+      "</div>" +
+      '<div class="detail-card">' +
+        '<h5>Signals</h5>' +
+        (signalHtml ? '<div class="signal-row">' + signalHtml + "</div>" : "<p>No explicit triage signals were stored for this role.</p>") +
+        (j.triage_explanation ? '<p class="detail-note">' + esc(j.triage_explanation) + "</p>" : "") +
+      "</div>" +
+      '<div class="detail-card full-width">' +
+        '<h5>Application status</h5>' +
+        renderStatusButtons(j) +
+      "</div>" +
+    "</div>" +
+  "</div>";
 }
 
 function toggleDetail(tr) {
   const idx = tr.dataset.idx;
-  const detail = document.getElementById('detail-'+idx);
-  detail.classList.toggle('open');
+  const detail = document.getElementById("detail-" + idx);
+  detail.classList.toggle("open");
 }
 
-// ── Classification helpers ──
+function renderNowRail() {
+  const actionable = getActionable().filter(j => !isJobExpired(j)).sort((a, b) => getPriorityValue(a) - getPriorityValue(b));
+  const attentionItems = actionable.slice(0, 5).map(j => {
+    const next = getNextAction(j);
+    const due = getDueInfo(j);
+    const tone = due.cls === "due-urgent" ? "emphasis" : (j.final_decision === "APPLY_STRONGLY" ? "good" : "watch");
+    const metaParts = [j.employer || "", due.text !== "No fixed deadline" ? "Deadline: " + due.text : "No fixed deadline"].filter(Boolean);
+    return {
+      title: j.title || "(untitled role)",
+      meta: metaParts.join(" · "),
+      detail: next.label,
+      tone,
+      href: next.link,
+    };
+  });
+
+  const monitorItems = buildMonitoringBuckets();
+  const railItems = [
+    ...monitorItems.applications.filter(j => needsFollowUp(j)).slice(0, 3).map(j => ({
+      title: (j.title || "(untitled role)") + " · follow-up",
+      meta: [j.employer || "", j.app_updated_at ? "Updated " + String(j.app_updated_at).slice(0, 10) : "Tracked locally"].filter(Boolean).join(" · "),
+      detail: getNextAction(j).hint,
+      tone: "watch",
+      href: j.application_url || j.source_url || "",
+    })),
+    ...monitorItems.recent.slice(0, 2).map(j => ({
+      title: (j.title || "(untitled role)") + " · recent update",
+      meta: [j.employer || "", j.updated_at ? "Listing " + String(j.updated_at).slice(0, 10) : (j.app_updated_at ? "Application " + String(j.app_updated_at).slice(0, 10) : "")].filter(Boolean).join(" · "),
+      detail: "Recent movement is visible in the local state.",
+      tone: "good",
+      href: j.application_url || j.source_url || "",
+    })),
+  ].slice(0, 5);
+
+  document.getElementById("attentionNow").innerHTML = renderItemRows(attentionItems, "Nothing currently stands out as urgent.");
+  document.getElementById("monitorNow").innerHTML = renderItemRows(railItems, "No follow-up or recent movement is currently highlighted.");
+}
+
+function renderMonitor() {
+  const buckets = buildMonitoringBuckets();
+
+  const deadlineItems = buckets.deadlines.slice(0, 8).map(j => {
+    const due = getDueInfo(j);
+    return {
+      title: j.title || "(untitled role)",
+      meta: [j.employer || "", "Deadline: " + due.text].filter(Boolean).join(" · "),
+      detail: getNextAction(j).label,
+      tone: due.cls === "due-urgent" ? "risk" : "watch",
+      href: j.application_url || j.source_url || "",
+    };
+  });
+
+  const applicationItems = buckets.applications.slice(0, 8).map(j => {
+    const status = appStatusMeta(j);
+    return {
+      title: j.title || "(untitled role)",
+      meta: [j.employer || "", status.text, j.app_updated_at ? "Updated " + String(j.app_updated_at).slice(0, 10) : ""].filter(Boolean).join(" · "),
+      detail: needsFollowUp(j) ? "A follow-up is likely due soon." : "Tracked application state is present in the local ledger.",
+      tone: needsFollowUp(j) ? "watch" : "good",
+      href: j.application_url || j.source_url || "",
+    };
+  });
+
+  const recentItems = buckets.recent.slice(0, 8).map(j => {
+    const when = j.app_updated_at ? "Application " + String(j.app_updated_at).slice(0, 10) : (j.updated_at ? "Listing " + String(j.updated_at).slice(0, 10) : "Recent update");
+    return {
+      title: j.title || "(untitled role)",
+      meta: [j.employer || "", when].filter(Boolean).join(" · "),
+      detail: "Recent movement is visible in the local state for this role.",
+      tone: "good",
+      href: j.application_url || j.source_url || "",
+    };
+  });
+
+  document.getElementById("monitorDeadlines").innerHTML = renderItemRows(deadlineItems, "No actionable roles are expiring soon.");
+  document.getElementById("monitorApplications").innerHTML = renderItemRows(applicationItems, "No application activity is currently tracked.");
+  document.getElementById("monitorChanges").innerHTML = renderItemRows(recentItems, "No recent listing or application changes were found.");
+}
+
+function renderItemRows(items, emptyText) {
+  if (!items.length) return '<div class="empty-block">' + esc(emptyText) + "</div>";
+  return items.map(item =>
+    '<div class="item-row ' + esc(item.tone || "") + '">' +
+      '<div class="item-title">' + esc(item.title) + "</div>" +
+      '<div class="item-meta">' + esc(item.meta || "") + "</div>" +
+      '<div class="item-detail">' + esc(item.detail || "") + "</div>" +
+      (item.href ? '<a class="item-link" href="' + esc(item.href) + '" target="_blank">Open listing →</a>' : "") +
+    "</div>"
+  ).join("");
+}
+
+function renderPipelineHealth() {
+  const el = document.getElementById("healthCards");
+  const jobs = DATA.jobs;
+  const total = jobs.length;
+  if (!total) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const actionable = jobs.filter(j => classifyJob(j) === "actionable").length;
+  const geo = jobs.filter(j => classifyJob(j) === "geo").length;
+  const llmSeen = jobs.filter(j => j.triage_decision && j.triage_decision !== "SKIP");
+  const llmWasted = llmSeen.filter(j => j.final_decision === "SKIP");
+  const wasteRate = llmSeen.length ? (llmWasted.length / llmSeen.length * 100) : null;
+
+  const cards = [
+    {
+      label: "Actionable rate",
+      value: (actionable / total * 100).toFixed(1) + "%",
+      sub: actionable + " of " + total.toLocaleString() + " jobs remain actionable.",
+      color: actionable >= 10 ? "var(--green)" : actionable >= 3 ? "var(--amber)" : "var(--text-soft)",
+    },
+    {
+      label: "Geo-block rate",
+      value: (geo / total * 100).toFixed(1) + "%",
+      sub: geo.toLocaleString() + " roles are blocked by location rules.",
+      color: "var(--violet)",
+    },
+    {
+      label: "Triage waste",
+      value: wasteRate !== null ? wasteRate.toFixed(1) + "%" : "—",
+      sub: llmSeen.length ? (llmWasted.length + " of " + llmSeen.length + " triaged roles later landed at SKIP.") : "No triage data is available yet.",
+      color: wasteRate === null ? "var(--text-soft)" : (wasteRate <= 30 ? "var(--green)" : wasteRate <= 50 ? "var(--amber)" : "var(--red)"),
+    },
+  ];
+
+  el.innerHTML = cards.map(card =>
+    '<div class="card">' +
+      '<span class="summary-label">' + card.label + "</span>" +
+      '<div class="health-value" style="color:' + card.color + '">' + card.value + "</div>" +
+      '<div class="health-sub">' + card.sub + "</div>" +
+    "</div>"
+  ).join("");
+}
+
 function classifyJob(j) {
-  const fd = j.final_decision || '';
-  const sigs = (j.triage_signals||'').trim();
-  const expl = (j.triage_explanation||'').trim();
-  if (fd !== 'SKIP') return 'actionable';
-  if (sigs.includes('hard_no_title')) return 'hard_no';
-  if (!sigs && !expl) return 'geo';
-  return 'ai_skip';
+  const fd = j.final_decision || "";
+  const sigs = String(j.triage_signals || "").trim();
+  const expl = String(j.triage_explanation || "").trim();
+  if (fd !== "SKIP") return "actionable";
+  if (sigs.includes("hard_no_title")) return "hard_no";
+  if (!sigs && !expl) return "geo";
+  return "ai_skip";
 }
 
-// ── Funnel ──
-// The pipeline filters are cumulative: geo → title → AI triage → moderator.
-// Each step only counts jobs that survived all previous steps.
 function renderFunnel() {
   const jobs = DATA.jobs;
   const total = jobs.length;
-  const geoBlocked = jobs.filter(j => classifyJob(j)==='geo').length;
+  if (!total) {
+    document.getElementById("funnelChart").innerHTML = '<div class="empty-block">No run data is available yet.</div>';
+    return;
+  }
+
+  const geoBlocked = jobs.filter(j => classifyJob(j) === "geo").length;
   const geoPassed = total - geoBlocked;
-  const hardNo = jobs.filter(j => classifyJob(j)==='hard_no').length;
+  const hardNo = jobs.filter(j => classifyJob(j) === "hard_no").length;
   const hardNoPassed = geoPassed - hardNo;
-  // AI triage: jobs that survived geo+title but were SKIP'd by AI
-  const aiSkipped = jobs.filter(j => classifyJob(j)==='ai_skip').length;
-  const triagePassed = hardNoPassed - aiSkipped;
-  // Final non-SKIP = actionable (should equal triagePassed since moderator only refines, doesn't add SKIPs beyond what triage did)
-  const nonSkip = jobs.filter(j => classifyJob(j)==='actionable').length;
+  const aiSkipped = jobs.filter(j => classifyJob(j) === "ai_skip").length;
+  const nonSkip = jobs.filter(j => classifyJob(j) === "actionable").length;
 
   const steps = [
-    ['Total jobs ingested', total, 'var(--text-dim)'],
-    ['After geo filter', geoPassed, 'var(--purple)'],
-    ['After title filter', hardNoPassed, 'var(--blue)'],
-    ['After AI triage', nonSkip, 'var(--green)'],
+    ["Total jobs ingested", total, "var(--text-soft)"],
+    ["After geo filter", geoPassed, "var(--violet)"],
+    ["After title filter", hardNoPassed, "var(--blue)"],
+    ["After triage and review", nonSkip, "var(--green)"],
   ];
 
-  document.getElementById('funnelChart').innerHTML = steps.map(([label, count, color]) => {
-    const pct = total > 0 ? (count/total*100) : 0;
-    return `<div class="funnel-bar">
-      <span class="funnel-label">${label}</span>
-      <div class="funnel-track"><div class="funnel-fill" style="width:${Math.max(2,pct)}%;background:${color}">${count}</div></div>
-      <span class="funnel-count">${pct.toFixed(1)}%</span>
-    </div>`;
-  }).join('');
+  document.getElementById("funnelChart").innerHTML = steps.map(([label, count, color]) => {
+    const pct = total > 0 ? (count / total * 100) : 0;
+    return '<div class="funnel-bar">' +
+      '<span class="funnel-label">' + label + "</span>" +
+      '<div class="funnel-track"><div class="funnel-fill" style="width:' + Math.max(4, pct) + "%;background:" + color + '">' + count + "</div></div>" +
+      '<span class="funnel-count">' + pct.toFixed(1) + "%</span>" +
+    "</div>";
+  }).join("");
 }
 
-// ── Donut ──
-function renderDonut() {
-  const jobs = DATA.jobs;
-  const geo = jobs.filter(j => classifyJob(j)==='geo').length;
-  const hardNo = jobs.filter(j => classifyJob(j)==='hard_no').length;
-  const aiSkip = jobs.filter(j => classifyJob(j)==='ai_skip').length;
-  const nonSkip = jobs.filter(j => classifyJob(j)==='actionable').length;
+function renderDistribution() {
+  const counts = {
+    APPLY_STRONGLY: 0,
+    APPLY: 0,
+    REVIEW_HIGH: 0,
+    REVIEW_LOW: 0,
+    SKIP: 0,
+  };
+  DATA.jobs.forEach(j => {
+    const key = counts[j.final_decision] != null ? j.final_decision : "SKIP";
+    counts[key] += 1;
+  });
 
   const slices = [
-    ['Geo-blocked', geo, '#a78bfa'],
-    ['Hard-no title', hardNo, '#f87171'],
-    ['AI-decided SKIP', Math.max(0, aiSkip), '#6b7280'],
-    ['Non-SKIP', nonSkip, '#34d399'],
+    ["Apply strongly", counts.APPLY_STRONGLY, cssVar("--green")],
+    ["Apply", counts.APPLY, cssVar("--blue")],
+    ["Review high", counts.REVIEW_HIGH, cssVar("--amber")],
+    ["Review low", counts.REVIEW_LOW, cssVar("--violet")],
+    ["Skip", counts.SKIP, cssVar("--gray")],
   ];
 
-  const totalJobs = jobs.length;
-  const svg = document.getElementById('donutSvg');
-  const cx=80, cy=80, r=60, r2=35;
-  let cumAngle = -Math.PI/2;
-  let paths = '';
+  const total = DATA.jobs.length || 1;
+  const svg = document.getElementById("donutSvg");
+  const cx = 86, cy = 86, r = 64, r2 = 40;
+  let cumAngle = -Math.PI / 2;
+  let paths = "";
 
   slices.forEach(([label, count, color]) => {
     if (count <= 0) return;
-    const angle = (count/totalJobs) * Math.PI * 2;
+    const angle = (count / total) * Math.PI * 2;
     const x1o = cx + r * Math.cos(cumAngle);
     const y1o = cy + r * Math.sin(cumAngle);
     const x1i = cx + r2 * Math.cos(cumAngle);
@@ -759,243 +1776,215 @@ function renderDonut() {
     const x2i = cx + r2 * Math.cos(cumAngle);
     const y2i = cy + r2 * Math.sin(cumAngle);
     const large = angle > Math.PI ? 1 : 0;
-    paths += `<path d="M${x1o},${y1o} A${r},${r} 0 ${large} 1 ${x2o},${y2o} L${x2i},${y2i} A${r2},${r2} 0 ${large} 0 ${x1i},${y1i} Z" fill="${color}" opacity="0.85"/>`;
+    paths += '<path d="M' + x1o + "," + y1o + " A" + r + "," + r + " 0 " + large + " 1 " + x2o + "," + y2o + " L" + x2i + "," + y2i + " A" + r2 + "," + r2 + " 0 " + large + ' 0 ' + x1i + "," + y1i + '" fill="' + color + '" opacity="0.9"></path>';
   });
 
   svg.innerHTML = paths;
-  document.getElementById('donutLegend').innerHTML = slices.map(([label,count,color]) =>
-    `<div class="donut-legend-item"><span class="donut-legend-swatch" style="background:${color}"></span>${label}: ${count} (${(count/totalJobs*100).toFixed(1)}%)</div>`
-  ).join('');
+  document.getElementById("donutLegend").innerHTML = slices.map(([label, count, color]) =>
+    '<div class="donut-legend-item"><span class="donut-legend-swatch" style="background:' + color + '"></span>' + label + ": " + count + " (" + (count / total * 100).toFixed(1) + "%)</div>"
+  ).join("");
 }
 
-// ── Scatter (Canvas) ──
-function renderScatter() {
-  const canvas = document.getElementById('scatterCanvas');
-  const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width - 40;
-  canvas.height = 360;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const pad = {top:20, right:20, bottom:40, left:50};
-  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
-
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface2');
-  ctx.fillRect(0, 0, w, h);
-
-  // Grid
-  ctx.strokeStyle = '#2e3346';
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i <= 100; i += 25) {
-    const x = pad.left + (i/100)*pw;
-    const y = pad.top + ph - (i/100)*ph;
-    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ph); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+pw, y); ctx.stroke();
-    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center'; ctx.fillText(i, x, h - pad.bottom + 16);
-    ctx.textAlign = 'right'; ctx.fillText(i, pad.left - 8, y + 4);
-  }
-
-  // Axis labels
-  ctx.fillStyle = '#8b90a0'; ctx.font = '12px sans-serif';
-  ctx.textAlign = 'center'; ctx.fillText('Fit Score', pad.left + pw/2, h - 4);
-  ctx.save(); ctx.translate(14, pad.top + ph/2); ctx.rotate(-Math.PI/2);
-  ctx.fillText('Pivot Score', 0, 0); ctx.restore();
-
-  // Threshold lines
-  const thresholds = [
-    [25, 'var(--gray)', 'SKIP floor'],
-    [55, 'var(--amber)', 'REVIEW_HIGH'],
-    [62, 'var(--blue)', 'APPLY'],
-    [75, 'var(--green)', 'APPLY_STRONGLY'],
-  ];
-  thresholds.forEach(([v, color, label]) => {
-    const x = pad.left + (v/100)*pw;
-    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top+ph); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = color; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(label, x+3, pad.top + 12);
-  });
-
-  // Points
-  const colors = {
-    APPLY_STRONGLY: '#34d399', APPLY: '#60a5fa',
-    REVIEW_HIGH: '#fbbf24', REVIEW_LOW: '#a78bfa', SKIP: '#3a3f50'
-  };
-
-  const scored = DATA.jobs.filter(j => j.fit_score != null && j.pivot_score != null && j.fit_score > 0);
-  // Draw SKIP first (behind), then non-SKIP
-  scored.sort((a,b) => {
-    const ord = {SKIP:0,REVIEW_LOW:1,REVIEW_HIGH:2,APPLY:3,APPLY_STRONGLY:4};
-    return (ord[a.final_decision]||0) - (ord[b.final_decision]||0);
-  });
-
-  const pts = [];
-  scored.forEach(j => {
-    const x = pad.left + (j.fit_score/100)*pw;
-    const y = pad.top + ph - (j.pivot_score/100)*ph;
-    const c = colors[j.final_decision] || '#3a3f50';
-    const isAction = j.final_decision !== 'SKIP';
-    ctx.beginPath();
-    ctx.arc(x, y, isAction ? 5 : 3, 0, Math.PI*2);
-    ctx.fillStyle = c;
-    ctx.globalAlpha = isAction ? 0.9 : 0.35;
-    ctx.fill();
-    pts.push({x, y, j});
-  });
-  ctx.globalAlpha = 1;
-
-  // Tooltip on hover
-  const tip = document.getElementById('scatterTooltip');
-  const dc = {APPLY_STRONGLY:'#34d399',APPLY:'#60a5fa',REVIEW_HIGH:'#fbbf24',REVIEW_LOW:'#a78bfa',SKIP:'#6b7280'};
-  canvas.onmousemove = function(e) {
-    const r = canvas.getBoundingClientRect();
-    const sx = canvas.width / r.width;
-    const sy = canvas.height / r.height;
-    const mx = (e.clientX - r.left) * sx;
-    const my = (e.clientY - r.top) * sy;
-    let nearest = null, best = 20;
-    pts.forEach(p => { const d = Math.hypot(p.x - mx, p.y - my); if (d < best) { best = d; nearest = p; } });
-    if (!nearest) { tip.style.display = 'none'; return; }
-    const j = nearest.j;
-    const col = dc[j.final_decision] || '#e1e4ed';
-    const loc = j.work_city || j.work_county || '';
-    tip.innerHTML = '<strong>' + esc(j.title || '(untitled)') + '</strong>' +
-      esc(j.employer || '') + (loc ? ' &middot; ' + esc(loc) : '') + '<br>' +
-      '<span style="color:' + col + ';font-weight:600">' + esc(j.final_decision || '') + '</span>' +
-      '&nbsp;&nbsp;Fit: ' + (j.fit_score ?? '—') + '&nbsp;&nbsp;Pivot: ' + (j.pivot_score ?? '—');
-    tip.style.display = 'block';
-    tip.style.left = (e.clientX + 16) + 'px';
-    tip.style.top  = (e.clientY - 8) + 'px';
-  };
-  canvas.onmouseleave = function() { tip.style.display = 'none'; };
-}
-
-// ── Timeline (Canvas) ──
 function renderTimeline() {
-  const canvas = document.getElementById('timelineCanvas');
+  const canvas = document.getElementById("timelineCanvas");
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width = rect.width - 40;
+  if (!rect.width) return;
+  canvas.width = Math.max(320, Math.floor(rect.width - 44));
   canvas.height = 280;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const pad = {top:20, right:20, bottom:40, left:50};
-  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  const pad = { top: 20, right: 20, bottom: 42, left: 52 };
+  const pw = w - pad.left - pad.right;
+  const ph = h - pad.top - pad.bottom;
 
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface2');
+  ctx.fillStyle = cssVar("--surface-alt");
   ctx.fillRect(0, 0, w, h);
 
-  // Group events by run
   const runs = {};
   DATA.events.forEach(e => {
-    if (!runs[e.run_id]) runs[e.run_id] = {seen_at: e.seen_at, run_mtime: e.run_mtime, total:0, nonSkip:0, apply:0};
-    runs[e.run_id].total++;
-    if (e.final_decision && e.final_decision !== 'SKIP') runs[e.run_id].nonSkip++;
-    if (e.final_decision === 'APPLY' || e.final_decision === 'APPLY_STRONGLY') runs[e.run_id].apply++;
+    if (!runs[e.run_id]) runs[e.run_id] = { seen_at: e.seen_at, run_mtime: e.run_mtime, total: 0, nonSkip: 0, apply: 0 };
+    runs[e.run_id].total += 1;
+    if (e.final_decision && e.final_decision !== "SKIP") runs[e.run_id].nonSkip += 1;
+    if (e.final_decision === "APPLY" || e.final_decision === "APPLY_STRONGLY") runs[e.run_id].apply += 1;
   });
 
-  const runList = Object.entries(runs).sort((a,b) => (a[1].run_mtime||0)-(b[1].run_mtime||0));
-  if (runList.length === 0) return;
-
-  const maxTotal = Math.max(...runList.map(([,r])=>r.total));
-
-  // X axis = run index, Y = count
-  ctx.strokeStyle = '#2e3346'; ctx.lineWidth = 0.5;
-  for (let i = 0; i <= maxTotal; i += Math.ceil(maxTotal/5)) {
-    const y = pad.top + ph - (i/maxTotal)*ph;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+pw, y); ctx.stroke();
-    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif';
-    ctx.textAlign = 'right'; ctx.fillText(i, pad.left-8, y+4);
+  const runList = Object.entries(runs).sort((a, b) => (a[1].run_mtime || 0) - (b[1].run_mtime || 0));
+  if (!runList.length) {
+    ctx.fillStyle = cssVar("--text-soft");
+    ctx.font = "14px " + cssVar("--font-ui");
+    ctx.fillText("No run history is available yet.", 24, 40);
+    return;
   }
 
-  // Draw lines
+  const maxTotal = Math.max(...runList.map(([, r]) => r.total), 1);
+  ctx.strokeStyle = cssVar("--border");
+  ctx.lineWidth = 1;
+
+  const step = Math.max(1, Math.ceil(maxTotal / 5));
+  for (let i = 0; i <= maxTotal; i += step) {
+    const y = pad.top + ph - (i / maxTotal) * ph;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + pw, y);
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--text-soft");
+    ctx.font = "11px " + cssVar("--font-ui");
+    ctx.textAlign = "right";
+    ctx.fillText(String(i), pad.left - 8, y + 4);
+  }
+
   function drawLine(getData, color) {
-    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
-    runList.forEach(([,r], i) => {
-      const x = pad.left + (i/(runList.length-1||1))*pw;
-      const y = pad.top + ph - (getData(r)/maxTotal)*ph;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    runList.forEach(([, r], i) => {
+      const x = pad.left + (i / (runList.length - 1 || 1)) * pw;
+      const y = pad.top + ph - (getData(r) / maxTotal) * ph;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     });
     ctx.stroke();
   }
 
-  drawLine(r=>r.total, '#6b7280');
-  drawLine(r=>r.nonSkip, '#60a5fa');
-  drawLine(r=>r.apply, '#34d399');
+  drawLine(r => r.total, cssVar("--gray"));
+  drawLine(r => r.nonSkip, cssVar("--blue"));
+  drawLine(r => r.apply, cssVar("--green"));
 
-  // Legend
-  const legend = [['Total', '#6b7280'], ['Non-SKIP', '#60a5fa'], ['APPLY+', '#34d399']];
-  legend.forEach(([label, color], i) => {
-    const x = pad.left + 10 + i * 100;
-    ctx.fillStyle = color; ctx.fillRect(x, pad.top+4, 14, 3);
-    ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(label, x+18, pad.top+8);
+  [["Total", cssVar("--gray")], ["Non-skip", cssVar("--blue")], ["Apply+", cssVar("--green")]].forEach(([label, color], i) => {
+    const x = pad.left + 10 + i * 92;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, pad.top + 4, 14, 3);
+    ctx.fillStyle = cssVar("--text-soft");
+    ctx.font = "11px " + cssVar("--font-ui");
+    ctx.textAlign = "left";
+    ctx.fillText(label, x + 18, pad.top + 8);
   });
 
-  // X axis labels (first, middle, last dates)
-  ctx.fillStyle = '#8b90a0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-  [0, Math.floor(runList.length/2), runList.length-1].forEach(i => {
+  ctx.fillStyle = cssVar("--text-soft");
+  ctx.font = "11px " + cssVar("--font-ui");
+  ctx.textAlign = "center";
+  [0, Math.floor(runList.length / 2), runList.length - 1].forEach(i => {
     const r = runList[i];
     if (!r) return;
-    const x = pad.left + (i/(runList.length-1||1))*pw;
-    const d = r[1].seen_at ? new Date(r[1].seen_at).toLocaleDateString() : '';
-    ctx.fillText(d, x, h - pad.bottom + 16);
+    const x = pad.left + (i / (runList.length - 1 || 1)) * pw;
+    const d = r[1].seen_at ? new Date(r[1].seen_at).toLocaleDateString() : "";
+    ctx.fillText(d, x, h - pad.bottom + 18);
   });
 }
 
-// ── Employers ──
-function renderEmployers() {
-  const actionable = DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP');
-  const counts = {};
-  actionable.forEach(j => { const e = j.employer || '(unknown)'; counts[e] = (counts[e]||0)+1; });
-  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,20);
-  const max = sorted[0] ? sorted[0][1] : 1;
-
-  document.getElementById('employerChart').innerHTML = sorted.map(([name, count]) => {
-    const pct = (count/max*100);
-    return `<div class="emp-bar">
-      <span class="emp-name" title="${esc(name)}">${esc(name)}</span>
-      <div class="emp-track"><div class="emp-fill" style="width:${pct}%"></div></div>
-      <span class="emp-count">${count}</span>
-    </div>`;
-  }).join('');
+function copyStatusCmd(jobId, token) {
+  const cmd = "python -m jobpipe.cli.mark_status " + jobId + " " + token;
+  navigator.clipboard.writeText(cmd).then(() => {
+    const toast = document.getElementById("copyToast");
+    if (toast) {
+      toast.textContent = "Copied: " + cmd;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3000);
+    }
+  }).catch(() => {
+    prompt("Copy and run in a terminal:", cmd);
+  });
 }
 
-// ── Utilities ──
-function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+function renderMilestoneTrack(stages, outcome) {
+  let html = '<div class="milestone-track">';
+  APP_STAGES.forEach((stage, i) => {
+    const done = stages.includes(stage.key);
+    html += '<div class="milestone-step">' +
+      '<div class="milestone-dot' + (done ? " done" : "") + '" title="' + esc(stage.label) + '">' + (done ? esc(stage.short) : "") + "</div>" +
+      '<span class="milestone-label' + (done ? " done" : "") + '">' + esc(stage.label) + "</span>" +
+    "</div>";
+    if (i < APP_STAGES.length - 1) {
+      const nextDone = done && stages.includes(APP_STAGES[i + 1].key);
+      html += '<div class="milestone-connector' + (nextDone ? " done" : "") + '"></div>';
+    }
+  });
+  if (outcome) {
+    const found = APP_OUTCOMES.find(x => x.key === outcome);
+    if (found) {
+      html += '<div class="milestone-connector done"></div>' +
+        '<div class="milestone-step">' +
+          '<div class="milestone-dot outcome-' + esc(outcome) + '">' + esc(found.short) + "</div>" +
+          '<span class="milestone-label done">' + esc(found.label) + "</span>" +
+        "</div>";
+    }
+  }
+  html += "</div>";
+  return html;
+}
 
-// ── Event handlers ──
-document.getElementById('searchInput').addEventListener('input', renderActionTable);
-document.getElementById('decisionFilter').addEventListener('change', renderActionTable);
-document.getElementById('hideExpired').addEventListener('change', renderActionTable);
+function renderStatusButtons(j) {
+  const stages = parseJson(j.app_stages);
+  const outcome = j.app_outcome || "";
+  const jobArg = jsArg(j.job_id || "");
 
-document.querySelectorAll('#actionTable th[data-col]').forEach(th => {
-  th.addEventListener('click', () => {
+  const stageButtons = APP_STAGES.map(stage => {
+    const active = stages.includes(stage.key) ? " done-stage" : "";
+    return '<button class="status-btn' + active + '" onclick=\'event.stopPropagation();copyStatusCmd(' + jobArg + "," + jsArg(stage.key) + ')\'>' + esc(stage.label) + "</button>";
+  }).join("");
+
+  const outcomeButtons = APP_OUTCOMES.map(out => {
+    const active = outcome === out.key ? " active-" + out.key : "";
+    return '<button class="status-btn' + active + '" onclick=\'event.stopPropagation();copyStatusCmd(' + jobArg + "," + jsArg(out.key) + ')\'>' + esc(out.label) + "</button>";
+  }).join("");
+
+  const hasAny = stages.length > 0 || outcome;
+  const clearBtn = hasAny
+    ? '<button class="status-btn" style="color:var(--red)" onclick=\'event.stopPropagation();copyStatusCmd(' + jobArg + "," + jsArg("clear") + ')\'>' + "Clear</button>"
+    : "";
+
+  const src = j.app_source ? '<p class="detail-note">Tracking source: ' + esc(j.app_source) + "</p>" : "";
+  const notes = j.app_notes ? '<p class="detail-note">Notes: ' + esc(j.app_notes) + "</p>" : "";
+
+  return renderMilestoneTrack(stages, outcome) +
+    src +
+    notes +
+    '<div class="status-buttons">' +
+      stageButtons +
+      '<div class="status-divider"></div>' +
+      outcomeButtons +
+      clearBtn +
+      '<span class="copy-toast" id="copyToast"></span>' +
+    "</div>" +
+    '<p class="detail-note">Clicking a status copies a local command. Run it in the terminal, then rebuild the dashboard.</p>';
+}
+
+document.getElementById("searchInput").addEventListener("input", renderActionTable);
+document.getElementById("decisionFilter").addEventListener("change", renderActionTable);
+document.getElementById("hideExpired").addEventListener("change", renderActionTable);
+
+document.querySelectorAll("#actionTable th[data-col]").forEach(th => {
+  th.addEventListener("click", () => {
     const col = th.dataset.col;
     if (sortCol === col) sortDir *= -1;
-    else { sortCol = col; sortDir = col === 'title' || col === 'employer' ? 1 : -1; }
+    else {
+      sortCol = col;
+      sortDir = (col === "title" || col === "employer" || col === "app_status") ? 1 : -1;
+      if (col === "applicationDue") sortDir = 1;
+    }
     renderActionTable();
   });
 });
 
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
-    // Re-render canvases on tab switch (they need visible dimensions)
-    if (tab.dataset.tab === 'scores') setTimeout(renderScatter, 50);
-    if (tab.dataset.tab === 'timeline') setTimeout(renderTimeline, 50);
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    if (tab.dataset.tab === "insights") {
+      setTimeout(renderTimeline, 30);
+    }
   });
 });
 
-window.addEventListener('resize', () => {
-  if (document.getElementById('tab-scores').classList.contains('active')) renderScatter();
-  if (document.getElementById('tab-timeline').classList.contains('active')) renderTimeline();
+window.addEventListener("resize", () => {
+  if (document.getElementById("tab-insights").classList.contains("active")) {
+    renderTimeline();
+  }
 });
 
-// ── Init ──
 loadData();
 </script>
 </body>
