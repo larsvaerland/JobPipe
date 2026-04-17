@@ -32,3 +32,5 @@ That future layer does not belong in this public repo today.
 This repository must not become crippleware.
 
 The public side should stand on its own. The commercial edge, if it exists later, should come from execution quality, tuned workflows, and product packaging, not from making the OSS layer intentionally weak.
+
+For the concrete split, see [BOUNDARY_MAP.md](/C:/Users/larsv/.codex/worktrees/8b1c/agentic_jobpilot/BOUNDARY_MAP.md).

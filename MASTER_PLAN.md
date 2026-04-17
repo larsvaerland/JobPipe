@@ -81,7 +81,17 @@ It should not become:
 3. `ROADMAP.md`
 4. `OSS_SCOPE.md`
 5. `DEPENDENCY_POLICY.md`
-6. supporting docs and implementation notes
+6. `BOUNDARY_MAP.md`
+7. supporting docs and implementation notes
+
+## Public / Private Boundary
+
+The concrete boundary between the public `JobPipe` repo and the private `JobPipe Workbench` repo is defined in `BOUNDARY_MAP.md`.
+
+The rule is:
+
+- public for generic, reusable OSS value
+- private for tuned, proprietary, or commercially sensitive workflow logic
 
 ## Release Baseline
 
