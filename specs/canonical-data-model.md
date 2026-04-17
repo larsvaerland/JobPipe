@@ -124,6 +124,11 @@ JobPipe should center around six business objects:
 
 Everything else is supporting metadata, cache, or export.
 
+Two near-term support layers now matter enough to treat explicitly:
+
+7. candidate calibration and feedback
+8. capability gaps and gap evidence
+
 ---
 
 ## 1. Candidate

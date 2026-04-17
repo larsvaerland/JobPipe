@@ -14,11 +14,12 @@ The purpose of this phase is to make the system easier to trust, easier to run, 
 
 These are the next high-value items for the current single-user, local-first product:
 
-1. Improve application-pack quality so generated material is genuinely useful with minimal editing.
-2. Harden daily operation: scheduled runs, source reliability, and clearer failure handling.
-3. Improve candidate-state quality: profile, resume, and application history should stay coherent in the primary DB.
-4. Keep the dashboard focused on actionability rather than reporting noise.
-5. Finish documentation cleanup so public docs, internal specs, and runtime behavior agree.
+1. Improve candidate-state quality so profile, resume, application history, and calibration stay coherent in the primary DB.
+2. Strengthen advantageous-match detection so JobPipe surfaces roles the candidate is genuinely competitive for, including non-obvious titles.
+3. Harden daily operation: scheduled runs, source reliability, and clearer failure handling.
+4. Keep the dashboard focused on actionable, winnable opportunities rather than reporting noise.
+5. Improve application-pack quality so generated material is genuinely useful with minimal editing.
+6. Finish documentation cleanup so public docs, internal specs, and runtime behavior agree.
 
 ## Next
 
@@ -26,9 +27,10 @@ After the current cleanup phase, the next product layer should be:
 
 1. stronger multi-source intake
 2. better deduplication across source records
-3. clearer advantageous-match signals
-4. richer dashboard views for expiring jobs, source quality, and generated documents
+3. better market-translation signals across adjacent role families
+4. clearer advantageous-match signals in the dashboard and exports
 5. better feedback loops from status and outcome data
+6. richer dashboard views for expiring jobs, source quality, and generated documents
 
 ## Later
 
@@ -46,3 +48,4 @@ Only after the local-first model is stable:
 - broad workflow automation beyond the current job-search loop
 - premature UI surface for every internal setting
 - vector-database-first architecture
+- title-keyword matching as the primary product strategy

@@ -60,11 +60,29 @@ Bootstrap current candidate files into the primary DB:
 python -m jobpipe.cli.bootstrap_state_db
 ```
 
+Generate a capability-gap report from current evaluation evidence:
+
+```powershell
+python -m jobpipe.cli.gap_analysis_report --candidate-id default
+```
+
+Record explicit manual feedback for later calibration:
+
+```powershell
+python -m jobpipe.cli.record_feedback JOB_ID good_recommendation
+python -m jobpipe.cli.record_feedback JOB_ID bad_recommendation --notes "Prestigious role, but unrealistic ask"
+python -m jobpipe.cli.record_feedback JOB_ID promote --notes "Non-obvious role family, but strong real match"
+python -m jobpipe.cli.record_feedback JOB_ID demote
+python -m jobpipe.cli.record_feedback JOB_ID good_fit
+python -m jobpipe.cli.record_feedback JOB_ID bad_fit --json
+```
+
 Inspect DB state:
 
 ```powershell
 python -m jobpipe.cli.inspect_primary_db --show summary --show applications --show suggestions
 python -m jobpipe.cli.inspect_primary_db --show events --limit 20 --json
+python -m jobpipe.cli.inspect_primary_db --show feedback --show gaps --show gap_assessments --limit 20
 ```
 
 ## Application tracking

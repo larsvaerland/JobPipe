@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 
 def _json_text(value: Any) -> str:
@@ -94,6 +94,36 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
             FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
         );
 
+        CREATE TABLE IF NOT EXISTS candidate_calibration_settings (
+            candidate_id TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'general',
+            setting_key TEXT NOT NULL,
+            value_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, scope, setting_key),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidate_calibration_settings_candidate_scope
+            ON candidate_calibration_settings(candidate_id, scope, updated_at);
+
+        CREATE TABLE IF NOT EXISTS candidate_feedback_events (
+            feedback_event_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            job_id TEXT NOT NULL DEFAULT '',
+            evaluation_id TEXT NOT NULL DEFAULT '',
+            feedback_type TEXT NOT NULL,
+            feedback_value TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'manual',
+            notes TEXT NOT NULL DEFAULT '',
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidate_feedback_events_candidate_job
+            ON candidate_feedback_events(candidate_id, job_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_candidate_feedback_events_candidate_type
+            ON candidate_feedback_events(candidate_id, feedback_type, created_at);
+
         CREATE TABLE IF NOT EXISTS generated_documents (
             document_id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -111,6 +141,62 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_generated_documents_candidate_job
             ON generated_documents(candidate_id, job_id);
+
+        CREATE TABLE IF NOT EXISTS capability_gaps (
+            gap_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            gap_key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            gap_type TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_capability_gaps_candidate_gap_key
+            ON capability_gaps(candidate_id, gap_key);
+
+        CREATE TABLE IF NOT EXISTS gap_evidence (
+            gap_evidence_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            gap_id TEXT NOT NULL,
+            job_id TEXT NOT NULL DEFAULT '',
+            evaluation_id TEXT NOT NULL DEFAULT '',
+            run_id TEXT NOT NULL DEFAULT '',
+            severity TEXT NOT NULL DEFAULT '',
+            evidence_source TEXT NOT NULL DEFAULT '',
+            evidence_text TEXT NOT NULL DEFAULT '',
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            fit_score INTEGER,
+            pivot_score INTEGER,
+            final_decision TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id),
+            FOREIGN KEY(gap_id) REFERENCES capability_gaps(gap_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_gap_evidence_candidate_gap
+            ON gap_evidence(candidate_id, gap_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_gap_evidence_candidate_job
+            ON gap_evidence(candidate_id, job_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS gap_assessments (
+            candidate_id TEXT NOT NULL,
+            gap_id TEXT NOT NULL,
+            frequency_score REAL,
+            severity_score REAL,
+            unlock_score REAL,
+            opportunity_quality_score REAL,
+            time_to_close TEXT NOT NULL DEFAULT '',
+            confidence_score REAL,
+            priority TEXT NOT NULL DEFAULT '',
+            assessment_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, gap_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id),
+            FOREIGN KEY(gap_id) REFERENCES capability_gaps(gap_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_gap_assessments_candidate_priority
+            ON gap_assessments(candidate_id, priority, updated_at);
 
         CREATE TABLE IF NOT EXISTS suggestion_leads (
             suggestion_id TEXT PRIMARY KEY,
@@ -385,6 +471,18 @@ def upsert_application_summary(conn: sqlite3.Connection, row: Mapping[str, Any])
     _upsert(conn, "application_summary", row, ["candidate_id", "job_id"])
 
 
+def upsert_candidate_calibration_setting(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["value_json"] = _json_text(payload.get("value_json"))
+    _upsert(conn, "candidate_calibration_settings", payload, ["candidate_id", "scope", "setting_key"])
+
+
+def insert_candidate_feedback_event(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["evidence_json"] = _json_text(payload.get("evidence_json"))
+    _upsert(conn, "candidate_feedback_events", payload, ["feedback_event_id"])
+
+
 def delete_application_tracking(conn: sqlite3.Connection, candidate_id: str, job_id: str) -> None:
     conn.execute(
         "DELETE FROM application_events WHERE candidate_id = ? AND job_id = ?",
@@ -400,6 +498,46 @@ def insert_generated_document(conn: sqlite3.Connection, row: Mapping[str, Any]) 
     payload = dict(row)
     payload["document_json"] = _json_text(payload.get("document_json"))
     _upsert(conn, "generated_documents", payload, ["document_id"])
+
+
+def upsert_capability_gap(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    _upsert(conn, "capability_gaps", row, ["gap_id"])
+
+
+def insert_gap_evidence(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["evidence_json"] = _json_text(payload.get("evidence_json"))
+    _upsert(conn, "gap_evidence", payload, ["gap_evidence_id"])
+
+
+def upsert_gap_assessment(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["assessment_json"] = _json_text(payload.get("assessment_json"))
+    _upsert(conn, "gap_assessments", payload, ["candidate_id", "gap_id"])
+
+
+def replace_candidate_gap_state(conn: sqlite3.Connection, candidate_id: str) -> None:
+    conn.execute(
+        """
+        DELETE FROM gap_assessments
+        WHERE candidate_id = ?
+        """,
+        [candidate_id],
+    )
+    conn.execute(
+        """
+        DELETE FROM gap_evidence
+        WHERE candidate_id = ?
+        """,
+        [candidate_id],
+    )
+    conn.execute(
+        """
+        DELETE FROM capability_gaps
+        WHERE candidate_id = ?
+        """,
+        [candidate_id],
+    )
 
 
 def upsert_job(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:

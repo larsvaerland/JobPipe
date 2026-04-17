@@ -85,6 +85,11 @@ def _summary(conn: sqlite3.Connection, candidate_id: str) -> dict[str, Any]:
             "candidate_profiles": _count(conn, "candidate_profiles"),
             "application_events": _count(conn, "application_events"),
             "application_summary": _count(conn, "application_summary"),
+            "candidate_calibration_settings": _count(conn, "candidate_calibration_settings"),
+            "candidate_feedback_events": _count(conn, "candidate_feedback_events"),
+            "capability_gaps": _count(conn, "capability_gaps"),
+            "gap_evidence": _count(conn, "gap_evidence"),
+            "gap_assessments": _count(conn, "gap_assessments"),
             "generated_documents": _count(conn, "generated_documents"),
             "suggestion_leads": _count(conn, "suggestion_leads"),
             "jobs": _count(conn, "jobs"),
@@ -206,6 +211,47 @@ def _documents_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> 
     return rows
 
 
+def _calibration_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT candidate_id, scope, setting_key, value_json, updated_at
+        FROM candidate_calibration_settings
+        WHERE candidate_id = ?
+        ORDER BY updated_at DESC, scope ASC, setting_key ASC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+    for row in rows:
+        try:
+            row["value_json"] = json.loads(row.get("value_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
+def _feedback_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT feedback_event_id, candidate_id, job_id, evaluation_id, feedback_type,
+               feedback_value, source, notes, evidence_json, created_at
+        FROM candidate_feedback_events
+        WHERE candidate_id = ?
+        ORDER BY created_at DESC, job_id ASC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+    for row in rows:
+        try:
+            row["evidence_json"] = json.loads(row.get("evidence_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
 def _suggestions_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
     rows = _rows(
         conn,
@@ -223,6 +269,50 @@ def _suggestions_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -
     for row in rows:
         try:
             row["payload_json"] = json.loads(row.get("payload_json") or "{}")
+        except json.JSONDecodeError:
+            pass
+    return rows
+
+
+def _gaps_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    return _rows(
+        conn,
+        """
+        SELECT gap_id, candidate_id, gap_key, label, gap_type, description, created_at, updated_at
+        FROM capability_gaps
+        WHERE candidate_id = ?
+        ORDER BY updated_at DESC, label ASC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+
+
+def _gap_assessments_view(conn: sqlite3.Connection, candidate_id: str, limit: int) -> list[dict[str, Any]]:
+    rows = _rows(
+        conn,
+        """
+        SELECT candidate_id, gap_id, frequency_score, severity_score, unlock_score,
+               opportunity_quality_score, time_to_close, confidence_score, priority,
+               assessment_json, updated_at
+        FROM gap_assessments
+        WHERE candidate_id = ?
+        ORDER BY
+            CASE priority
+                WHEN 'close_now' THEN 0
+                WHEN 'monitor' THEN 1
+                WHEN 'ignore' THEN 2
+                ELSE 3
+            END,
+            unlock_score DESC,
+            updated_at DESC
+        LIMIT ?
+        """,
+        [candidate_id, limit],
+    )
+    for row in rows:
+        try:
+            row["assessment_json"] = json.loads(row.get("assessment_json") or "{}")
         except json.JSONDecodeError:
             pass
     return rows
@@ -322,6 +412,11 @@ def _print_summary(data: dict[str, Any], db_path: Path) -> None:
         f"profiles={counts.get('candidate_profiles', 0)}, "
         f"app_events={counts.get('application_events', 0)}, "
         f"app_summary={counts.get('application_summary', 0)}, "
+        f"calibration={counts.get('candidate_calibration_settings', 0)}, "
+        f"feedback={counts.get('candidate_feedback_events', 0)}, "
+        f"gaps={counts.get('capability_gaps', 0)}, "
+        f"gap_evidence={counts.get('gap_evidence', 0)}, "
+        f"gap_assessments={counts.get('gap_assessments', 0)}, "
         f"documents={counts.get('generated_documents', 0)}, "
         f"suggestions={counts.get('suggestion_leads', 0)}, "
         f"jobs={counts.get('jobs', 0)}, "
@@ -398,7 +493,7 @@ def main() -> None:
     ap.add_argument(
         "--show",
         action="append",
-        choices=["summary", "profile", "applications", "events", "candidates", "documents", "suggestions", "jobs", "source_records", "runs", "evaluations", "job_events"],
+        choices=["summary", "profile", "applications", "events", "candidates", "documents", "calibration", "feedback", "suggestions", "gaps", "gap_assessments", "jobs", "source_records", "runs", "evaluations", "job_events"],
         help="Which view(s) to show. Default: summary",
     )
     ap.add_argument("--json", action="store_true", help="Print output as JSON")
@@ -423,8 +518,16 @@ def main() -> None:
                 payload["candidates"] = _candidates_view(conn)
             elif view == "documents":
                 payload["documents"] = _documents_view(conn, args.candidate_id, args.limit)
+            elif view == "calibration":
+                payload["calibration"] = _calibration_view(conn, args.candidate_id, args.limit)
+            elif view == "feedback":
+                payload["feedback"] = _feedback_view(conn, args.candidate_id, args.limit)
             elif view == "suggestions":
                 payload["suggestions"] = _suggestions_view(conn, args.candidate_id, args.limit)
+            elif view == "gaps":
+                payload["gaps"] = _gaps_view(conn, args.candidate_id, args.limit)
+            elif view == "gap_assessments":
+                payload["gap_assessments"] = _gap_assessments_view(conn, args.candidate_id, args.limit)
             elif view == "jobs":
                 payload["jobs"] = _jobs_view(conn, args.limit)
             elif view == "source_records":
@@ -455,8 +558,16 @@ def main() -> None:
             _print_rows("Candidates", payload.get("candidates", []))
         elif view == "documents":
             _print_rows("Generated Documents", payload.get("documents", []))
+        elif view == "calibration":
+            _print_rows("Candidate Calibration Settings", payload.get("calibration", []))
+        elif view == "feedback":
+            _print_rows("Candidate Feedback Events", payload.get("feedback", []))
         elif view == "suggestions":
             _print_rows("Suggestion Leads", payload.get("suggestions", []))
+        elif view == "gaps":
+            _print_rows("Capability Gaps", payload.get("gaps", []))
+        elif view == "gap_assessments":
+            _print_rows("Gap Assessments", payload.get("gap_assessments", []))
         elif view == "jobs":
             _print_rows("Canonical Jobs", payload.get("jobs", []))
         elif view == "source_records":

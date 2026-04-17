@@ -6,9 +6,9 @@ The dashboard is the candidate-facing decision surface.
 
 It is not meant to be a generic analytics console. It should answer three operational questions quickly:
 
-1. Which jobs need action now?
-2. Why were those jobs prioritized?
-3. What already happened for each job?
+1. Which jobs am I actually competitive for right now?
+2. Why were those jobs prioritized over other plausible-looking roles?
+3. What already happened for each job, and what do I need to do next?
 
 ## Data sources
 
@@ -41,9 +41,10 @@ The most important fields are:
 - final decision
 - fit score
 - pivot score
+- recommendation reason
+- signals that explain why an unfamiliar title may still be a strong match
 - deadline
 - application URL
-- recommendation reason
 - current application status
 
 ### Decision detail
@@ -52,6 +53,7 @@ For a selected job, the dashboard should show:
 
 - triage explanation and signals
 - score breakdown
+- evidence for why the role is winnable, adjacent, or risky
 - recommendation reason
 - generated documents
 - application timeline
@@ -68,7 +70,7 @@ The dashboard should still make it easy to inspect:
 ## Design rules
 
 1. Actionability first.
-2. Show why, not just what.
+2. Show why this job is competitive, not just that it scored well.
 3. Prefer a short explanation over raw metric volume.
 4. Keep historical data available without making the default view noisy.
 5. Reflect the primary DB as the system of record.
@@ -88,3 +90,4 @@ The next useful dashboard improvements are:
 - clearer advantageous-match signals
 - better handling of expiring jobs
 - tighter presentation of application-state milestones
+- stronger presentation of non-obvious but high-probability role matches

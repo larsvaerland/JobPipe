@@ -1,6 +1,6 @@
 # JobPipe
 
-*A local-first job search operating system.*
+*A local-first job search system for finding the opportunities you are genuinely competitive for.*
 
 JobPipe ingests job leads, filters noise cheaply, scores the jobs worth attention, tracks application state, and exports a dashboard the candidate can actually use.
 
@@ -12,11 +12,11 @@ JobPipe handles five linked problems:
 
 1. intake from job feeds and suggestion sources
 2. cheap filtering before expensive model calls
-3. candidate-specific scoring and moderation
+3. candidate-specific scoring, moderation, and advantageous-match detection
 4. application-state tracking and follow-up
 5. export of a dashboard plus application-support artifacts
 
-The core promise is simple: spend attention and model cost only on jobs that still look plausible after the cheapest filters have done their work.
+The core promise is simple: help the candidate spend attention and model cost only on jobs they are plausibly competitive for, including roles they might not have recognized themselves.
 
 ## Current architecture
 
@@ -101,6 +101,7 @@ JobPipe is:
 - a decision-support system for job search
 - local-first and traceability-focused
 - opinionated about cheap filters before deeper AI evaluation
+- centered on finding winnable opportunities, not just matching target titles
 - structured around one candidate today, with explicit candidate IDs for future growth
 
 JobPipe is not:

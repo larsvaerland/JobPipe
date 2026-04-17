@@ -4,14 +4,29 @@
 
 ## Product thesis
 
-JobPipe should help a job seeker spend time where they have the best odds, not where the market is loudest.
+JobPipe should help a candidate identify and act on the jobs they are genuinely competitive for, not just the jobs they already know to search for.
 
 The product is not trying to automate the whole job search. It is trying to produce a narrower, better decision surface:
 
 - fewer irrelevant jobs to read
 - clearer prioritization among plausible jobs
+- stronger detection of non-obvious roles the candidate can realistically win
 - stronger follow-up structure once a job becomes actionable
 - better raw material for applications when the match is real
+
+## Primary user need
+
+The hardest part of a job search is often not finding job ads. It is knowing which roles are actually winnable.
+
+Job seekers routinely face three problems at once:
+
+- titles are inconsistent and misleading across employers and sectors
+- self-assessment is noisy, especially during long job searches
+- adjacent roles often look wrong on paper even when the candidate is highly competitive
+
+JobPipe should reduce noise, but that is not the end goal. The real need is:
+
+**help the candidate discover and trust the opportunities they are most likely to get.**
 
 ## Current wedge
 
@@ -38,7 +53,8 @@ That said, the architecture is now explicitly candidate-scoped:
 
 JobPipe should make these statements true:
 
-- I do not have to read hundreds of weak matches to find a few strong ones.
+- I do not have to read hundreds of weak matches to find the few jobs I can actually compete for.
+- I can discover strong fits even when the title or sector is unfamiliar.
 - I can explain why a job was recommended or skipped.
 - I can see my live action list and application state in one place.
 - I can generate usable application material without losing traceability.
@@ -87,16 +103,26 @@ The stronger differentiator is:
 
 - cheap filtering before deep evaluation
 - candidate-specific fit and pivot scoring
+- advantageous match detection across unfamiliar titles and adjacent role families
 - traceable decisions that can be tuned
 - one system that spans intake, prioritization, follow-up, and document support
 
-Longer term, the distinctive product opportunity is *advantageous match detection*: surfacing roles where the candidate is more competitive than the title or sector implies.
+Longer term, the distinctive product opportunity is *advantageous match detection*: surfacing roles where the candidate is more competitive than the title, sector, or self-description implies.
+
+That requires JobPipe to model three things separately:
+
+1. stated intent: the roles the candidate thinks they want
+2. observed fit: what their actual experience, skills, and work style support
+3. market translation: how employers label those needs in the real market
+
+The product becomes valuable when it can bridge the gap between those three layers better than the candidate can manually.
 
 ## Success measures
 
 Primary operating metrics:
 
 - strong matches surfaced per week
+- non-obvious strong matches surfaced per week
 - false negatives on clearly relevant jobs
 - triage pass rate
 - wasted deep-evaluation spend on jobs that should have died earlier
@@ -114,8 +140,9 @@ Secondary product metrics:
 The next stage of JobPipe should stay disciplined:
 
 - finish the DB-first local architecture
+- improve advantageous-match detection and candidate-state quality
 - improve application-pack quality
-- improve source intake and candidate-state quality
+- improve source intake quality and cross-source deduplication
 - keep the docs, code, and runtime model aligned
 
 It should not yet broaden into:
