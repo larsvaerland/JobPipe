@@ -1,4 +1,4 @@
-# Gmail Filter & Label Specification — JobPilot
+# Gmail Filter & Label Specification — JobPipe
 
 **Created:** 2026-04-12
 **Purpose:** Replace messy SOKNADSPILOT/* labels with a clean, logical structure that routes job emails for both human use and pipeline automation.
