@@ -57,6 +57,28 @@ def canonical_job_dedupe_key(job: Mapping[str, Any]) -> str:
     city = _normalize_key_part(job.get("work_city"))
     postal = _normalize_key_part(job.get("work_postalCode"))
     due = _normalize_key_part(job.get("applicationDue"))
+    if not title and not employer:
+        platform = source_platform(
+            pick(
+                job.get("_source_name"),
+                job.get("source"),
+                "placeholder",
+            )
+        )
+        external_id = _normalize_key_part(
+            pick(
+                job.get("finnkode"),
+                job.get("linkedin_job_id"),
+                job.get("external_id"),
+                job.get("uuid"),
+                job.get("id"),
+                job.get("stilling_id"),
+                job.get("job_id"),
+                job.get("sourceurl"),
+                job.get("link"),
+            )
+        )
+        return "|".join(["placeholder", platform, external_id])
     return "|".join([title, employer, city, postal, due])
 
 
@@ -135,9 +157,12 @@ def _metadata_json(job: Mapping[str, Any], *, source_name: str = "") -> dict[str
 
 
 def canonical_job_row(job: Mapping[str, Any], seen_at: str, *, source_name: str = "") -> dict[str, Any]:
+    job_with_source = dict(job)
+    if source_name and "_source_name" not in job_with_source:
+        job_with_source["_source_name"] = source_name
     return {
         "job_id": stable_job_id(dict(job)),
-        "dedupe_key": canonical_job_dedupe_key(job),
+        "dedupe_key": canonical_job_dedupe_key(job_with_source),
         "title": pick(job.get("normalized_title"), job.get("title")),
         "employer": pick(job.get("employer_name"), job.get("employer")),
         "work_city": clean(job.get("work_city")),

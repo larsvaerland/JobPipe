@@ -36,6 +36,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -181,59 +182,65 @@ def _sync_job_to_primary_db(
     db_path: Path,
     source: str,
 ) -> None:
-    try:
-        conn = connect_primary_db(db_path)
+    for attempt in range(3):
         try:
-            ensure_candidate(conn, candidate_id=candidate_id)
+            conn = connect_primary_db(db_path)
+            try:
+                ensure_candidate(conn, candidate_id=candidate_id)
 
-            if token == "clear" or entry is None:
-                delete_application_tracking(conn, candidate_id=candidate_id, job_id=job_id)
+                if token == "clear" or entry is None:
+                    delete_application_tracking(conn, candidate_id=candidate_id, job_id=job_id)
+                    conn.commit()
+                    return
+
+                event_time = entry.get("email_date") or entry.get("updated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                effective_source = (source or entry.get("source") or "manual").strip() or "manual"
+                metadata = {
+                    "stages": list(entry.get("stages", [])),
+                    "outcome": entry.get("outcome") or "",
+                    "effective_status": _effective_status(entry),
+                    "email_subject": entry.get("email_subject", ""),
+                    "email_date": entry.get("email_date", ""),
+                }
+
+                insert_application_event(
+                    conn,
+                    {
+                        "application_event_id": f"app_{uuid.uuid4().hex[:20]}",
+                        "candidate_id": candidate_id,
+                        "job_id": job_id,
+                        "event_type": token,
+                        "event_at": event_time,
+                        "source": effective_source,
+                        "notes": entry.get("notes", ""),
+                        "metadata_json": metadata,
+                        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    },
+                )
+
+                upsert_application_summary(
+                    conn,
+                    {
+                        "candidate_id": candidate_id,
+                        "job_id": job_id,
+                        "current_stage": _current_stage(entry),
+                        "current_outcome": entry.get("outcome") or "",
+                        "effective_status": _effective_status(entry),
+                        "last_event_at": event_time,
+                        "notes_latest": entry.get("notes", ""),
+                        "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    },
+                )
                 conn.commit()
                 return
-
-            event_time = entry.get("email_date") or entry.get("updated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            effective_source = (source or entry.get("source") or "manual").strip() or "manual"
-            metadata = {
-                "stages": list(entry.get("stages", [])),
-                "outcome": entry.get("outcome") or "",
-                "effective_status": _effective_status(entry),
-                "email_subject": entry.get("email_subject", ""),
-                "email_date": entry.get("email_date", ""),
-            }
-
-            insert_application_event(
-                conn,
-                {
-                    "application_event_id": f"app_{uuid.uuid4().hex[:20]}",
-                    "candidate_id": candidate_id,
-                    "job_id": job_id,
-                    "event_type": token,
-                    "event_at": event_time,
-                    "source": effective_source,
-                    "notes": entry.get("notes", ""),
-                    "metadata_json": metadata,
-                    "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                },
-            )
-
-            upsert_application_summary(
-                conn,
-                {
-                    "candidate_id": candidate_id,
-                    "job_id": job_id,
-                    "current_stage": _current_stage(entry),
-                    "current_outcome": entry.get("outcome") or "",
-                    "effective_status": _effective_status(entry),
-                    "last_event_at": event_time,
-                    "notes_latest": entry.get("notes", ""),
-                    "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                },
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception as exc:
-        print(f"[WARN] primary DB sync failed for {job_id}: {exc}", file=sys.stderr)
+            finally:
+                conn.close()
+        except Exception as exc:
+            if "locked" in str(exc).lower() and attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            print(f"[WARN] primary DB sync failed for {job_id}: {exc}", file=sys.stderr)
+            return
 
 
 # ---------------------------------------------------------------------------

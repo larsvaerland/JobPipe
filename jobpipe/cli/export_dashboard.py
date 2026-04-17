@@ -366,6 +366,90 @@ def _load_jobs_and_events_from_primary_db(
     return jobs, events
 
 
+def _load_operational_db_counts(
+    db_path: Path,
+    candidate_id: str,
+) -> Dict[str, Any]:
+    """Load compact operational counts for dashboard header/badges."""
+    if not db_path.exists():
+        return {
+            "catalog_jobs": 0,
+            "source_records": 0,
+            "pipeline_runs": 0,
+            "suggestion_total": 0,
+            "suggestion_platform_counts": {},
+            "suggestion_status_counts": {},
+        }
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        catalog_jobs = int(conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+        source_records = int(conn.execute("SELECT COUNT(*) FROM job_source_records").fetchone()[0])
+        pipeline_runs = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM pipeline_runs WHERE candidate_id = ?",
+                [candidate_id],
+            ).fetchone()[0]
+        )
+        suggestion_platform_rows = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT platform, COUNT(*) AS count
+                FROM suggestion_leads
+                WHERE candidate_id = ?
+                GROUP BY platform
+                ORDER BY count DESC, platform ASC
+                """,
+                [candidate_id],
+            )
+        ]
+        suggestion_status_rows = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM suggestion_leads
+                WHERE candidate_id = ?
+                GROUP BY status
+                ORDER BY count DESC, status ASC
+                """,
+                [candidate_id],
+            )
+        ]
+        conn.close()
+    except Exception:
+        return {
+            "catalog_jobs": 0,
+            "source_records": 0,
+            "pipeline_runs": 0,
+            "suggestion_total": 0,
+            "suggestion_platform_counts": {},
+            "suggestion_status_counts": {},
+        }
+
+    suggestion_platform_counts = {
+        str(row.get("platform") or "").strip(): int(row.get("count") or 0)
+        for row in suggestion_platform_rows
+        if str(row.get("platform") or "").strip()
+    }
+    suggestion_status_counts = {
+        str(row.get("status") or "").strip(): int(row.get("count") or 0)
+        for row in suggestion_status_rows
+        if str(row.get("status") or "").strip()
+    }
+
+    return {
+        "catalog_jobs": catalog_jobs,
+        "source_records": source_records,
+        "pipeline_runs": pipeline_runs,
+        "suggestion_total": sum(suggestion_status_counts.values()),
+        "suggestion_platform_counts": suggestion_platform_counts,
+        "suggestion_status_counts": suggestion_status_counts,
+    }
+
+
 def build_payload(
     out_dir: Path,
     state_path: Optional[Path] = None,
@@ -383,6 +467,10 @@ def build_payload(
     )
     thresholds = _load_thresholds()
     jobs_raw, events = _load_jobs_and_events_from_primary_db(
+        primary_db_path_ or _PRIMARY_DB_PATH,
+        candidate_id,
+    )
+    db_counts = _load_operational_db_counts(
         primary_db_path_ or _PRIMARY_DB_PATH,
         candidate_id,
     )
@@ -421,10 +509,33 @@ def build_payload(
 
         jobs.append(row)
 
+    app_status_counts: Dict[str, int] = {}
+    for entry in app_state.values():
+        status = str(entry.get("status") or "").strip()
+        if not status:
+            continue
+        app_status_counts[status] = app_status_counts.get(status, 0) + 1
+
+    actionable_jobs = sum(1 for row in jobs if row.get("final_decision") in _ACTIONABLE)
+    jobs_with_apply_url = sum(
+        1
+        for row in jobs
+        if row.get("final_decision") in _ACTIONABLE
+        and (row.get("application_url") or row.get("source_url"))
+    )
+
     return {
         "jobs": jobs,
         "events": events,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "evaluated_jobs": len(jobs),
+            "actionable_jobs": actionable_jobs,
+            "jobs_with_apply_url": jobs_with_apply_url,
+            "tracked_applications": sum(app_status_counts.values()),
+            "application_status_counts": app_status_counts,
+            **db_counts,
+        },
     }
 
 

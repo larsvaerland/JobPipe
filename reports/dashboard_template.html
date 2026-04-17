@@ -44,6 +44,7 @@ header h1 span { color:var(--green); }
 .badge-amber { background:var(--amber-bg); color:var(--amber); }
 .badge-purple { background:var(--purple-bg); color:var(--purple); }
 .badge-red { background:var(--red-bg); color:var(--red); }
+.badge-gray { background:rgba(107,114,128,0.15); color:#cbd5e1; }
 
 /* Urgent banner */
 .urgent-banner { background:var(--red-bg); border:1px solid rgba(248,113,113,0.3); border-radius:10px; padding:14px 20px; margin-bottom:24px; display:none; }
@@ -380,27 +381,104 @@ function render() {
   renderEmployers();
 }
 
+function getSummary() {
+  const summary = DATA.summary || {};
+  const appCounts = summary.application_status_counts || {};
+  const trackedApplications = summary.tracked_applications != null
+    ? summary.tracked_applications
+    : Object.values(appCounts).reduce((acc, n) => acc + Number(n || 0), 0);
+  const evaluatedJobs = summary.evaluated_jobs != null ? summary.evaluated_jobs : DATA.jobs.length;
+  const actionableJobs = summary.actionable_jobs != null
+    ? summary.actionable_jobs
+    : DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP').length;
+  const jobsWithApplyUrl = summary.jobs_with_apply_url != null
+    ? summary.jobs_with_apply_url
+    : DATA.jobs.filter(j => j.final_decision && j.final_decision !== 'SKIP' && (j.application_url || j.source_url)).length;
+
+  return {
+    evaluated_jobs: evaluatedJobs,
+    actionable_jobs: actionableJobs,
+    jobs_with_apply_url: jobsWithApplyUrl,
+    tracked_applications: trackedApplications,
+    application_status_counts: appCounts,
+    suggestion_total: Number(summary.suggestion_total || 0),
+    suggestion_platform_counts: summary.suggestion_platform_counts || {},
+    suggestion_status_counts: summary.suggestion_status_counts || {},
+    catalog_jobs: Number(summary.catalog_jobs || 0),
+    source_records: Number(summary.source_records || 0),
+    pipeline_runs: Number(summary.pipeline_runs || 0),
+  };
+}
+
 // ── Meta ──
 function renderMeta() {
   const d = new Date(DATA.generated_at);
+  const s = getSummary();
+  const parts = [
+    `${s.evaluated_jobs.toLocaleString()} evaluated jobs`,
+    `${s.tracked_applications.toLocaleString()} tracked applications`,
+    `${s.suggestion_total.toLocaleString()} queued leads`,
+    `Generated ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`,
+  ];
   document.getElementById('metaInfo').textContent =
-    `${DATA.jobs.length.toLocaleString()} jobs \u00b7 Generated ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+    parts.join(' \u00b7 ');
 }
 
 // ── Badges ──
 function renderBadges() {
+  const s = getSummary();
   const counts = {};
   DATA.jobs.forEach(j => { counts[j.final_decision] = (counts[j.final_decision]||0)+1; });
   const el = document.getElementById('badges');
-  const items = [
+  const decisionItems = [
     ['APPLY_STRONGLY', 'badge-green'],
     ['APPLY', 'badge-blue'],
     ['REVIEW_HIGH', 'badge-amber'],
     ['REVIEW_LOW', 'badge-purple'],
   ];
-  el.innerHTML = items.map(([d,cls]) =>
+  const statusOrder = [
+    ['interview', 'Interview', 'badge-green'],
+    ['applied', 'Applied', 'badge-blue'],
+    ['shortlisted', 'Shortlisted', 'badge-amber'],
+    ['called', 'Called', 'badge-purple'],
+    ['second_interview', '2nd interview', 'badge-purple'],
+    ['accepted', 'Accepted', 'badge-green'],
+    ['rejected', 'Rejected', 'badge-red'],
+    ['dismissed', 'Dismissed', 'badge-gray'],
+  ];
+  const suggestionOrder = [
+    ['queued', 'Queued leads', 'badge-purple'],
+    ['fetched', 'Fetched leads', 'badge-blue'],
+    ['failed', 'Lead fetch failures', 'badge-red'],
+  ];
+
+  const decisionHtml = decisionItems.map(([d,cls]) =>
     `<span class="badge ${cls}" style="cursor:pointer" title="Filter to ${d.replace('_',' ')}" onclick="setFilter('${d}')">${counts[d]||0} ${d.replace('_',' ')}</span>`
   ).join('');
+
+  const statusHtml = statusOrder
+    .filter(([key]) => (s.application_status_counts[key] || 0) > 0)
+    .map(([key, label, cls]) =>
+      `<span class="badge ${cls}" title="Tracked application status">${(s.application_status_counts[key]||0).toLocaleString()} ${label}</span>`
+    )
+    .join('');
+
+  const suggestionHtml = suggestionOrder
+    .filter(([key]) => (s.suggestion_status_counts[key] || 0) > 0)
+    .map(([key, label, cls]) =>
+      `<span class="badge ${cls}" title="Suggestion lead queue">${(s.suggestion_status_counts[key]||0).toLocaleString()} ${label}</span>`
+    )
+    .join('');
+
+  const topPlatform = Object.entries(s.suggestion_platform_counts)
+    .sort((a,b) => b[1] - a[1])[0];
+  const platformHtml = topPlatform
+    ? `<span class="badge badge-gray" title="Top suggestion lead source">${Number(topPlatform[1] || 0).toLocaleString()} ${esc(topPlatform[0])} leads</span>`
+    : '';
+
+  const catalogHtml = `<span class="badge badge-gray" title="Canonical job catalog size">${s.catalog_jobs.toLocaleString()} catalog jobs</span>`;
+
+  el.innerHTML = decisionHtml + statusHtml + suggestionHtml + platformHtml + catalogHtml;
 }
 
 function setFilter(val) {

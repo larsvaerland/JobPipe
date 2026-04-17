@@ -1300,7 +1300,7 @@ def scan_suggestions(
     # Write to queue
     if new_queued and not dry_run:
         try:
-            conn = connect_primary_db(db_path)
+            conn = catalog_conn or connect_primary_db(db_path)
             try:
                 ensure_candidate(conn, candidate_id=candidate_id)
                 now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -1331,18 +1331,17 @@ def scan_suggestions(
                     )
                 conn.commit()
             finally:
-                conn.close()
+                if catalog_conn is None:
+                    conn.close()
         except Exception as e:
             if verbose:
                 print(f"Warning: primary DB suggestion write failed: {e}", file=sys.stderr)
         finally:
             if catalog_conn is not None:
                 try:
-                    catalog_conn.commit()
                     catalog_conn.close()
                 except Exception:
                     pass
-                catalog_conn = None
 
         suggested_path.parent.mkdir(parents=True, exist_ok=True)
         with open(suggested_path, "a", encoding="utf-8") as f:
