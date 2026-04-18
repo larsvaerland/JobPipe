@@ -202,7 +202,7 @@ Outcomes:
 
 ## Topic 10. Stable Baseline Commit And Dashboard Redesign Start
 
-Status: next
+Status: done on 2026-04-18
 
 Scope:
 - commit the cleaned, validated baseline before the larger dashboard redesign
@@ -219,3 +219,434 @@ Validation:
 - `pytest`
 - `git status --short` reviewed for intentional contents only
 - canonical docs and plan updated before commit
+
+Outcomes:
+- the canonical docs now describe the companion-project split consistently across `README.md`, `docs/architecture-plan.md`, and `DASHBOARD_SPEC.md`
+- the JobSync integration seam is now documented as a narrow contract instead of an implicit repo-sprawl plan
+- canonical docs no longer depend on `.jobpipe_tmp` research paths
+- baseline validation passed before commit prep: `compile_check.py`, `pytest`, and manual tree review
+
+## Topic 11. JobSync Integration And Shared Workflow Status
+
+Status: next
+
+Scope:
+- keep JobPipe stable while defining a narrow, durable integration seam with JobSync
+- align application workflow vocabulary across systems without forcing full status parity
+- make JobPipe the curation/status-inference engine and JobSync the operator workspace
+
+Implementation targets:
+- normalize JobPipe `app_status` to the shared workflow status set while preserving `app_stages`, `app_outcome`, and events internally
+- add a JobPipe status-sync client that posts normalized status events to JobSync
+- add JobSync external identity fields and upsert-by-external-id support for imported jobs
+- add JobSync status ingestion endpoint with manual-override protection
+- replace JobSync seeded statuses with the shared workflow set and remove row-order assumptions in UI logic
+- keep JobSync automation discovery state separate from main application workflow status
+
+Shared workflow statuses:
+- `draft`
+- `applied`
+- `interview`
+- `offer`
+- `rejected`
+- `dismissed`
+
+JobPipe normalization:
+- `shortlisted` -> `draft`
+- `called` -> `draft`
+- `applied` -> `applied`
+- `interview` -> `interview`
+- `second_interview` -> `interview`
+- `accepted` -> `offer`
+- `rejected` -> `rejected`
+- `dismissed` -> `dismissed`
+
+Execution tickets:
+
+1. JobPipe ticket
+- add shared-status normalization helper to `mark_status.py`
+- ensure `export_dashboard.py` exposes normalized `app_status`
+- keep Gmail scan behavior unchanged except for normalized outward-facing status
+- add `sync_jobsync_status.py` for one-way normalized status sync
+
+2. JobSync backend ticket
+- extend `Job` with external identity and sync metadata fields
+- add migration and TypeScript model updates
+- add curated-job import endpoint
+- add normalized status-sync endpoint with `manual_override` handling
+
+3. JobSync UI cleanup ticket
+- replace seeded statuses with the shared set
+- remove form assumptions based on status row ordering
+- centralize status helpers/grouping
+- replace hardcoded status checks in jobs table/detail/filter surfaces
+- surface external provenance lightly in job detail
+
+Validation:
+- JobPipe exported `app_status` uses only the shared workflow statuses
+- one imported JobPipe job upserts into JobSync by stable external identity
+- one Gmail-derived JobPipe status update reaches the correct JobSync job
+- repeated sync is idempotent
+- manual override in JobSync prevents silent overwrite
+- JobSync automation discovery state remains separate from application workflow status
+
+### Detailed Execution Checklist
+
+#### Task 1. Normalize JobPipe status
+
+Files:
+- `jobpipe/cli/mark_status.py`
+
+Do:
+- add `normalize_shared_status(entry)`
+- map internal stage/outcome detail to the shared workflow statuses:
+  - `shortlisted` -> `draft`
+  - `called` -> `draft`
+  - `applied` -> `applied`
+  - `interview` -> `interview`
+  - `second_interview` -> `interview`
+  - `accepted` -> `offer`
+  - `rejected` -> `rejected`
+  - `dismissed` -> `dismissed`
+
+Done when:
+- any application-state entry can produce one normalized shared status
+- internal `stages`, `outcome`, notes, and email metadata remain unchanged
+
+Risk / notes:
+- keep this additive only; do not weaken the current richer state model
+
+#### Task 2. Export normalized status in JobPipe payload
+
+Files:
+- `jobpipe/cli/export_dashboard.py`
+
+Do:
+- make exported `app_status` use the normalization helper
+- keep:
+  - `app_stages`
+  - `app_outcome`
+  - `app_notes`
+  - `app_updated_at`
+
+Done when:
+- dashboard payload exposes only shared workflow statuses at top level
+- rich application detail still survives in the payload
+
+Risk / notes:
+- avoid breaking any existing dashboard assumptions that still rely on status labels
+
+#### Task 3. Align Gmail scanner output with normalized status
+
+Files:
+- `jobpipe/cli/scan_gmail.py`
+
+Do:
+- keep current email classification and monotonic upgrade behavior
+- ensure any outward-facing status for sync/export is normalized to the shared vocabulary
+
+Done when:
+- Gmail scan still detects `applied`, `interview`, and `rejected`
+- exported/shared status is always one of:
+  - `draft`
+  - `applied`
+  - `interview`
+  - `offer`
+  - `rejected`
+  - `dismissed`
+
+Risk / notes:
+- do not weaken current progression safeguards
+
+#### Task 4. Add JobPipe -> JobSync status sync client
+
+Files:
+- `jobpipe/cli/sync_jobsync_status.py`
+
+Do:
+- create a one-way sync script
+- read changed JobPipe application-state entries
+- POST normalized status events to JobSync
+- persist a sync checkpoint under the JobPipe private data root
+
+Done when:
+- one changed JobPipe status can be sent once and skipped on rerun
+- sync is idempotent
+
+Risk / notes:
+- use explicit external IDs only; do not introduce fuzzy matching
+
+#### Task 5. Add external identity fields to JobSync jobs
+
+Files:
+- `prisma/schema.prisma`
+
+Do:
+- add to `Job`:
+  - `externalSource`
+  - `externalId`
+  - `externalStatusSource`
+  - `externalStatusAt`
+  - `externalStatusMeta`
+  - `syncMode`
+- add a unique index on `[externalSource, externalId]`
+
+Done when:
+- imported JobPipe jobs can be addressed deterministically
+
+Risk / notes:
+- keep new fields nullable for a low-risk migration
+
+#### Task 6. Create JobSync migration
+
+Files:
+- `prisma/migrations/...`
+
+Do:
+- generate a migration for the new `Job` fields
+
+Done when:
+- existing JobSync databases upgrade cleanly
+
+Risk / notes:
+- validate the uniqueness constraint against any existing imported test rows
+
+#### Task 7. Update JobSync TypeScript job model
+
+Files:
+- `src/models/job.model.ts`
+
+Do:
+- add new external/sync fields to the TS model
+
+Done when:
+- backend routes and UI can compile with imported job metadata
+
+Risk / notes:
+- keep fields optional initially
+
+#### Task 8. Add curated JobPipe job import endpoint to JobSync
+
+Files:
+- `src/app/api/integrations/jobpipe/jobs/route.ts`
+
+Do:
+- upsert imported curated jobs by `[externalSource, externalId]`
+- map a narrow curated field set from JobPipe into JobSync job records
+
+Done when:
+- the same external job imports idempotently
+
+Risk / notes:
+- do not overmodel JobPipe internals in v1
+
+#### Task 9. Add normalized status sync endpoint to JobSync
+
+Files:
+- `src/app/api/integrations/jobpipe/status/route.ts`
+
+Do:
+- find imported jobs by external identity
+- update workflow status plus external metadata
+- if `syncMode == manual_override`, store metadata but do not overwrite status
+
+Done when:
+- one posted status update changes the correct job
+- manual override blocks overwrite safely
+
+Risk / notes:
+- keep the endpoint deterministic and side-effect-light
+- the endpoint depends on the shared `JobStatus` rows already existing in JobSync, including `dismissed`; do not wire the sync client before Task 10 is complete
+
+#### Task 10. Replace JobSync seeded workflow statuses
+
+Files:
+- `src/lib/constants.ts`
+- `src/actions/auth.actions.ts`
+
+Do:
+- seed the shared workflow statuses:
+  - `draft`
+  - `applied`
+  - `interview`
+  - `offer`
+  - `rejected`
+  - `dismissed`
+- optionally keep admin-only:
+  - `expired`
+  - `archived`
+
+Done when:
+- new users receive the shared workflow status set
+
+Risk / notes:
+- do not mix automation discovery state into the seeded application statuses
+- ensure the seeded/shared status set includes every value JobPipe can emit:
+  - `draft`
+  - `applied`
+  - `interview`
+  - `offer`
+  - `rejected`
+  - `dismissed`
+
+#### Task 11. Remove JobSync status row-order assumptions
+
+Files:
+- `src/components/myjobs/AddJob.tsx`
+
+Do:
+- stop assuming status row order implies workflow meaning
+- look statuses up explicitly by `value`
+
+Done when:
+- add/edit job flow works regardless of DB row ordering
+
+Risk / notes:
+- this is a subtle but high-value cleanup
+
+#### Task 12. Centralize JobSync status logic
+
+Files:
+- `src/lib/job-status.ts`
+
+Do:
+- add helpers such as:
+  - `getStatusByValue`
+  - `isDraftLike`
+  - `isInterviewLike`
+  - `isTerminal`
+  - `isAdminOnly`
+
+Done when:
+- UI status behavior no longer depends on scattered literal-string checks
+
+Risk / notes:
+- keep this small; do not turn it into an abstraction framework
+
+#### Task 13. Clean up JobSync jobs filter logic
+
+Files:
+- `src/components/myjobs/JobsContainer.tsx`
+
+Do:
+- replace current hardcoded workflow filter logic with shared-status-aware logic
+
+Done when:
+- filters still behave correctly after the status set changes
+
+Risk / notes:
+- preserve current usability and scan speed
+
+#### Task 14. Clean up JobSync table/detail status rendering
+
+Files:
+- `src/components/myjobs/MyJobsTable.tsx`
+- `src/components/myjobs/JobDetails.tsx`
+
+Do:
+- replace direct status string checks with helper-driven rendering
+- keep `expired` as an administrative overlay, not a main workflow state
+- optionally surface sync provenance lightly
+
+Done when:
+- badge colors, labels, and expired behavior remain correct
+
+Risk / notes:
+- make sure `offer` reads as the final positive workflow state
+
+#### Task 15. Keep automation discovery state separate
+
+Files:
+- `src/lib/scraper/mapper.ts`
+- related automation UI files as needed
+
+Do:
+- leave automation discovery states such as `new` separate from main application workflow status
+
+Done when:
+- discovery queue and tracked-job workflow state are still distinct concepts
+
+Risk / notes:
+- mixing these models will make the system harder to reason about
+
+#### Task 16. Add manual override behavior in JobSync
+
+Files:
+- `src/actions/job.actions.ts`
+- status UI files as needed
+
+Do:
+- when the user manually changes the status of an imported job, set `syncMode = manual_override`
+- optionally add a later way to resume external sync
+
+Done when:
+- external sync cannot silently overwrite explicit user choices
+
+Risk / notes:
+- this is the main safeguard against mailbox-driven noise
+
+#### Task 17. Add provenance display in JobSync
+
+Files:
+- `src/components/myjobs/JobDetails.tsx`
+
+Do:
+- show lightweight provenance such as:
+  - source = JobPipe
+  - last synced at
+  - last synced from Gmail or another source
+
+Done when:
+- users can distinguish external updates from manual edits
+
+Risk / notes:
+- keep this lightweight, not a debug dump
+
+#### Task 18. End-to-end validation
+
+Files:
+- JobPipe tests and smoke flow
+- JobSync tests where appropriate
+
+Do:
+- test normalized export
+- test curated job import upsert
+- test status sync
+- test manual override
+- test idempotent rerun
+
+Done when:
+- one representative job can move through:
+  - imported as `draft`
+  - synced to `applied`
+  - synced to `interview`
+  - synced to `rejected` or `offer`
+
+Risk / notes:
+- validate one realistic path before broadening scope
+
+### Suggested Execution Order
+
+1. Task 1
+2. Task 2
+3. Task 5
+4. Task 6
+5. Task 7
+6. Task 9
+7. Task 4
+8. Task 10
+9. Task 11
+10. Task 12
+11. Task 13
+12. Task 14
+13. Task 16
+14. Task 17
+15. Task 18
+
+### First Milestone
+
+The first real proof point is:
+
+- JobPipe exports normalized shared status
+- JobSync can receive a status update for an imported job by external ID
+- one JobPipe Gmail-derived update changes the correct JobSync job

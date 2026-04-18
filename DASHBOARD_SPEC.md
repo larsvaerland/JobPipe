@@ -184,6 +184,38 @@ Every job record should carry these groups of fields.
 - `app_updated_at`
 - `app_source`
 
+#### Shared Workflow Status
+
+For JobPipe-only debugging, keep the richer application fields above. For any operator-facing integration contract, `app_status` must normalize to the shared workflow vocabulary:
+
+- `draft`
+- `applied`
+- `interview`
+- `offer`
+- `rejected`
+- `dismissed`
+
+Normalization rules:
+
+1. if `app_outcome == accepted`, expose `app_status = offer`
+2. if `app_outcome == rejected`, expose `app_status = rejected`
+3. if `app_outcome == dismissed`, expose `app_status = dismissed`
+4. else if `app_stages` contains `second_interview`, expose `app_status = interview`
+5. else if `app_stages` contains `interview`, expose `app_status = interview`
+6. else if `app_stages` contains `applied`, expose `app_status = applied`
+7. else if `app_stages` contains `called`, expose `app_status = draft`
+8. else if `app_stages` contains `shortlisted`, expose `app_status = draft`
+9. else expose `app_status = null` internally; imported external-workspace jobs may coerce this to `draft`
+
+Do not throw away:
+
+- `app_stages`
+- `app_outcome`
+- `app_notes`
+- `events`
+
+The normalized status exists to align JobPipe with the main operator workflow, not to replace the richer internal trace.
+
 ### Pack summary
 
 - `generated_documents`
@@ -258,6 +290,66 @@ Manual pass:
 Purpose:
 - daily action list
 - status updates
+
+## JobSync Integration Contract
+
+If JobSync becomes the main operator app, JobPipe should integrate with it through explicit import and status-sync contracts instead of trying to mirror the full dashboard payload.
+
+### Curated Job Import Payload
+
+Import only curated jobs that have already survived JobPipe decisioning, for example `APPLY`, `APPLY_STRONGLY`, and optionally `REVIEW_HIGH`.
+
+Minimum record:
+
+```json
+{
+  "externalSource": "jobpipe",
+  "externalId": "24dc9013-65ac-4c75-be39-63867b0ed111",
+  "runId": "2026-04-18T09-44-12Z",
+  "title": "Produktleder",
+  "company": "Politiets IT-enhet",
+  "location": "Oslo, Oslo",
+  "jobUrl": "https://example.com/job",
+  "applicationUrl": "https://example.com/apply",
+  "description": "...",
+  "jobSource": "nav",
+  "status": "draft",
+  "decision": "APPLY_STRONGLY",
+  "fitScore": 86,
+  "pivotScore": 85,
+  "triageExplanation": "...",
+  "artifactsPath": "C:\\\\Users\\\\larsv\\\\JobPipeData\\\\out_runs\\\\...",
+  "packReady": false,
+  "packDocxReady": false,
+  "updatedAt": "2026-04-18T09:44:12Z"
+}
+```
+
+### Status Sync Payload
+
+Normalized JobPipe status events should be emitted separately from curated-job import:
+
+```json
+{
+  "externalSource": "jobpipe",
+  "externalId": "24dc9013-65ac-4c75-be39-63867b0ed111",
+  "status": "interview",
+  "occurredAt": "2026-04-18T10:42:00Z",
+  "source": "gmail",
+  "notes": "Interview invitation detected",
+  "emailSubject": "Invitation to interview",
+  "emailDate": "2026-04-18"
+}
+```
+
+### Conflict Rule
+
+When a downstream workspace supports manual override, external JobPipe status sync must obey this rule:
+
+1. if the external job record is in normal sync mode, overwrite the shared workflow status
+2. if the external job record is in manual override mode, preserve the local status and only store external metadata
+
+The goal is to keep mailbox-driven automation valuable without trampling explicit user actions.
 - deadline triage
 - pack-ready visibility
 
