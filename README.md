@@ -139,6 +139,7 @@ For easiest maintenance:
 2. keep `jobsync` as its own git repo or deployment directory
 3. keep `reactive-resume` as its own deployment directory, and only clone the source repo if you intend to modify it
 4. keep the NAV Apps Script in its own git repo so Sheet/API code does not leak into the JobPipe repo
+5. record sibling-repo revisions in `COMPANION_REVISIONS.json` when a JobPipe checkpoint depends on local integration state
 
 This is the normal developer setup for multi-project local stacks: separate repos or stack directories under one parent folder, not one repo containing all upstream codebases.
 
@@ -184,6 +185,8 @@ Use these rules so the projects do not pollute each other:
    - no JobPipe private data, no JobSync code
 
 The integration seam between repos should be files, payload contracts, and HTTP endpoints, not copied modules.
+
+When local sibling changes are needed, checkpoint them in the sibling repo first, then update `COMPANION_REVISIONS.json` in JobPipe to record the aligned SHAs. That keeps the stack auditable without turning JobPipe into a vendor repo.
 
 ### Recommended Local Install Order
 

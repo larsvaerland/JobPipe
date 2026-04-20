@@ -1668,6 +1668,17 @@ Why:
 2. local changes are attributable to the correct project
 3. you avoid turning JobPipe into an umbrella vendor repo
 
+### Companion Revision Pins
+
+When a JobPipe checkpoint depends on local sibling-repo state, record that dependency in `COMPANION_REVISIONS.json`.
+
+Rules:
+
+1. record sibling repo `remote`, `branch`, and `commit`, not copied source code
+2. if a sibling change is local-only, checkpoint it in the sibling repo itself before updating the JobPipe pin file
+3. use the JobPipe commit plus `COMPANION_REVISIONS.json` as the auditable stack baseline
+4. do not treat the pin file as permission to widen the integration seam or vendor upstream code into JobPipe
+
 Recommended local layout:
 
 ```text
@@ -1709,6 +1720,7 @@ Use this rule set:
 1. If you will change source code, keep a sibling repo.
 2. If you only need to run the app, keep a deployment folder with compose/env/volume data.
 3. Do not copy upstream code into `agentic_jobpilot` unless you intend to fork and own long-term divergence.
+4. If a JobPipe checkpoint depends on sibling changes, record the sibling SHA in `COMPANION_REVISIONS.json`.
 
 For the current plan, that means:
 

@@ -20,6 +20,7 @@ jobs_delta.jsonl
 jobs_expired.jsonl
 jobs_state.json
 .jobpipe_tmp/
+prototype/
 configs/calibration/
 
 # Pipeline output artifacts (large, fully regenerable)

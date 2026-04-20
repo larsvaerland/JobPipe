@@ -1,0 +1,34 @@
+{
+  "schema_version": "jobpipe.companion-revisions.v1",
+  "recorded_at": "2026-04-20",
+  "policy": {
+    "mode": "polyrepo",
+    "purpose": "Record the sibling-repo revisions aligned with this JobPipe checkpoint without vendoring companion code into JobPipe.",
+    "rules": [
+      "Keep JobSync and Reactive Resume in their own repos.",
+      "Record sibling commit SHAs here when a JobPipe checkpoint depends on them.",
+      "Checkpoint local-only sibling changes in the sibling repo itself instead of copying that code into JobPipe.",
+      "Do not push sibling-only local checkpoints upstream unless they are intentionally prepared for that repo."
+    ]
+  },
+  "companions": [
+    {
+      "id": "jobsync",
+      "path": "../jobsync",
+      "remote": "https://github.com/Gsync/jobsync.git",
+      "branch": "codex/jobpipe-integration-baseline",
+      "commit": "4d7ee128425a4b8013737541ddf0d579ad63c2e2",
+      "sync_role": "JobPipe import/apply/authoring integration seam",
+      "status": "local_only_checkpoint"
+    },
+    {
+      "id": "reactive-resume",
+      "path": "../reactive-resume",
+      "remote": "https://github.com/AmruthPillai/Reactive-Resume.git",
+      "branch": "main",
+      "commit": "7df9b1e4b5496dc29889481370f61fea60a4b967",
+      "sync_role": "Resume subsystem baseline",
+      "status": "upstream_clean_baseline"
+    }
+  ]
+}

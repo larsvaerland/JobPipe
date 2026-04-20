@@ -2334,7 +2334,7 @@ Scope:
 
 Implementation targets:
 - review the current worktree against the roadmap and keep the scope limited to intentional JobPipe source/docs/tests
-- stop ignoring canonical audit/status docs that the roadmap now depends on
+- keep local operational audit/status logs private while making the tracked docs self-contained and auditable
 - run full validation for the current baseline instead of relying only on topic-local test slices
 - create one clean git checkpoint on top of the documented baseline
 
@@ -2351,7 +2351,7 @@ Depends on:
 - Topic 24
 
 Do:
-- make sure canonical repo-history docs that govern execution and auditability are tracked instead of ignored
+- make sure the tracked roadmap and architecture docs are self-contained even while local operational logs remain ignored for privacy
 - record the cleanup/checkpoint work explicitly in the roadmap and status docs
 
 ### Task 25.2. Baseline validation pass
@@ -2380,6 +2380,9 @@ Runtime progress (2026-04-20 — Topic 25 cleanup and checkpoint closeout):
 - The current worktree was reviewed as a coherent Topics 11-24 baseline rather than mixed scratch state:
   - source/docs/tests are included
   - private/generated data stays ignored
+- `COMPANION_REVISIONS.json` now records the sibling repo revisions aligned with the current JobPipe continuation point instead of relying on memory or copied code:
+  - local `jobsync` checkpoint on `codex/jobpipe-integration-baseline` at `4d7ee12`
+  - clean `reactive-resume` baseline at `7df9b1e`
 - Full baseline validation passed:
   - `python -m pytest -q`
   - `python compile_check.py`
@@ -2430,6 +2433,7 @@ Needed before:
 
 Source prototype:
 - a local prototype folder outside the repo containing CV-tailoring and cover-letter-generation experiments
+- if a `prototype/` folder is created under the repo for temporary comparison work, it must remain ignored and stay out of git
 
 Backlog intent:
 - treat this as a later bounded topic candidate after the current outcome/calibration arc, not as ad hoc inspiration mixed into the live runtime
