@@ -1,0 +1,44 @@
+{
+  "basics": {
+    "name": "Sara Eide",
+    "email": "sara.eide@example.test",
+    "summary": "Change and governance profile moving from regulated private-sector environments toward public-sector digitalization and service roles."
+  },
+  "work": [
+    {
+      "name": "Meridian Financial Services",
+      "position": "Change and Governance Lead",
+      "startDate": "2020-01-01",
+      "endDate": "2026-03-31",
+      "summary": "Led implementation coordination and governance routines in a regulated environment.",
+      "highlights": [
+        "Coordinated cross-functional process changes with strong audit and compliance pressure.",
+        "Built governance routines and reporting that improved decision clarity across service, risk, and operations."
+      ]
+    },
+    {
+      "name": "Nordic Processing Group",
+      "position": "PMO Analyst",
+      "startDate": "2016-01-01",
+      "endDate": "2019-12-31",
+      "summary": "Supported portfolio follow-up and transformation reporting.",
+      "highlights": [
+        "Supported portfolio follow-up and milestone discipline across transformation initiatives.",
+        "Improved coordination between business owners and delivery teams by clarifying decision gates."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Operating model governance refresh",
+      "description": "Introduced clearer decision gates, reporting, and ownership for cross-functional change work."
+    }
+  ],
+  "education": [
+    {
+      "institution": "University of Oslo",
+      "studyType": "MSc",
+      "area": "Organization and Leadership"
+    }
+  ]
+}

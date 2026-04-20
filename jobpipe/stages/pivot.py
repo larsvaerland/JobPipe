@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 from agents import Agent
-from jobpipe.core.schema import JobContext, PivotOut
+from jobpipe.model.schema import JobContext, PivotOut
 from jobpipe.stages._common import run_agent
 
 PIVOT_INSTRUCTIONS = """

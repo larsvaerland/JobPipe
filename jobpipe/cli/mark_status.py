@@ -46,7 +46,7 @@ from jobpipe.core.io import load_env_file
 
 load_env_file(".env")
 
-from jobpipe.core.paths import application_state_path, primary_db_path
+from jobpipe.runtime.paths import application_state_path, primary_db_path
 from jobpipe.core.primary_db import (
     connect_primary_db,
     delete_application_tracking,

@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "7"
 
 
 def _json_text(value: Any) -> str:
@@ -270,6 +270,29 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_job_source_records_job_id
             ON job_source_records(job_id, is_active, last_seen_at);
 
+        CREATE TABLE IF NOT EXISTS job_replay_inputs (
+            job_id TEXT PRIMARY KEY,
+            source_name TEXT NOT NULL DEFAULT '',
+            source_job_key TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            application_url TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            employer TEXT NOT NULL DEFAULT '',
+            work_city TEXT NOT NULL DEFAULT '',
+            work_county TEXT NOT NULL DEFAULT '',
+            work_postalCode TEXT NOT NULL DEFAULT '',
+            applicationDue TEXT NOT NULL DEFAULT '',
+            description_text TEXT NOT NULL DEFAULT '',
+            description_html TEXT NOT NULL DEFAULT '',
+            input_payload_json TEXT NOT NULL DEFAULT '{}',
+            input_hash TEXT NOT NULL DEFAULT '',
+            captured_from_run_id TEXT NOT NULL DEFAULT '',
+            captured_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_replay_inputs_source_key
+            ON job_replay_inputs(source_name, source_job_key, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS pipeline_runs (
             run_id TEXT PRIMARY KEY,
             candidate_id TEXT NOT NULL,
@@ -359,6 +382,231 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_job_run_events_candidate_job
             ON job_run_events(candidate_id, job_id, run_mtime);
+
+        CREATE TABLE IF NOT EXISTS job_claims (
+            job_id TEXT NOT NULL,
+            claim_id TEXT NOT NULL,
+            source_record_id TEXT NOT NULL DEFAULT '',
+            claim_type TEXT NOT NULL,
+            claim_strength TEXT NOT NULL,
+            claim_subject_type TEXT NOT NULL,
+            normalized_key TEXT NOT NULL DEFAULT '',
+            normalized_label TEXT NOT NULL DEFAULT '',
+            claim_text TEXT NOT NULL DEFAULT '',
+            source_basis TEXT NOT NULL DEFAULT '',
+            source_section TEXT NOT NULL DEFAULT '',
+            evidence_span TEXT NOT NULL DEFAULT '',
+            confidence_score REAL,
+            importance_score REAL,
+            claim_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (job_id, claim_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_claims_job_importance
+            ON job_claims(job_id, importance_score DESC, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS job_selection_signals (
+            job_id TEXT NOT NULL,
+            signal_id TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            signal_label TEXT NOT NULL,
+            selection_stage TEXT NOT NULL,
+            signal_strength TEXT NOT NULL,
+            normalized_key TEXT NOT NULL DEFAULT '',
+            evidence_required TEXT NOT NULL DEFAULT '',
+            confidence_score REAL,
+            importance_score REAL,
+            source_basis TEXT NOT NULL DEFAULT '',
+            signal_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (job_id, signal_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_selection_signals_job_stage
+            ON job_selection_signals(job_id, selection_stage, importance_score DESC);
+
+        CREATE TABLE IF NOT EXISTS job_selection_assessments (
+            candidate_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            evaluation_id TEXT NOT NULL DEFAULT '',
+            structural_pass INTEGER NOT NULL DEFAULT 0,
+            screenability_score INTEGER,
+            title_continuity_score INTEGER,
+            domain_continuity_score INTEGER,
+            ambiguity_risk_score INTEGER,
+            evidence_burden_score INTEGER,
+            selection_risk_level TEXT NOT NULL DEFAULT '',
+            likely_rejection_vectors_json TEXT NOT NULL DEFAULT '[]',
+            mitigation_moves_json TEXT NOT NULL DEFAULT '[]',
+            assessment_reason TEXT NOT NULL DEFAULT '',
+            assessment_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, job_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_selection_assessments_candidate_risk
+            ON job_selection_assessments(candidate_id, selection_risk_level, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS job_decision_tables (
+            candidate_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            evaluation_id TEXT NOT NULL DEFAULT '',
+            can_do_level TEXT NOT NULL DEFAULT '',
+            can_do_score INTEGER,
+            can_do_reason TEXT NOT NULL DEFAULT '',
+            can_do_supporting_points_json TEXT NOT NULL DEFAULT '[]',
+            can_do_risk_points_json TEXT NOT NULL DEFAULT '[]',
+            can_get_level TEXT NOT NULL DEFAULT '',
+            can_get_score INTEGER,
+            can_get_reason TEXT NOT NULL DEFAULT '',
+            can_get_supporting_points_json TEXT NOT NULL DEFAULT '[]',
+            can_get_risk_points_json TEXT NOT NULL DEFAULT '[]',
+            should_want_level TEXT NOT NULL DEFAULT '',
+            should_want_score INTEGER,
+            should_want_reason TEXT NOT NULL DEFAULT '',
+            should_want_supporting_points_json TEXT NOT NULL DEFAULT '[]',
+            should_want_risk_points_json TEXT NOT NULL DEFAULT '[]',
+            can_explain_level TEXT NOT NULL DEFAULT '',
+            can_explain_score INTEGER,
+            can_explain_reason TEXT NOT NULL DEFAULT '',
+            can_explain_supporting_points_json TEXT NOT NULL DEFAULT '[]',
+            can_explain_risk_points_json TEXT NOT NULL DEFAULT '[]',
+            act_now TEXT NOT NULL DEFAULT '',
+            confidence_score REAL,
+            table_reason TEXT NOT NULL DEFAULT '',
+            next_moves_json TEXT NOT NULL DEFAULT '[]',
+            decision_table_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, job_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_decision_tables_candidate_action
+            ON job_decision_tables(candidate_id, act_now, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS candidate_evidence_units (
+            candidate_id TEXT NOT NULL,
+            evidence_unit_id TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_ref TEXT NOT NULL DEFAULT '',
+            role_family_tags_json TEXT NOT NULL DEFAULT '[]',
+            domain_tags_json TEXT NOT NULL DEFAULT '[]',
+            capability_tags_json TEXT NOT NULL DEFAULT '[]',
+            outcome_tags_json TEXT NOT NULL DEFAULT '[]',
+            canonical_text TEXT NOT NULL DEFAULT '',
+            rewrite_policy TEXT NOT NULL DEFAULT '',
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, evidence_unit_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidate_evidence_units_candidate_source
+            ON candidate_evidence_units(candidate_id, source_type, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS candidate_narrative_profiles (
+            narrative_version_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            core_identity_json TEXT NOT NULL DEFAULT '[]',
+            future_direction_json TEXT NOT NULL DEFAULT '[]',
+            motivation_themes_json TEXT NOT NULL DEFAULT '[]',
+            pivot_thesis_json TEXT NOT NULL DEFAULT '[]',
+            proof_themes_json TEXT NOT NULL DEFAULT '[]',
+            story_boundaries_json TEXT NOT NULL DEFAULT '[]',
+            tone_rules_json TEXT NOT NULL DEFAULT '[]',
+            narrative_summary TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidate_narrative_profiles_candidate_active
+            ON candidate_narrative_profiles(candidate_id, is_active, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS narrative_fragments (
+            fragment_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            narrative_version_id TEXT NOT NULL,
+            fragment_type TEXT NOT NULL,
+            audience TEXT NOT NULL,
+            canonical_text TEXT NOT NULL DEFAULT '',
+            rewrite_policy TEXT NOT NULL DEFAULT '',
+            fragment_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_narrative_fragments_candidate_version
+            ON narrative_fragments(candidate_id, narrative_version_id, fragment_type);
+
+        CREATE TABLE IF NOT EXISTS narrative_evidence_links (
+            narrative_link_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            narrative_version_id TEXT NOT NULL,
+            evidence_unit_id TEXT NOT NULL,
+            link_type TEXT NOT NULL,
+            strength_score REAL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_narrative_evidence_links_candidate_version
+            ON narrative_evidence_links(candidate_id, narrative_version_id, evidence_unit_id);
+
+        CREATE TABLE IF NOT EXISTS job_narrative_assessments (
+            candidate_id TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            evaluation_id TEXT NOT NULL DEFAULT '',
+            narrative_version_id TEXT NOT NULL DEFAULT '',
+            direction_fit_score INTEGER,
+            motivation_fit_score INTEGER,
+            pivot_credibility_score INTEGER,
+            story_strength_score INTEGER,
+            misalignment_flags_json TEXT NOT NULL DEFAULT '[]',
+            assessment_reason TEXT NOT NULL DEFAULT '',
+            motivation_brief TEXT NOT NULL DEFAULT '',
+            assessment_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (candidate_id, job_id),
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_narrative_assessments_candidate_story
+            ON job_narrative_assessments(candidate_id, story_strength_score DESC, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS watchlists (
+            watchlist_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            watch_type TEXT NOT NULL,
+            watch_key TEXT NOT NULL,
+            watch_label TEXT NOT NULL DEFAULT '',
+            watch_config_json TEXT NOT NULL DEFAULT '{}',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlists_candidate_type_key
+            ON watchlists(candidate_id, watch_type, watch_key);
+
+        CREATE TABLE IF NOT EXISTS change_events (
+            change_event_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            watchlist_id TEXT NOT NULL DEFAULT '',
+            job_id TEXT NOT NULL DEFAULT '',
+            change_type TEXT NOT NULL,
+            change_summary TEXT NOT NULL DEFAULT '',
+            change_json TEXT NOT NULL DEFAULT '{}',
+            materiality TEXT NOT NULL DEFAULT '',
+            detected_at TEXT NOT NULL DEFAULT '',
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_change_events_candidate_detected
+            ON change_events(candidate_id, detected_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_change_events_candidate_job
+            ON change_events(candidate_id, job_id, detected_at DESC);
         """
     )
 
@@ -726,3 +974,154 @@ def upsert_job_evaluation(conn: sqlite3.Connection, row: Mapping[str, Any]) -> N
 
 def upsert_job_run_event(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
     _upsert(conn, "job_run_events", row, ["candidate_id", "run_id", "job_id"])
+
+
+def upsert_job_replay_input(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["input_payload_json"] = _json_text(payload.get("input_payload_json"))
+    _upsert(conn, "job_replay_inputs", payload, ["job_id"])
+
+
+def replace_job_claims(conn: sqlite3.Connection, job_id: str, rows: Iterable[Mapping[str, Any]]) -> None:
+    conn.execute("DELETE FROM job_claims WHERE job_id = ?", [job_id])
+    for row in rows:
+        payload = dict(row)
+        payload["claim_json"] = _json_text(payload.get("claim_json"))
+        _upsert(conn, "job_claims", payload, ["job_id", "claim_id"])
+
+
+def replace_job_selection_signals(
+    conn: sqlite3.Connection,
+    job_id: str,
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    conn.execute("DELETE FROM job_selection_signals WHERE job_id = ?", [job_id])
+    for row in rows:
+        payload = dict(row)
+        payload["signal_json"] = _json_text(payload.get("signal_json"))
+        _upsert(conn, "job_selection_signals", payload, ["job_id", "signal_id"])
+
+
+def upsert_job_selection_assessment(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["likely_rejection_vectors_json"] = _json_text(payload.get("likely_rejection_vectors_json", []))
+    payload["mitigation_moves_json"] = _json_text(payload.get("mitigation_moves_json", []))
+    payload["assessment_json"] = _json_text(payload.get("assessment_json"))
+    _upsert(conn, "job_selection_assessments", payload, ["candidate_id", "job_id"])
+
+
+def upsert_job_decision_table(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    for field in (
+        "can_do_supporting_points_json",
+        "can_do_risk_points_json",
+        "can_get_supporting_points_json",
+        "can_get_risk_points_json",
+        "should_want_supporting_points_json",
+        "should_want_risk_points_json",
+        "can_explain_supporting_points_json",
+        "can_explain_risk_points_json",
+        "next_moves_json",
+    ):
+        payload[field] = _json_text(payload.get(field, []))
+    payload["decision_table_json"] = _json_text(payload.get("decision_table_json"))
+    _upsert(conn, "job_decision_tables", payload, ["candidate_id", "job_id"])
+
+
+def replace_candidate_evidence_units(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    conn.execute("DELETE FROM candidate_evidence_units WHERE candidate_id = ?", [candidate_id])
+    for row in rows:
+        payload = dict(row)
+        for field in (
+            "role_family_tags_json",
+            "domain_tags_json",
+            "capability_tags_json",
+            "outcome_tags_json",
+        ):
+            payload[field] = _json_text(payload.get(field, []))
+        payload["evidence_json"] = _json_text(payload.get("evidence_json"))
+        _upsert(conn, "candidate_evidence_units", payload, ["candidate_id", "evidence_unit_id"])
+
+
+def upsert_candidate_narrative_profile(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    conn.execute(
+        "UPDATE candidate_narrative_profiles SET is_active = 0, updated_at = ? WHERE candidate_id = ?",
+        [row["updated_at"], row["candidate_id"]],
+    )
+    payload = dict(row)
+    for field in (
+        "core_identity_json",
+        "future_direction_json",
+        "motivation_themes_json",
+        "pivot_thesis_json",
+        "proof_themes_json",
+        "story_boundaries_json",
+        "tone_rules_json",
+    ):
+        payload[field] = _json_text(payload.get(field, []))
+    _upsert(conn, "candidate_narrative_profiles", payload, ["narrative_version_id"])
+
+
+def replace_narrative_fragments(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    narrative_version_id: str,
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    conn.execute(
+        """
+        DELETE FROM narrative_fragments
+        WHERE candidate_id = ? AND narrative_version_id = ?
+        """,
+        [candidate_id, narrative_version_id],
+    )
+    for row in rows:
+        payload = dict(row)
+        payload["fragment_json"] = _json_text(payload.get("fragment_json"))
+        _upsert(conn, "narrative_fragments", payload, ["fragment_id"])
+
+
+def replace_narrative_evidence_links(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    narrative_version_id: str,
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    conn.execute(
+        """
+        DELETE FROM narrative_evidence_links
+        WHERE candidate_id = ? AND narrative_version_id = ?
+        """,
+        [candidate_id, narrative_version_id],
+    )
+    for row in rows:
+        _upsert(conn, "narrative_evidence_links", row, ["narrative_link_id"])
+
+
+def upsert_job_narrative_assessment(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["misalignment_flags_json"] = _json_text(payload.get("misalignment_flags_json", []))
+    payload["assessment_json"] = _json_text(payload.get("assessment_json"))
+    _upsert(conn, "job_narrative_assessments", payload, ["candidate_id", "job_id"])
+
+
+def replace_watchlists(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    conn.execute("DELETE FROM watchlists WHERE candidate_id = ?", [candidate_id])
+    for row in rows:
+        payload = dict(row)
+        payload["watch_config_json"] = _json_text(payload.get("watch_config_json"))
+        _upsert(conn, "watchlists", payload, ["watchlist_id"])
+
+
+def upsert_change_event(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    payload = dict(row)
+    payload["change_json"] = _json_text(payload.get("change_json"))
+    _upsert(conn, "change_events", payload, ["change_event_id"])

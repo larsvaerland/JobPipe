@@ -4,7 +4,7 @@ import json
 
 from agents import Agent
 
-from jobpipe.core.schema import JobContext, ReverseTriageOut
+from jobpipe.model.schema import JobContext, ReverseTriageOut
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 
 REVERSE_INSTRUCTIONS = """

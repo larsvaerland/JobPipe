@@ -296,6 +296,24 @@ The purpose of this spec is to create the data layer that makes future learning 
 
 ---
 
+## Later bounded extension: shadow review loop
+
+After the current public hardening phase, a reasonable next local-first extension is:
+
+1. shadow-only comparison of candidate-local ranking variants
+2. human review of promoted or downgraded cases
+3. explicit outcome-backed promotion discipline
+
+Important rule:
+
+- this should be built on top of the existing primary DB and projection surfaces
+- it should not introduce a second file-based canonical store
+- it should not auto-apply ranking/config changes
+
+This is the main salvageable learning idea from the separate `agentic_jobpilot` worktree, but it should be reimplemented here only when the public hardening roadmap makes room for it.
+
+---
+
 ## First schema slice acceptance criteria
 
 The first implementation slice is successful when:
@@ -305,6 +323,17 @@ The first implementation slice is successful when:
 - the primary DB can store capability gaps, gap evidence, and gap assessments
 - helpers exist for writing these records safely
 - tests cover round-trip persistence of the new tables
+
+Current first public implementation slice:
+
+- deterministic local calibration summary now lives under `jobpipe/decision/`
+- it derives candidate-local calibration patterns from:
+  - feedback events
+  - application outcomes
+  - explicit calibration settings
+- it derives a per-job calibration assessment for dashboard/projection use
+- it does **not** yet mutate calibration settings automatically
+- it does **not** yet train a local model
 
 At that point, JobPipe has the necessary substrate for:
 

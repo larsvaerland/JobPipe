@@ -9,9 +9,19 @@ from agents import Agent
 
 from jobpipe.core.candidate_data import default_candidate_id, load_candidate_resume_json
 from jobpipe.core.io import now_iso
-from jobpipe.core.paths import primary_db_path
+from jobpipe.core.profile_pack import parse_profile_pack
+from jobpipe.decision import (
+    CandidateEvidenceContext,
+    CandidateNarrativeContext,
+    DecisionContext,
+    build_candidate_evidence_context,
+    build_candidate_narrative_context,
+    build_decision_context,
+    persist_candidate_materials,
+)
+from jobpipe.runtime.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, insert_generated_document
-from jobpipe.core.schema import JobContext, ApplicationPackOut
+from jobpipe.model.schema import JobContext, ApplicationPackOut
 from jobpipe.stages._common import run_agent
 
 logger = logging.getLogger(__name__)
@@ -31,8 +41,20 @@ Du har tilgang til:
 - profile_pack: kandidatens profil og mål (narrativ)
 - resume_work: kandidatens arbeidshistorie med highlights (JSON Resume-format)
 - resume_projects: kandidatens prosjektportefølje
+- candidate_evidence_units: strukturerte, kandidatgodkjente evidensenheter
+- selected_evidence_units: evidensenheter valgt for denne rollen
+- decision_table: eksplisitt vurdering av can_do / can_get / should_want / can_explain
+- narrative_profile: kandidatens strukturerte profesjonelle retning og kjernefortelling
+- narrative_fragments: godkjente fortellingsfragmenter for CV/søknad
+- job_narrative_assessment: vurdering av retning, motivasjon og pivot-troverdighet
+- motivation_brief: kort, troverdig begrunnelse for hvorfor rollen gir mening nå
 
-For cv_highlights: velg 4-6 bullets fra resume_work.highlights og/eller resume_projects
+Velg formulering som ligger tett på kandidatens canonical_text og respekter rewrite_policy.
+
+For cv_highlights: velg 4-6 bullets primært fra selected_evidence_units og bruk resume_work / resume_projects
+kun som støtte hvis det trengs.
+
+For cv_highlights: velg 4-6 bullets fra selected_evidence_units og/eller resume_work.highlights / resume_projects
 som matcher jobbkravene best. Omformuler lett for å speile stillingens terminologi —
 men IKKE oppfinn erfaring. Hvert punkt skal stå alene og si noe konkret.
 
@@ -47,7 +69,7 @@ def _load_resume_context() -> dict:
     try:
         data = load_candidate_resume_json(candidate_id=_DEFAULT_CANDIDATE_ID)
         if not data:
-            return {"resume_work": [], "resume_projects": []}
+            return {"resume_work": [], "resume_projects": [], "resume_education": []}
         # Compact work entries: keep name, position, dates, summary, highlights
         work = []
         for w in data.get("work", []):
@@ -64,10 +86,136 @@ def _load_resume_context() -> dict:
             {"name": p.get("name", ""), "description": (p.get("description") or "")[:200]}
             for p in data.get("projects", [])
         ]
-        return {"resume_work": work, "resume_projects": projects}
+        education = [
+            {
+                "institution": e.get("institution", ""),
+                "area": e.get("area", ""),
+                "studyType": e.get("studyType", ""),
+            }
+            for e in data.get("education", [])
+        ]
+        return {"resume_work": work, "resume_projects": projects, "resume_education": education}
     except Exception as exc:  # noqa: BLE001
         logger.warning("[application_pack] could not load candidate resume context: %s", exc)
-        return {"resume_work": [], "resume_projects": []}
+        return {"resume_work": [], "resume_projects": [], "resume_education": []}
+
+
+def _application_pack_detail(ctx: JobContext) -> dict:
+    profile_match = ctx.profile_match.model_dump() if ctx.profile_match else {}
+    pivot = ctx.pivot.model_dump() if ctx.pivot else {}
+    return {
+        "overlaps": profile_match.get("overlaps", []),
+        "gaps": profile_match.get("gaps", []),
+        "hard_blockers": profile_match.get("hard_blockers", []),
+        "match_notes": profile_match.get("notes", ""),
+        "pivot_type": pivot.get("pivot_type", ""),
+        "pivot_why": pivot.get("why_it_matters", []),
+    }
+
+
+def _application_pack_job_view(ctx: JobContext) -> dict:
+    moderator = ctx.moderator.model_dump() if ctx.moderator else {}
+    return {
+        "title": ctx.job.get("title"),
+        "employer": ctx.job.get("employer_name") or ctx.job.get("company") or "",
+        "sector": ctx.job.get("sector") or "",
+        "work_city": ctx.job.get("work_city") or ctx.job.get("municipal") or "",
+        "work_county": ctx.job.get("work_county") or ctx.job.get("county") or "",
+        "work_postalCode": ctx.job.get("work_postalCode") or "",
+        "description_snip": ctx.job.get("description_snip") or ctx.job.get("description") or "",
+        "triage_explanation": ctx.triage.explanation if ctx.triage else "",
+        "triage_signals": ctx.triage.signals if ctx.triage else [],
+        "fit_score": ctx.profile_match.fit_score if ctx.profile_match else 0,
+        "pivot_score": ctx.pivot.pivot_score if ctx.pivot else 0,
+        "final_decision": moderator.get("final_decision", ""),
+        "recommendation_reason": moderator.get("recommendation_reason", ""),
+        "detail": _application_pack_detail(ctx),
+    }
+
+
+def _application_pack_focus_terms(ctx: JobContext) -> list[str]:
+    profile_match = ctx.profile_match.model_dump() if ctx.profile_match else {}
+    moderator = ctx.moderator.model_dump() if ctx.moderator else {}
+    terms: list[str] = []
+    for value in moderator.get("cv_focus", []) or []:
+        text = str(value).strip()
+        if text:
+            terms.append(text)
+    for value in profile_match.get("overlaps", []) or []:
+        text = str(value).strip()
+        if text:
+            terms.append(text)
+    return terms
+
+
+def _build_application_pack_contexts(
+    ctx: JobContext,
+    resume_ctx: dict,
+) -> tuple[DecisionContext, CandidateEvidenceContext, CandidateNarrativeContext]:
+    job_view = _application_pack_job_view(ctx)
+    decision_context = build_decision_context(job_view, candidate_profile=parse_profile_pack(ctx.profile_pack))
+    evidence_context = build_candidate_evidence_context(
+        job_view,
+        {
+            "work": resume_ctx.get("resume_work", []),
+            "projects": resume_ctx.get("resume_projects", []),
+            "education": resume_ctx.get("resume_education", []),
+        },
+        candidate_id=_DEFAULT_CANDIDATE_ID,
+        focus_terms=_application_pack_focus_terms(ctx),
+        limit=6,
+    )
+    narrative_context = build_candidate_narrative_context(
+        job_view,
+        ctx.profile_pack,
+        evidence_context.candidate_evidence_units,
+        evidence_context.selected_evidence_units,
+        candidate_id=_DEFAULT_CANDIDATE_ID,
+        decision_table=decision_context.decision_table,
+    )
+    return decision_context, evidence_context, narrative_context
+
+
+def _build_application_pack_payload(
+    ctx: JobContext,
+    resume_ctx: dict,
+    *,
+    decision_context: DecisionContext | None = None,
+    evidence_context: CandidateEvidenceContext | None = None,
+    narrative_context: CandidateNarrativeContext | None = None,
+) -> dict:
+    decision_context, evidence_context, narrative_context = (
+        decision_context,
+        evidence_context,
+        narrative_context,
+    )
+    if decision_context is None or evidence_context is None or narrative_context is None:
+        decision_context, evidence_context, narrative_context = _build_application_pack_contexts(ctx, resume_ctx)
+    return {
+        "job_header": {
+            "title": ctx.job.get("title"),
+            "employer_name": ctx.job.get("employer_name"),
+            "sector": ctx.job.get("sector"),
+            "deadline": ctx.job.get("applicationDue"),
+            "source_url": ctx.job.get("sourceurl") or ctx.job.get("link"),
+        },
+        "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
+        "profile_match": ctx.profile_match.model_dump() if ctx.profile_match else {},
+        "pivot": ctx.pivot.model_dump() if ctx.pivot else {},
+        "moderator": ctx.moderator.model_dump() if ctx.moderator else {},
+        "profile_pack": ctx.profile_pack[:3000],
+        "resume_work": resume_ctx["resume_work"],
+        "resume_projects": resume_ctx["resume_projects"],
+        "resume_education": resume_ctx.get("resume_education", []),
+        "candidate_evidence_units": [unit.model_dump(mode="json") for unit in evidence_context.candidate_evidence_units],
+        "selected_evidence_units": [selection.model_dump(mode="json") for selection in evidence_context.selected_evidence_units],
+        "decision_table": decision_context.decision_table.model_dump(mode="json"),
+        "narrative_profile": narrative_context.narrative_profile.model_dump(mode="json"),
+        "narrative_fragments": [fragment.model_dump(mode="json") for fragment in narrative_context.narrative_fragments],
+        "narrative_evidence_links": [link.model_dump(mode="json") for link in narrative_context.narrative_evidence_links],
+        "job_narrative_assessment": narrative_context.job_narrative_assessment.model_dump(mode="json"),
+        "motivation_brief": narrative_context.job_narrative_assessment.motivation_brief,
+    }
 
 
 def _preview_text(pack_data: dict) -> str:
@@ -94,6 +242,10 @@ def _sync_generated_documents(
     pack_data: dict,
     draft_path: Path,
     docx_path: Path | None = None,
+    *,
+    decision_context: DecisionContext | None = None,
+    evidence_context: CandidateEvidenceContext | None = None,
+    narrative_context: CandidateNarrativeContext | None = None,
 ) -> None:
     try:
         conn = connect_primary_db(_PRIMARY_DB_PATH)
@@ -142,6 +294,17 @@ def _sync_generated_documents(
                         "created_at": now,
                         "updated_at": now,
                     },
+                )
+
+            if evidence_context is not None and narrative_context is not None:
+                persist_candidate_materials(
+                    conn,
+                    candidate_id=_DEFAULT_CANDIDATE_ID,
+                    job_id=ctx.job_id,
+                    evaluation_id=evaluation_id,
+                    evidence_context=evidence_context,
+                    narrative_context=narrative_context,
+                    updated_at=now,
                 )
 
             conn.commit()
@@ -265,22 +428,14 @@ def application_pack_stage_factory(model: str, web_search: bool = False):  # noq
     def run(ctx: JobContext, job_dir: str) -> JobContext:
         job_path = Path(job_dir)
 
-        payload = {
-            "job_header": {
-                "title": ctx.job.get("title"),
-                "employer_name": ctx.job.get("employer_name"),
-                "sector": ctx.job.get("sector"),
-                "deadline": ctx.job.get("applicationDue"),
-                "source_url": ctx.job.get("sourceurl") or ctx.job.get("link"),
-            },
-            "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
-            "profile_match": ctx.profile_match.model_dump() if ctx.profile_match else {},
-            "pivot": ctx.pivot.model_dump() if ctx.pivot else {},
-            "moderator": ctx.moderator.model_dump() if ctx.moderator else {},
-            "profile_pack": ctx.profile_pack[:3000],
-            "resume_work": resume_ctx["resume_work"],
-            "resume_projects": resume_ctx["resume_projects"],
-        }
+        decision_context, evidence_context, narrative_context = _build_application_pack_contexts(ctx, resume_ctx)
+        payload = _build_application_pack_payload(
+            ctx,
+            resume_ctx,
+            decision_context=decision_context,
+            evidence_context=evidence_context,
+            narrative_context=narrative_context,
+        )
 
         input_text = "Kontekst (JSON):\n" + json.dumps(payload, ensure_ascii=False, indent=2)
         logger.info("[application_pack] running for job %s", ctx.job_id)
@@ -301,7 +456,15 @@ def application_pack_stage_factory(model: str, web_search: bool = False):  # noq
 
         # Generate DOCX supplement
         docx_path = _generate_cv_docx(pack_data, ctx.job, job_path)
-        _sync_generated_documents(ctx, pack_data, draft_path=draft_path, docx_path=docx_path)
+        _sync_generated_documents(
+            ctx,
+            pack_data,
+            draft_path=draft_path,
+            docx_path=docx_path,
+            decision_context=decision_context,
+            evidence_context=evidence_context,
+            narrative_context=narrative_context,
+        )
 
         return ctx
 

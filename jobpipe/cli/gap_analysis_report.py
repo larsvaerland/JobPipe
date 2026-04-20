@@ -18,10 +18,7 @@ from jobpipe.core.io import load_env_file
 
 load_env_file(".env")
 
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-from jobpipe.core.paths import exports_root, primary_db_path
+from jobpipe.runtime.paths import exports_root, primary_db_path
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
@@ -53,6 +50,11 @@ _LEADING_PATTERNS = [
     r"^(lack of)\s+",
     r"^(no)\s+",
 ]
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -525,6 +527,7 @@ def run_gap_analysis(
 
 
 def main() -> None:
+    _configure_stdout()
     ap = argparse.ArgumentParser(
         description="Analyze repeated capability gaps from current job evaluations and persist the result to the primary DB."
     )

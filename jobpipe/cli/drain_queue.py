@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from jobpipe.core.io import load_env_file, read_jsonl_lines, write_jsonl_lines, stable_job_id
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import (
+    exports_root,
+    artifacts_root,
+    jobs_delta_path,
+    jobs_expired_path,
+    jobs_state_path,
+    primary_db_path,
+)
 from jobpipe.core.evaluation_state import load_processed_job_ids
 
 
@@ -100,11 +107,11 @@ def main(argv: Optional[list[str]] = None) -> None:
         help="Candidate ID for DB-backed profile reads",
     )
     ap.add_argument("--config", default="", help="Path to pipeline YAML (optional).")
-    ap.add_argument("--out", default="./out_runs", help="Output folder for runs (default: ./out_runs)")
-    ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
+    ap.add_argument("--out", default=str(artifacts_root()), help=f"Artifact output folder (default: {artifacts_root()})")
+    ap.add_argument("--reports", default=str(exports_root()), help=f"Exports folder (default: {exports_root()})")
 
-    ap.add_argument("--state", default="./jobs_state.json", help="State JSON used by pull_sheets_csv (default: ./jobs_state.json)")
-    ap.add_argument("--delta", default="./jobs_delta.jsonl", help="Delta JSONL path (default: ./jobs_delta.jsonl)")
+    ap.add_argument("--state", default=str(jobs_state_path()), help=f"State JSON used by pull_sheets_csv (default: {jobs_state_path()})")
+    ap.add_argument("--delta", default=str(jobs_delta_path()), help=f"Delta JSONL path (default: {jobs_delta_path()})")
 
     ap.add_argument("--batch-size", type=int, default=50, help="How many jobs to process per batch (default: 50)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing per-job stage JSONs if they exist.")
@@ -123,9 +130,9 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB (default: on).")
     ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable processed-job filtering.")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary jobpipe.sqlite path for processed-job filtering")
-    ap.add_argument("--sync-evaluations-before", action="store_true", default=True, help="Sync evaluation state from out_runs before pulling (default: on).")
+    ap.add_argument("--sync-evaluations-before", action="store_true", default=True, help="Sync evaluation state from artifacts before pulling (default: on).")
     ap.add_argument("--no-sync-evaluations-before", dest="sync_evaluations_before", action="store_false", help="Disable evaluation sync before pull.")
-    ap.add_argument("--sync-evaluations-after", action="store_true", default=True, help="Sync evaluation state from out_runs after processing (default: on).")
+    ap.add_argument("--sync-evaluations-after", action="store_true", default=True, help="Sync evaluation state from artifacts after processing (default: on).")
     ap.add_argument("--no-sync-evaluations-after", dest="sync_evaluations_after", action="store_false", help="Disable evaluation sync after run.")
 
     args = ap.parse_args(argv)
@@ -152,7 +159,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         state_path.unlink()
 
     delta_path = Path(args.delta)
-    expired_path = delta_path.parent / "jobs_expired.jsonl"
+    expired_path = jobs_expired_path()
     tmp_dir = Path(".jobpipe_tmp")
     tmp_dir.mkdir(exist_ok=True)
 

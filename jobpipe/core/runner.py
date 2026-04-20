@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from jobpipe.core.io import ensure_dir, write_json, append_jsonl
-from jobpipe.core.schema import JobContext
+from jobpipe.model.schema import JobContext
 
 StageFn = Callable[[JobContext, str], JobContext]
 

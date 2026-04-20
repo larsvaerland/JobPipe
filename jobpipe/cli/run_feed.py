@@ -24,14 +24,14 @@ load_env_file(".env")
 
 from jobpipe.core.candidate_data import default_candidate_id, load_candidate_profile_pack
 from jobpipe.core.config import load_config
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import artifacts_root, primary_db_path, repo_root
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
     mark_pipeline_run_finished,
     upsert_pipeline_run,
 )
-from jobpipe.core.schema import (
+from jobpipe.model.schema import (
     JobContext, RunMeta,
     TriageOut, ReverseTriageOut, JobParse, ProfileMatchOut,
     PivotOut, ModeratorOut, ApplicationPackOut,
@@ -147,8 +147,8 @@ def main() -> None:
         default=default_candidate_id(),
         help=f"Candidate ID for primary DB profile reads (default: {default_candidate_id()})",
     )
-    ap.add_argument("--out", default="out_runs", help="Output directory")
-    ap.add_argument("--config", default="configs/pipeline.v1.yaml", help="Pipeline config YAML")
+    ap.add_argument("--out", default=str(artifacts_root()), help=f"Artifacts output directory (default: {artifacts_root()})")
+    ap.add_argument("--config", default=str(repo_root() / "configs" / "pipeline.v1.yaml"), help="Pipeline config YAML")
     ap.add_argument("--max", type=int, default=0, help="Max number of jobs (0 = all)")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite per-stage artifacts")
     args = ap.parse_args()

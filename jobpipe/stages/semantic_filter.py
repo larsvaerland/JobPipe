@@ -33,8 +33,8 @@ Recommended for Norwegian:
 Profile cache
 -------------
 The profile embedding is computed once and cached to disk.
-Delete reports/profile_embedding.npy to force a rebuild (e.g. after editing
-profile_pack.md).
+Delete the configured profile embedding cache file to force a rebuild.
+Under `JOBPIPE_DATA_DIR`, the canonical default is `cache/profile_embedding.npy`.
 """
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ from typing import Callable, Tuple
 
 import numpy as np
 
-from jobpipe.core.paths import profile_embedding_cache_path
-from jobpipe.core.schema import JobContext, TriageOut
+from jobpipe.runtime.paths import profile_embedding_cache_path
+from jobpipe.model.schema import JobContext, TriageOut
 from jobpipe.stages._common import job_excerpt
 
 try:
@@ -142,7 +142,16 @@ def build_semantic_filter(
         )
         return lambda ctx: ctx  # no-op
 
-    model = TextEmbedding(model_name)  # fastembed 0.8+ dropped the model_name kwarg
+    # The current JobPipe baseline accepts fastembed's pooled multilingual model behavior.
+    # Keep normal runs quiet and calibrate thresholds against the active output rather than
+    # leaking upstream compatibility warnings into every local workflow.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The model .* now uses mean pooling instead of CLS embedding\..*",
+            category=UserWarning,
+        )
+        model = TextEmbedding(model_name)  # fastembed 0.8+ dropped the model_name kwarg
     profile_emb = build_or_load_profile_embedding(profile_pack, model, cache_path)
 
     def _filter(ctx: JobContext) -> JobContext:

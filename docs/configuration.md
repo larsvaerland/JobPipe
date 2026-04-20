@@ -4,10 +4,10 @@
 
 Start from:
 
-```powershell
-copy .env.example .env
-copy profile_pack.example.md profile_pack.md
-```
+1. create `.env` from `.env.example`
+2. create `profile_pack.md` from `profile_pack.example.md`
+3. create and activate a virtual environment
+4. install the package with `python -m pip install -e .`
 
 At minimum, set:
 
@@ -16,22 +16,29 @@ At minimum, set:
 
 ## Recommended runtime layout
 
-For normal use, keep candidate data outside the repo:
+For normal use, keep user data outside the repo with `JOBPIPE_DATA_DIR`.
 
-```powershell
-JOBPIPE_DATA_DIR=C:\Users\yourname\JobpipeData
+Examples:
+
+- Windows: `JOBPIPE_DATA_DIR=C:\Users\yourname\JobpipeData`
+- macOS/Linux: `JOBPIPE_DATA_DIR=~/JobpipeData`
+
+Conceptually, the runtime layout should look like:
+
+```text
+JOBPIPE_DATA_DIR/
+  db/
+  artifacts/
+  exports/
+  documents/
+  cache/
+  secrets/
 ```
 
-With that set, JobPipe can resolve:
+This is the intended boundary between:
 
-- `profile_pack.md`
-- `resume.json`
-- `application_state.json`
-- `gmail_credentials.json`
-- `gmail_token.json`
-- `suggested_jobs.jsonl`
-- `profile_embedding.npy`
-- `db/jobpipe.sqlite`
+- repo code/docs/specs
+- persistent candidate and runtime state
 
 ## Important env vars
 
@@ -56,14 +63,46 @@ With that set, JobPipe can resolve:
 - `JOBPIPE_GMAIL_CREDENTIALS_PATH`
 - `JOBPIPE_GMAIL_TOKEN_PATH`
 
-## Candidate profile inputs
+## Candidate inputs
 
-There are two practical candidate inputs today:
+Current practical candidate inputs include:
 
 - `profile_pack.md`
 - `resume.json`
 
-They are still valid working files, but the runtime is moving toward the primary DB as the canonical state layer. Use `bootstrap_state_db` to import current local candidate data into the DB.
+These are still valid working files, but the intended direction is:
+
+- structured candidate state in the primary DB
+- working files as import/export and compatibility surfaces
+
+Under `JOBPIPE_DATA_DIR`, the current canonical defaults are:
+
+- `documents/profile_pack.md`
+- `documents/resume.json`
+- `db/application_state.json`
+- `db/suggested_jobs.jsonl`
+- `cache/profile_embedding.npy`
+- `secrets/gmail_credentials.json`
+- `secrets/gmail_token.json`
+
+For single-user clean installs that already have a flat `JOBPIPE_DATA_DIR`, JobPipe still accepts these legacy compatibility locations if they already exist:
+
+- `profile_pack.md`
+- `resume.json`
+- `gmail_credentials.json`
+- `gmail_token.json`
+
+Use `bootstrap-state-db` to import current local candidate data into the DB.
+
+## Transitional compatibility files
+
+Some file-shaped runtime data still exists during migration, including items such as:
+
+- `application_state.json`
+- `suggested_jobs.jsonl`
+- embedding cache files
+
+These should be treated as compatibility bridges or derived runtime support, not as the preferred long-term source of truth.
 
 ## Pipeline configuration
 
@@ -77,29 +116,45 @@ This file defines:
 - model choices
 - thresholds
 - regex rules
-- FINN search defaults
+- search defaults
 
 ## Source-specific notes
 
 ### Sheet intake
 
-The main batch path expects a published CSV URL, not a private edit URL, unless you are explicitly using the sheet URL mode.
+The main batch path expects a published CSV URL, not a private edit URL, unless you are explicitly using sheet URL mode.
 
 ### Gmail
 
-Gmail integration is optional. If enabled, it can:
+Gmail integration is optional.
 
-- detect application-state changes
-- ingest suggestion emails from supported sources
+It currently supports:
 
-See:
+- application-status detection
+- suggestion-email ingestion
 
-- [docs/cli.md](cli.md)
-- [docs/gmail_filter_spec.md](gmail_filter_spec.md)
+The repo direction is toward provider-neutral mail ingestion over time.
+
+## Canonical runtime interface
+
+Use:
+
+```text
+jobpipe run
+jobpipe run --dry-run
+```
+
+Fallback:
+
+```text
+python -m jobpipe.cli.main run
+```
+
+`go.ps1` is a Windows wrapper over the same workflow.
 
 ## Safe change strategy
 
 1. Change one control point at a time.
-2. Prefer a dry run after threshold or config changes.
+2. Prefer dry runs after config or threshold changes.
 3. Keep candidate data separate from code.
 4. Treat exported files as derived outputs, not configuration.

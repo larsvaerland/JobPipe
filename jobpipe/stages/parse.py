@@ -1,6 +1,6 @@
 from __future__ import annotations
 from agents import Agent
-from jobpipe.core.schema import JobContext, JobParse
+from jobpipe.model.schema import JobContext, JobParse
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 
 PARSE_INSTRUCTIONS = """

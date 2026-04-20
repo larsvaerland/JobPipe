@@ -1,127 +1,204 @@
 # JobPipe
 
-*A local-first job search system for finding the opportunities you are genuinely competitive for.*
+*A local-first career intelligence workbench built around structured evidence, explicit decisions, and living monitoring.*
 
-JobPipe ingests job leads, filters noise cheaply, scores the jobs worth attention, tracks application state, and exports a dashboard the candidate can actually use.
+JobPipe helps a candidate identify and act on the jobs they are genuinely competitive for, including non-obvious roles. It is not trying to automate the whole job search. It is trying to own the useful data-and-reasoning layer beneath that workflow.
 
-It is currently built as a single-user, local-first Python system. The codebase is structured so it can grow into a broader product later, but the current goal is operational clarity and decision quality, not SaaS surface area.
+The product thesis is:
 
-## What it does
+- data is the product
+- connectors are adapters
+- dashboards and external tools are projections
+- AI is a bounded interpretation layer
+- evidence-backed decision support and living monitoring are the core mechanisms
 
-JobPipe handles five linked problems:
+Market label:
 
-1. intake from job feeds and suggestion sources
-2. cheap filtering before expensive model calls
-3. candidate-specific scoring, moderation, and advantageous-match detection
-4. application-state tracking and follow-up
-5. export of a dashboard plus application-support artifacts
+- **career intelligence workbench**
 
-The core promise is simple: help the candidate spend attention and model cost only on jobs they are plausibly competitive for, including roles they might not have recognized themselves.
+Plain-language fallback:
 
-## Current architecture
+- **job-search decision system**
 
-JobPipe now runs on a primary SQLite database plus filesystem artifacts:
+## What JobPipe is
 
-- `jobpipe.sqlite` stores candidate state, evaluations, application events, generated document metadata, and suggestion leads
-- `out_runs/<run_id>/<job_id>/` keeps per-job stage artifacts for traceability
-- `reports/dashboard.html` and `reports/dashboard_data.json` are derived exports
-- `reports/evaluations_latest.csv` is a derived reporting export
+JobPipe is:
 
-The normal runtime flow is:
+- a candidate-first, hiring-aware decision workbench
+- a local-first workflow system for job-search state and follow-up
+- a canonical data layer for candidate, job, evaluation, narrative, and outcome history
+- a traceable pipeline that preserves inspectable artifacts and explicit decisions
+
+JobPipe is not:
+
+- an ATS replacement
+- a recruiter platform
+- a mass auto-apply tool
+- a generic AI copilot
+- a resume-builder product
+- a connector catalog for its own sake
+
+## Public repo scope
+
+This public repository is being aligned toward an OSS-first scope.
+
+That means this repo should become a genuinely useful public framework/toolkit for:
+
+- local-first job-search intelligence workflows
+- canonical candidate/job/evaluation state
+- inspectable decision support
+- watchlist and change-detection workflows
+- projections, examples, and extension points
+
+This repo should **not** become crippleware.
+
+The current direction is:
+
+- `JobPipe` stays the umbrella and OSS/framework name
+- the public repo should stand on its own for developers, hobbyists, tinkerers, and single users
+- a later private/commercial implementation may build on top of this public foundation
+
+Provisional later commercial product name:
+
+- **JobPipe Workbench**
+
+## Current product direction
+
+JobPipe is converging on a local-first data-and-reasoning layer for job search.
+
+The current product foundation is now organized around:
+
+- job claims
+- hiring-aware decision tables
+- candidate evidence units
+- candidate narrative profiles
+- watchlists and change events
+
+That means the product should get better at answering:
+
+- what this job is actually asking for
+- whether this candidate should want it
+- whether the candidate can explain it credibly
+- how the role is likely to be filtered and judged on the hiring side
+- what changed since the last review
+
+## Planning hierarchy
+
+The repo should be read in this order:
+
+1. [MASTER_PLAN.md](MASTER_PLAN.md)  
+   Single planning source of truth: scope, invariants, active priorities, build sequence, cleanup direction.
+2. [PRODUCT_VISION.md](PRODUCT_VISION.md)  
+   Durable product thesis: what JobPipe is for, who it serves now, why it matters, and what differentiates it.
+3. [ROADMAP.md](ROADMAP.md)  
+   Short execution view: current phase and ordered near-term work.
+4. [OSS_SCOPE.md](OSS_SCOPE.md)  
+   Public repo scope, OSS/private boundary, and what this repository is for now.
+5. [DEPENDENCY_POLICY.md](DEPENDENCY_POLICY.md)  
+   Dependency, license, and maintained-OSS building-block direction for the public repo.
+6. `docs/`  
+   Operational and repo-facing explanations of the current runtime and interfaces.
+7. `specs/`  
+   Forward-looking design targets. Some are active next-build specs, some are later strategic specs, and some are transitional notes.
+
+## Current priorities
+
+The planning layer now treats these as the next public priorities:
+
+1. harden the single-user local-first loop
+2. keep the dashboard complete and trustworthy as the public proof-of-work surface
+3. freeze an audit corpus and config baseline
+4. run a persona-based generalization audit
+5. turn audit findings into onboarding, threshold, explanation, and dashboard fixes
+
+## Naming direction
+
+Canonical naming decisions for this phase:
+
+- `JobPipe` = umbrella project name
+- `JobPipe` = OSS/framework name
+- `JobPipe Workbench` = reserved name for a later private/commercial implementation if that split happens
+
+This keeps the public and future private layers legible without creating an unnecessary new brand now.
+
+## Runtime shape
+
+JobPipe currently runs as a local Python package with:
+
+- a primary SQLite database as canonical state
+- staged evaluation artifacts for traceability
+- exported dashboard/report surfaces as derived outputs
+- source intake from sheet exports, FINN, Gmail, and related inputs
+
+The repo is still in transition away from legacy runtime/output naming. Canonical naming is moving toward:
+
+- `db/`
+- `artifacts/`
+- `exports/`
+- `documents/`
+
+rather than repo-local `out_runs/` and `reports/` as long-term defaults.
+
+## Canonical operator interface
+
+Use:
 
 ```text
-job intake -> staged evaluation -> sync_evaluations -> primary DB -> export_dashboard
+jobpipe run --dry-run
 ```
 
-Legacy `ledger.sqlite` is removed from the runtime model. The primary DB is now the canonical state layer.
+Fallback:
 
-## Quick start
-
-Requirements:
-
-- Python 3.11+
-- OpenAI API key
-- published CSV URL for the source sheet
-- optional Gmail API credentials for Gmail scanning
-
-Setup:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\pip install -e .
-copy .env.example .env
-copy profile_pack.example.md profile_pack.md
+```text
+python -m jobpipe.cli.main run --dry-run
 ```
 
-Recommended for real use: keep candidate data outside the repo.
-
-```powershell
-set JOBPIPE_DATA_DIR=C:\Users\yourname\JobpipeData
-```
-
-Then configure:
-
-- `.env` with `OPENAI_API_KEY` and `JOBPIPE_CSV_URL`
-- `profile_pack.md` with the candidate search profile
-- optional `resume.json` and Gmail credentials under `JOBPIPE_DATA_DIR`
-
-Smoke test:
+Windows wrapper:
 
 ```powershell
 .\go.ps1 -DryRun
 ```
 
-Normal run:
+## Recommended data boundary
 
-```powershell
-.\go.ps1
-```
+For normal use, keep user data outside the repo with `JOBPIPE_DATA_DIR`.
 
-## Documentation map
+The intended separation is:
 
-Start here, depending on what you need:
+- repo: code, docs, specs, templates
+- external data root: DB, candidate files, artifacts, exports, generated documents, credentials, caches
 
-- [PRODUCT_VISION.md](PRODUCT_VISION.md): product thesis, scope, and guiding principles
-- [ROADMAP.md](ROADMAP.md): current execution priorities and sequencing
-- [docs/architecture.md](docs/architecture.md): codebase and runtime architecture
-- [docs/configuration.md](docs/configuration.md): env vars, candidate data, and runtime layout
-- [docs/cli.md](docs/cli.md): operational command reference
-- [docs/decision-model.md](docs/decision-model.md): evaluation stages and thresholds
-- [docs/artifacts.md](docs/artifacts.md): runtime outputs and traceability model
-- [docs/dashboard.md](docs/dashboard.md): dashboard data model and UI intent
-- [docs/profile-pack.md](docs/profile-pack.md): candidate profile guidance
-- [docs/apps-script.md](docs/apps-script.md): Google Apps Script operational notes
-- [TESTING.md](TESTING.md): validation expectations
-- [CONTRIBUTING.md](CONTRIBUTING.md): contribution rules
+## Key docs
 
-## Scope boundaries
-
-JobPipe is:
-
-- a decision-support system for job search
-- local-first and traceability-focused
-- opinionated about cheap filters before deeper AI evaluation
-- centered on finding winnable opportunities, not just matching target titles
-- structured around one candidate today, with explicit candidate IDs for future growth
-
-JobPipe is not:
-
-- an ATS replacement
-- a mass auto-apply bot
-- a resume-builder product
-- a multi-tenant platform today
+- [MASTER_PLAN.md](MASTER_PLAN.md)
+- [PRODUCT_VISION.md](PRODUCT_VISION.md)
+- [ROADMAP.md](ROADMAP.md)
+- [OSS_SCOPE.md](OSS_SCOPE.md)
+- [DEPENDENCY_POLICY.md](DEPENDENCY_POLICY.md)
+- [docs/architecture.md](docs/architecture.md)
+- [specs/architecture-boundaries.md](specs/architecture-boundaries.md)
+- [docs/decision-model.md](docs/decision-model.md)
+- [docs/configuration.md](docs/configuration.md)
+- [docs/cli.md](docs/cli.md)
+- [docs/artifacts.md](docs/artifacts.md)
+- [docs/dashboard.md](docs/dashboard.md)
+- [specs/canonical-data-model.md](specs/canonical-data-model.md)
+- [specs/job-claims-model.md](specs/job-claims-model.md)
+- [specs/hiring-side-selection-model.md](specs/hiring-side-selection-model.md)
+- [specs/candidate-narrative-model.md](specs/candidate-narrative-model.md)
+- [specs/controlled-cv-tailoring.md](specs/controlled-cv-tailoring.md)
+- [specs/platform-alignment-audit.md](specs/platform-alignment-audit.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [TESTING.md](TESTING.md)
 
 ## Status
 
-The repository is in active consolidation.
+The repository is in active cleanup and restructuring.
 
-Current priorities are:
-
-- keep the DB-first architecture coherent
-- improve application-pack quality
-- harden source intake and follow-up tracking
-- keep the documentation and runtime model aligned
+The immediate goal is not more feature breadth. It is to make the codebase, runtime model, docs, active specs, and public OSS scope point in one coherent direction before the next architecture pass.
 
 ## License
 
-MIT
+MIT for the current public repo.
+
+See [DEPENDENCY_POLICY.md](DEPENDENCY_POLICY.md) for dependency and license direction.

@@ -19,11 +19,11 @@ Anti-bot: time guard 09:00-19:00 Oslo. Random delays (3-9s). Max 40 fetches/run.
 Search page fetches have shorter delays (0.5-1.5s) — they're public listing pages.
 
 Usage:
-    python -m jobpipe.cli.pull_finn_search                    # use YAML defaults
-    python -m jobpipe.cli.pull_finn_search --dry-run          # list new finnkodes only
-    python -m jobpipe.cli.pull_finn_search --max 20           # limit fetches
-    python -m jobpipe.cli.pull_finn_search --force-daytime    # skip time guard (testing)
-    python -m jobpipe.cli.pull_finn_search --verbose          # show fetch details
+    jobpipe pull-finn-search                                  # use YAML defaults
+    jobpipe pull-finn-search --dry-run                        # list new finnkodes only
+    jobpipe pull-finn-search --max 20                         # limit fetches
+    jobpipe pull-finn-search --force-daytime                  # skip time guard (testing)
+    jobpipe pull-finn-search --verbose                        # show fetch details
 """
 from __future__ import annotations
 
@@ -44,13 +44,9 @@ from urllib.error import URLError, HTTPError
 
 from jobpipe.core.evaluation_state import load_processed_job_ids
 from jobpipe.core.io import load_env_file
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
 
 load_env_file(".env")
-
-# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # BeautifulSoup4 (required — in requirements.txt)
 try:
@@ -66,7 +62,7 @@ try:
 except Exception:
     _OSLO_TZ = timezone(timedelta(hours=1))
 
-DEFAULT_OUT_PATH       = Path("./jobs_delta.jsonl")
+DEFAULT_OUT_PATH       = jobs_delta_path()
 DEFAULT_CONFIG_PATH    = Path("./configs/pipeline.v1.yaml")
 DEFAULT_DB_PATH        = primary_db_path()
 DEFAULT_CANDIDATE_ID   = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
@@ -79,6 +75,11 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Default search queries if not configured in YAML.
 # These map to Lars's FINN profile role preferences.
@@ -373,6 +374,7 @@ def _load_location_from_config(config_path: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[List[str]] = None) -> None:
+    _configure_stdout()
     ap = argparse.ArgumentParser(
         description=(
             "Scrape FINN job search pages by keyword and fetch content for new jobs. "

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "personas": [
+    {
+      "persona_id": "persona_a_reference",
+      "label": "Reference shape",
+      "profile_pack": "persona_a_reference/profile_pack.md",
+      "resume_json": "persona_a_reference/resume.json",
+      "audit_focus": [
+        "baseline comparison against current design center",
+        "non-obvious but credible digital and product adjacency"
+      ]
+    },
+    {
+      "persona_id": "persona_b_specialist",
+      "label": "Narrow specialist",
+      "profile_pack": "persona_b_specialist/profile_pack.md",
+      "resume_json": "persona_b_specialist/resume.json",
+      "audit_focus": [
+        "avoid management-title inflation",
+        "preserve specialist credibility and realistic adjacent moves"
+      ]
+    },
+    {
+      "persona_id": "persona_c_public_transition",
+      "label": "Public-sector transition",
+      "profile_pack": "persona_c_public_transition/profile_pack.md",
+      "resume_json": "persona_c_public_transition/resume.json",
+      "audit_focus": [
+        "title and domain continuity bias",
+        "evidence burden for private-to-public transition"
+      ]
+    },
+    {
+      "persona_id": "persona_d_early_adjacent",
+      "label": "Early-to-mid adjacent mover",
+      "profile_pack": "persona_d_early_adjacent/profile_pack.md",
+      "resume_json": "persona_d_early_adjacent/resume.json",
+      "audit_focus": [
+        "separate promising adjacent roles from unrealistic stretch roles",
+        "check onboarding defaults for lighter experience profiles"
+      ]
+    }
+  ]
+}

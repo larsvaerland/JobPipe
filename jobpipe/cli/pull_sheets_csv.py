@@ -17,8 +17,8 @@ from jobpipe.core.io import now_iso, stable_job_id, load_env_file
 
 load_env_file(".env")
 
-from jobpipe.core.job_catalog import ingest_catalog_job
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.catalog import ingest_catalog_job
+from jobpipe.runtime.paths import jobs_delta_path, jobs_expired_path, jobs_state_path, primary_db_path
 from jobpipe.core.primary_db import (
     connect_primary_db,
     mark_source_records_inactive,
@@ -114,8 +114,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet-url", required=False, default="", help="Google Sheet URL or leave empty if using --csv-url")
     ap.add_argument("--csv-url", default="", help="Optional direct published CSV URL")
-    ap.add_argument("--out", default="jobs.jsonl", help="Output JSONL path")
-    ap.add_argument("--state", default="jobs_state.json", help="State path for incremental updates")
+    ap.add_argument("--out", default=str(jobs_delta_path()), help=f"Output JSONL path (default: {jobs_delta_path()})")
+    ap.add_argument("--state", default=str(jobs_state_path()), help=f"State path for incremental updates (default: {jobs_state_path()})")
     ap.add_argument("--only-changed", action="store_true", help="Write only changed/new rows")
     ap.add_argument("--no-dedupe", action="store_true", help="Disable dedupe by uuid/job_id")
     ap.add_argument("--timeout", type=int, default=120, help="HTTP timeout in seconds")
@@ -129,8 +129,8 @@ def main():
     )
     ap.add_argument(
         "--expired-out",
-        default="jobs_expired.jsonl",
-        help="Output JSONL for expired (ACTIVE->INACTIVE) job events (default: jobs_expired.jsonl). "
+        default=str(jobs_expired_path()),
+        help=f"Output JSONL for expired (ACTIVE->INACTIVE) job events (default: {jobs_expired_path()}). "
              "Set to '' to disable expiry tracking.",
     )
     ap.add_argument(

@@ -2,170 +2,188 @@
 
 **Last updated:** 2026-04-17
 
-## Product thesis
+## Core product thesis
 
-JobPipe should help a candidate identify and act on the jobs they are genuinely competitive for, not just the jobs they already know to search for.
+JobPipe should help a candidate identify and act on the jobs they are genuinely competitive for, not just the jobs they already know how to search for.
 
-The product is not trying to automate the whole job search. It is trying to produce a narrower, better decision surface:
+Public category for this phase:
 
-- fewer irrelevant jobs to read
-- clearer prioritization among plausible jobs
-- stronger detection of non-obvious roles the candidate can realistically win
-- stronger follow-up structure once a job becomes actionable
-- better raw material for applications when the match is real
+- **career intelligence workbench**
 
-## Primary user need
+Plain-language fallback:
 
-The hardest part of a job search is often not finding job ads. It is knowing which roles are actually winnable.
+- **job-search decision system**
 
-Job seekers routinely face three problems at once:
+The product is most useful when it does four things well:
 
-- titles are inconsistent and misleading across employers and sectors
-- self-assessment is noisy, especially during long job searches
-- adjacent roles often look wrong on paper even when the candidate is highly competitive
+- turns messy job ads into structured claims and explicit decisions
+- helps the candidate understand what is actually winnable
+- helps the candidate explain adjacent or non-obvious fit credibly
+- keeps watching the market so useful change reaches the user quickly
 
-JobPipe should reduce noise, but that is not the end goal. The real need is:
+The product mechanism is not "AI content generation." It is:
 
-**help the candidate discover and trust the opportunities they are most likely to get.**
+**evidence-backed decision support with living monitoring**
+
+## Who the product is for now
+
+JobPipe is for a serious, privacy-conscious job seeker who needs better judgment, not more job listings.
+
+The current reference user is Lars, which is useful because it forces the system to solve real workflow problems instead of generic ones.
+
+The target user shape for this phase is:
+
+- active search or meaningful career pivot
+- knowledge work or adjacent professional roles
+- too much noise in the market
+- non-obvious fit across titles, domains, or role families
+- need for credible positioning, not just keyword stuffing
+
+## Why it matters
+
+The hard part of job search is often not finding jobs.
+
+It is:
+
+- deciding what is actually worth pursuing
+- understanding why a role is plausible or not
+- making adjacent experience legible
+- keeping attention focused over a long, noisy search
+
+Existing tools often optimize for:
+
+- more applications
+- prettier documents
+- faster generic AI text
+- more workflow surface area
+
+JobPipe should optimize for:
+
+- fewer bad pursuits
+- better prioritization
+- stronger candidate-specific explanations
+- better reuse of the same evidence and state across the whole workflow
 
 ## Current wedge
 
-JobPipe starts with one concrete workflow:
+The current wedge is the candidate-first decision workbench.
 
-1. ingest jobs from one or more sources
-2. kill obvious noise cheaply
-3. score the jobs worth deeper inspection
-4. track what happened after the candidate acted
+That means:
 
-That wedge matters because it solves the highest-friction part of the job-search loop before drifting into broader platform work.
+1. ingest jobs and leads
+2. filter weak matches cheaply
+3. reason about fit, selection risk, and explainability
+4. preserve state, follow-up, and outcome history
+5. generate candidate-facing decision surfaces and evidence-backed application support
 
-## Reference user
+That wedge is intentionally narrower than a broad career platform.
 
-The current reference candidate is Lars. The system is tuned around a real search profile and real workflow pain, which is useful because it forces the product to solve concrete problems instead of generic ones.
+## Public and future product shape
 
-That said, the architecture is now explicitly candidate-scoped:
+For current public positioning:
 
-- candidate IDs are first-class
-- candidate profile state has a canonical home
-- the primary DB supports future multi-user growth without changing the product model
+- `JobPipe` should remain the umbrella and OSS/framework name
+- the public repo should be a real OSS framework/toolkit, not a crippled teaser
 
-## Product promise
+For later business packaging:
 
-JobPipe should make these statements true:
+- a future private/commercial implementation may be packaged as **JobPipe Workbench**
 
-- I do not have to read hundreds of weak matches to find the few jobs I can actually compete for.
-- I can discover strong fits even when the title or sector is unfamiliar.
-- I can explain why a job was recommended or skipped.
-- I can see my live action list and application state in one place.
-- I can generate usable application material without losing traceability.
+The public and later private layers should share the same core product truth, not tell different stories.
 
-## Principles
+## Candidate-first but hiring-aware
 
-1. Cheap filters before expensive model calls.
-2. Structured state before clever automation.
-3. Traceability over black-box convenience.
-4. Candidate decisions stay human.
-5. Local-first is a feature, not a temporary inconvenience.
-6. Product scope should expand only when the current workflow is coherent.
+JobPipe should stay candidate-first.
 
-## What the product is
+But it should stop being blind to how roles are actually filtered and judged.
 
-JobPipe is:
+That means the product should explicitly account for:
 
-- a local-first job-search workflow system
-- a candidate-specific decision engine
-- a traceable pipeline with inspectable artifacts
-- a stateful application tracker
+- structural gates
+- recruiter screening behavior
+- title and domain continuity bias
+- ambiguity tolerance
+- evidence burden
+
+This is not recruiter-product scope.
+
+It is candidate-side realism.
+
+The product should get better at distinguishing:
+
+- substantively plausible roles
+- procedurally winnable roles
+
+and should help the candidate see the gap between those when it matters.
+
+## Product shape
+
+JobPipe is best understood as:
+
+- a local-first data-and-reasoning layer
+- packaged as a candidate-facing workbench
+
+That means:
+
+- data is the product
+- connectors are adapters
+- dashboards and external tools are projections
+- AI is a bounded interpretation layer, not the product itself
+
+This also means JobPipe should not chase value through surface breadth alone.
+
+It also means the public repo should be able to stand on its own as a useful local-first toolkit even before any later private split exists.
+
+## What differentiates it
+
+The differentiator is not "AI writes application text."
+
+The stronger differentiation is:
+
+- job claims instead of opaque ad blobs
+- explicit decision support instead of one blended score
+- candidate evidence units instead of ad hoc resume rewriting
+- narrative profiles instead of regenerated identity stories
+- watchlists and change events instead of repeated manual rescanning
+- local feedback and outcome history instead of stateless prompts
+
+In short:
+
+**JobPipe should know why a job matters, why it does not, and what changed.**
+
+## What it is not
 
 JobPipe is not:
 
-- a mass auto-apply tool
-- a generic resume builder
+- a recruiter platform
 - an ATS replacement
-- a multi-tenant SaaS product today
+- a broad automation suite
+- a generic AI copilot
+- a mass application engine
+- a broad connector product
+- a full resume-builder business
+- an open-core teaser without standalone OSS value
 
-## Product shape today
+Those directions weaken the wedge by turning a data-and-reasoning product into a surface-area race.
 
-The current system is organized around one primary state layer plus derived artifacts:
+## Success criteria
 
-- primary DB for candidate state, evaluations, suggestion leads, application events, and document metadata
-- artifact files for stage-by-stage debugging and review
-- exported dashboard for decision support
-- optional Gmail integration for status and suggestion intake
+The product is moving in the right direction if it becomes true that:
 
-This is the right product shape for the current stage. It keeps the system operationally useful without dragging the repo into premature platform complexity.
+- the candidate sees fewer but better opportunities
+- adjacent roles become easier to trust and explain
+- decision quality improves because the evidence is inspectable
+- the product becomes more useful over time through monitoring and feedback
+- the same core state improves intake, prioritization, follow-up, and tailoring
 
-## Strategic differentiation
+## Near-term strategic truth
 
-The strongest differentiator is not “AI writes application text.” That is now table stakes.
+The near-term product foundation is now:
 
-The stronger differentiator is:
+1. job claims
+2. hiring-aware decision support
+3. candidate evidence units
+4. candidate narrative profiles
+5. watchlists and change events
 
-- cheap filtering before deep evaluation
-- candidate-specific fit and pivot scoring
-- advantageous match detection across unfamiliar titles and adjacent role families
-- traceable decisions that can be tuned
-- one system that spans intake, prioritization, follow-up, and document support
-
-Longer term, the distinctive product opportunity is *advantageous match detection*: surfacing roles where the candidate is more competitive than the title, sector, or self-description implies.
-
-That requires JobPipe to model three things separately:
-
-1. stated intent: the roles the candidate thinks they want
-2. observed fit: what their actual experience, skills, and work style support
-3. market translation: how employers label those needs in the real market
-
-The product becomes valuable when it can bridge the gap between those three layers better than the candidate can manually.
-
-## Success measures
-
-Primary operating metrics:
-
-- strong matches surfaced per week
-- non-obvious strong matches surfaced per week
-- false negatives on clearly relevant jobs
-- triage pass rate
-- wasted deep-evaluation spend on jobs that should have died earlier
-- time from source ingestion to dashboard visibility
-
-Secondary product metrics:
-
-- dashboard usefulness in daily operation
-- application-state accuracy
-- document usefulness for top matches
-- runtime reliability and setup clarity
-
-## Product boundaries for the next stage
-
-The next stage of JobPipe should stay disciplined:
-
-- finish the DB-first local architecture
-- improve advantageous-match detection and candidate-state quality
-- improve application-pack quality
-- improve source intake quality and cross-source deduplication
-- keep the docs, code, and runtime model aligned
-
-It should not yet broaden into:
-
-- multi-user auth and settings UI
-- hosted SaaS packaging
-- dedicated vector-database architecture
-- large surface-area workflow automation
-
-## Future direction
-
-If JobPipe proves stable and useful in this form, the next natural expansion is:
-
-1. stronger multi-source intake and deduplication
-2. better advantageous-match signals
-3. candidate learning from outcomes
-4. optional server-backed deployment with the same domain model
-
-That future should be a storage and deployment evolution, not a product rewrite.
-
-## Related docs
-
-- [README.md](README.md)
-- [ROADMAP.md](ROADMAP.md)
-- [docs/architecture.md](docs/architecture.md)
-- [specs/canonical-data-model.md](specs/canonical-data-model.md)
+That is the path to a product that stays narrow enough to build, but strong enough to compound.

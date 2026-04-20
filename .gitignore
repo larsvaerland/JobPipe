@@ -11,6 +11,10 @@ reports/dashboard.html
 reports/dashboard_data.json
 reports/shortlist_*.csv
 reports/shortlist_*.json
+reports/jobpipe.sqlite
+reports/*.sqlite-shm
+reports/*.sqlite-wal
+reports/documents/
 
 # Pipeline data files
 jobs_delta.jsonl
@@ -46,6 +50,9 @@ AGENT_STATUS.md
 AUDIT.md
 COWORK_PROJECT_INSTRUCTIONS.md
 PROJECT_INSTRUCTIONS.md
+
+# Local prototype backlog material
+prototype/
 
 # Logs and temp artifacts
 *.log

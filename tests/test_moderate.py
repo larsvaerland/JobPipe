@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 from jobpipe.stages.moderate import moderate_stage_factory
-from jobpipe.core.schema import (
+from jobpipe.model.schema import (
     JobContext, RunMeta, TriageOut, ProfileMatchOut, PivotOut
 )
 

@@ -2,45 +2,78 @@
 
 ## Principles
 
-- Prefer small targeted tests
-- Keep one smoke test for the main workflow
-- Validate behavior changes before merging
-- Do not mix feature work and broad refactoring in one change
+- Prefer small targeted tests.
+- Keep one smoke path for the main workflow.
+- Validate behavior changes before merging.
+- Do not mix broad refactors and feature work in one change unless the task is explicitly a cleanup pass.
+- Docs-only planning changes do not require runtime tests, but they do require cross-doc consistency checks.
 
-## Minimum checks
+## Minimum checks for code changes
 
 For any meaningful code change:
 
-1. Run the most relevant targeted test
-2. Run `python compile_check.py`
-3. Run a smoke test on a small fixture dataset
-4. Confirm output format is unchanged unless intentionally updated
-5. Confirm the dashboard or key artifacts still generate as expected
+1. Run the most relevant targeted test.
+2. Run `python compile_check.py`.
+3. Run a smoke test on a small fixture or dry-run path.
+4. Confirm output format is unchanged unless intentionally updated.
+5. Confirm the dashboard or other key derived exports still generate as expected.
 
 ## Practical rule
 
-Every change should have one of these:
+Every change should include one of:
+
 - an updated test
 - a new focused test
 - a short manual validation note explaining why automated coverage was not added
 
 ## Smoke test
 
-Typical smoke test:
+Preferred smoke test:
+
+```text
+jobpipe run --dry-run
+```
+
+Current meaning:
+- bounded local smoke path
+- skips live sheet intake
+- processes at most two already-queued jobs if a local delta exists
+- still runs sync/export so the canonical CLI and projection path are exercised
+- zero processed jobs is acceptable when the local queue is empty
+
+Fallback:
+
+```text
+python -m jobpipe.cli.main run --dry-run
+```
+
+Windows wrapper:
 
 ```powershell
 .\go.ps1 -DryRun
 ```
 
-This should be enough to confirm the pipeline still runs through its key steps without needing a full production-style run.
+For a step-by-step manual validation path with explicit success and failure outcomes, use [docs/public-loop-test-howto.md](docs/public-loop-test-howto.md).
+
+## Planning / docs-only changes
+
+For planning and docs alignment work:
+
+1. verify the root docs do not contradict each other
+2. verify `OSS_SCOPE.md` and `DEPENDENCY_POLICY.md` match the current planning layer
+3. verify `specs/architecture-boundaries.md` matches the current planning layer and roadmap sequencing
+4. verify `docs/` terminology matches the current planning layer
+5. verify active specs and roadmap sequencing do not drift
 
 ## What to watch closely
 
-Changes that affect these areas need extra care:
+Changes in these areas need extra care:
+
 - filtering thresholds
 - decision tiers
+- claim extraction or selection logic
 - output structure
-- artifact generation
-- Gmail status handling
+- artifact/export generation
+- Gmail or mail-ingestion behavior
 - config-driven behavior
 - DB schema or primary-state reads/writes

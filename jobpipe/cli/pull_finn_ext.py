@@ -11,9 +11,9 @@ These jobs are from YOUR browsing — not platform suggestions — so they carry
 suggested_by_platform=false. The pipeline processes them normally.
 
 Usage:
-    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --out .\\jobs_delta.jsonl
-    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --append
-    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --dry-run
+    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --out /path/to/jobs_delta.jsonl
+    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --append
+    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --dry-run
 
 FINN Chrome Extension output dir default (Windows):
     C:\\Users\\larsv\\projects\\Tools\\job-hunter-pilot-chrome extension Finn\\output\\jobs.jsonl
@@ -32,15 +32,11 @@ from typing import Any, Dict, List, Optional
 
 from jobpipe.core.evaluation_state import load_processed_job_ids
 from jobpipe.core.io import load_env_file
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
 
 load_env_file(".env")
 
-# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
+DEFAULT_OUT_PATH = jobs_delta_path()
 DEFAULT_DB_PATH = primary_db_path()
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
@@ -48,6 +44,11 @@ DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").str
 DEFAULT_FINN_EXT_JOBS = (
     r"C:\Users\larsv\projects\Tools\job-hunter-pilot-chrome extension Finn\output\jobs.jsonl"
 )
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 # --- Date parsing ---
@@ -183,6 +184,7 @@ def _normalize(raw: dict) -> Optional[dict]:
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
+    _configure_stdout()
     ap = argparse.ArgumentParser(
         description="Normalize FINN Chrome Extension job captures to pipeline JSONL format.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -196,7 +198,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--out",
         default=str(DEFAULT_OUT_PATH),
-        help="Output JSONL path (default: jobs_delta.jsonl)",
+        help=f"Output JSONL path (default: {DEFAULT_OUT_PATH})",
     )
     ap.add_argument(
         "--append",

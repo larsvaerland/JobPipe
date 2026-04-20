@@ -1,0 +1,44 @@
+{
+  "basics": {
+    "name": "Jonas Berg",
+    "email": "jonas.berg@example.test",
+    "summary": "Early-to-mid career operations and insight profile focused on structured execution and workflow improvement."
+  },
+  "work": [
+    {
+      "name": "Blue Harbor Retail",
+      "position": "Growth and Operations Coordinator",
+      "startDate": "2023-01-01",
+      "endDate": "2026-03-31",
+      "summary": "Coordinated campaign operations, reporting, and cross-team follow-up.",
+      "highlights": [
+        "Coordinated campaign operations and weekly follow-up across marketing and customer service stakeholders.",
+        "Improved execution rhythm by clarifying workflows, owners, and escalation paths."
+      ]
+    },
+    {
+      "name": "Fjell Media",
+      "position": "Marketing and Insight Associate",
+      "startDate": "2021-01-01",
+      "endDate": "2022-12-31",
+      "summary": "Supported reporting, customer insight, and workflow improvements.",
+      "highlights": [
+        "Built reporting summaries that helped teams understand customer behavior and campaign outcomes.",
+        "Supported experiments and process cleanups that improved team handoffs."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Weekly execution dashboard",
+      "description": "Created a simple reporting and follow-up structure for cross-team campaign operations."
+    }
+  ],
+  "education": [
+    {
+      "institution": "University of South-Eastern Norway",
+      "studyType": "BA",
+      "area": "Marketing Management"
+    }
+  ]
+}

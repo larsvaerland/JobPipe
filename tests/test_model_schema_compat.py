@@ -1,0 +1,30 @@
+from jobpipe.core import schema as compat_schema
+from jobpipe.model import schema as model_schema
+
+
+def test_core_schema_reexports_model_schema_symbols() -> None:
+    assert compat_schema.JobContext is model_schema.JobContext
+    assert compat_schema.RunMeta is model_schema.RunMeta
+    assert compat_schema.TriageOut is model_schema.TriageOut
+
+
+def test_job_context_snapshot_summary_uses_model_schema() -> None:
+    ctx = model_schema.JobContext(
+        meta=model_schema.RunMeta(run_id="r1", pipeline_name="pipeline.v1", created_at="2026-04-17T00:00:00Z"),
+        job_id="job-1",
+        job={"title": "Product Manager", "employer_name": "Example Co"},
+        profile_pack="default",
+    )
+
+    assert ctx.snapshot_summary() == {
+        "job_id": "job-1",
+        "title": "Product Manager",
+        "employer": "Example Co",
+        "triage_decision": None,
+        "triage_confidence": None,
+        "triage_signals": [],
+        "final_decision": None,
+        "fit_score": None,
+        "pivot_score": None,
+        "confidence": None,
+    }

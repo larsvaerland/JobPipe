@@ -1,0 +1,44 @@
+{
+  "basics": {
+    "name": "Ingrid Solheim",
+    "email": "ingrid.solheim@example.test",
+    "summary": "Product and service delivery leader focused on digital operations, platforms, and transformation."
+  },
+  "work": [
+    {
+      "name": "Northline Systems",
+      "position": "Senior Product Owner",
+      "startDate": "2022-01-01",
+      "endDate": "2026-03-31",
+      "summary": "Owned a shared platform roadmap across operations and commercial teams.",
+      "highlights": [
+        "Led platform roadmap prioritization and improved release predictability across cross-functional teams.",
+        "Reworked intake and prioritization for a service platform, reducing decision lead time."
+      ]
+    },
+    {
+      "name": "Fjord Mobility",
+      "position": "Digital Operations Manager",
+      "startDate": "2018-01-01",
+      "endDate": "2021-12-31",
+      "summary": "Ran digital operations improvement across CRM, service, and reporting workflows.",
+      "highlights": [
+        "Coordinated CRM and service operations improvements across multiple markets.",
+        "Led a transformation program that standardized workflows and improved incident handling."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Platform operating model redesign",
+      "description": "Defined ownership, intake, and prioritization patterns for a shared service platform."
+    }
+  ],
+  "education": [
+    {
+      "institution": "BI Norwegian Business School",
+      "studyType": "MSc",
+      "area": "Information Systems"
+    }
+  ]
+}

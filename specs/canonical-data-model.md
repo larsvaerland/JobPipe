@@ -12,7 +12,16 @@ The goal is to:
 - make future multi-user/server work possible without rewriting the product model
 - avoid premature architecture drift toward tools the app does not actually need yet
 
-This is a repo-grounded spec. It reflects how JobPipe works today:
+This is a repo-grounded spec. It reflects how JobPipe works today while aligning to the current planning thesis:
+
+- JobPipe is a local-first data-and-reasoning layer for job search
+- data is the product
+- connectors are adapters
+- dashboards and external tools are projections
+- the next foundation is evidence-backed decision support with living monitoring
+- planning remains candidate-first, but hiring-aware
+
+It still reflects important runtime facts from the current codebase:
 
 - staged pipeline in `jobpipe/stages/`
 - per-job run artifacts in `out_runs/`
@@ -73,12 +82,11 @@ Recommended layout:
 JOBPIPE_DATA_DIR/
   db/
     jobpipe.sqlite
-  candidate/
-    profile_pack.md
-    resume.json
   artifacts/
     runs/<run_id>/<job_id>/*.json
   documents/
+    profile_pack.md
+    resume.json
     <candidate_id>/<job_id>/*
   exports/
     dashboard.html
@@ -113,7 +121,7 @@ This is intentionally not a “vector DB first” design. Most of JobPipe is wor
 
 ## Canonical Domain Objects
 
-JobPipe should center around six business objects:
+JobPipe should center around these canonical business objects:
 
 1. candidate
 2. candidate profile
@@ -122,12 +130,27 @@ JobPipe should center around six business objects:
 5. application activity
 6. generated document
 
-Everything else is supporting metadata, cache, or export.
-
-Two near-term support layers now matter enough to treat explicitly:
+These next support layers now matter enough to model explicitly rather than hide in loose JSON or prompt state:
 
 7. candidate calibration and feedback
 8. capability gaps and gap evidence
+9. job-ad claims and claim assessments
+10. hiring-side selection signals and selection assessments
+11. job decision tables
+12. candidate evidence units
+13. tailored CV projections built from canonical evidence
+14. candidate narrative profiles and narrative assessments
+15. watchlists and change events
+
+Everything else is supporting metadata, cache, compatibility scaffolding, or export.
+
+Current first implementation slice:
+
+- the storage substrate for candidate calibration and feedback already exists in the primary DB
+- deterministic local calibration summaries and per-job calibration assessments now live under `jobpipe/decision/`
+- these are currently projection-time interpretations over local state, not persisted learned model outputs
+- job claims, selection signals, selection assessments, decision tables, watchlists, and change events are now promoted into first-class DB rows through `sync_evaluations`
+- candidate evidence units, narrative profiles, narrative fragments, narrative evidence links, and job narrative assessments are now promoted into first-class DB rows through `application_pack`
 
 ---
 
@@ -278,7 +301,8 @@ Use:
 
 1. `pipeline_runs`
 2. `job_evaluations`
-3. optional `stage_artifacts`
+3. `job_replay_inputs`
+4. optional `stage_artifacts`
 
 ### `pipeline_runs`
 
@@ -332,6 +356,72 @@ Metadata table pointing to raw files under `artifacts/runs/...`.
 ### Why this matters
 
 This keeps the current artifact-trace philosophy while giving the app a real queryable history model instead of relying on ad hoc file reads alone.
+
+### `job_replay_inputs`
+
+One rerunnable input snapshot per evaluated job.
+
+This keeps the public OSS loop reproducible even after the live canonical catalog has changed or a source row is no longer available.
+
+Recommended fields:
+
+| Field | Notes |
+|---|---|
+| `job_id` | Canonical job ID |
+| `source_name` | Source family captured from the original input |
+| `source_job_key` | Source-native key if known |
+| `input_payload_json` | Full rerunnable job input payload |
+| `input_hash` | Integrity and change tracking |
+| `captured_from_run_id` | Pipeline run that produced the snapshot |
+| `captured_at` | Original run timestamp |
+| `updated_at` | Last stored snapshot time |
+
+Current implementation status:
+
+- `job_replay_inputs` is now a first-class table in the primary DB
+- the current write path is driven from `jobpipe/cli/sync_evaluations.py`
+- the current persona-audit tooling uses these replay inputs when the live canonical catalog no longer contains a rerunnable row
+
+### Near-term extension: decision support layer
+
+The current `job_evaluations` model is still too compressed for the next product phase.
+
+The next planning direction should add an explicit decision-support layer on top of evaluation history:
+
+- `job_claims`
+- `job_claim_assessments`
+- `job_selection_signals`
+- `job_selection_assessments`
+- `job_decision_tables`
+
+#### `job_decision_tables`
+
+One candidate-specific decision snapshot per evaluated job.
+
+Recommended fields:
+
+| Field | Notes |
+|---|---|
+| `decision_table_id` | Stable ID |
+| `candidate_id` | Candidate |
+| `job_id` | Canonical job |
+| `evaluation_id` | Evaluation context |
+| `can_do_score` | Substantive ability/readiness |
+| `can_get_score` | Process survivability / hiring-side plausibility |
+| `should_want_score` | Forward-fit and strategic desirability |
+| `can_explain_score` | Narrative and evidence-backed explainability |
+| `decision_label` | `apply_strongly`, `apply`, `review_high`, `review_low`, `skip` |
+| `risk_flags_json` | Structured risk list |
+| `mitigation_moves_json` | Structured candidate-side moves |
+| `assessment_reason` | Compact explanation |
+| `updated_at` | Audit timestamp |
+
+This should become the product-facing bridge between raw evaluation traces and later candidate actions.
+
+Current implementation status:
+
+- `job_claims`, `job_selection_signals`, `job_selection_assessments`, and `job_decision_tables` are now first-class tables in the primary DB
+- the current write path is driven from `jobpipe/cli/sync_evaluations.py`
 
 ---
 
@@ -413,6 +503,92 @@ This includes both JobPipe-generated materials and externally refined outputs.
 The database should store metadata and structured payloads.
 
 Large binaries like DOCX and PDF should stay on disk.
+
+---
+
+## Candidate Evidence Units
+
+JobPipe should stop relying on ad hoc bullet selection and instead maintain a reusable, candidate-approved evidence layer.
+
+### `candidate_evidence_units`
+
+One reusable evidence item tied back to candidate history.
+
+Recommended fields:
+
+| Field | Notes |
+|---|---|
+| `evidence_unit_id` | Stable ID |
+| `candidate_id` | Owner |
+| `source_type` | `work_highlight`, `project_case`, `education`, `summary_claim`, `skill_claim` |
+| `source_ref` | Link back to work/project/profile source |
+| `role_family_tags_json` | Relevant role families |
+| `domain_tags_json` | Relevant domains |
+| `capability_tags_json` | Relevant capabilities |
+| `outcome_tags_json` | Types of evidence shown |
+| `canonical_text` | Candidate-approved wording |
+| `rewrite_policy` | `verbatim_preferred`, `light_rewrite_only`, `can_summarize` |
+| `evidence_json` | Structured facts and references |
+| `created_at`, `updated_at` | Audit timestamps |
+
+This layer is the durable substrate for controlled tailoring, narrative support, and decision explainability.
+
+Current implementation status:
+
+- `candidate_evidence_units` is now a first-class table in the primary DB
+- the current write path is driven from `jobpipe/stages/application_pack.py`
+
+---
+
+## Watchlists and Change Events
+
+Living monitoring should be treated as a first-class product layer, not just repeated rescanning.
+
+### `watchlists`
+
+Track what the candidate wants to monitor over time.
+
+Recommended fields:
+
+| Field | Notes |
+|---|---|
+| `watchlist_id` | Stable ID |
+| `candidate_id` | Owner |
+| `watch_type` | `employer`, `role_family`, `search_pattern`, `source_feed`, `job` |
+| `watch_key` | Canonical normalized target |
+| `watch_label` | Human-readable label |
+| `watch_config_json` | Structured filters or matching config |
+| `is_active` | Active flag |
+| `created_at`, `updated_at` | Audit timestamps |
+
+### `change_events`
+
+Track meaningful deltas rather than only storing repeated snapshots.
+
+Recommended fields:
+
+| Field | Notes |
+|---|---|
+| `change_event_id` | Stable ID |
+| `candidate_id` | Owner |
+| `watchlist_id` | Optional watch source |
+| `job_id` | Optional affected job |
+| `change_type` | `new_job`, `job_changed`, `deadline_changed`, `selection_logic_changed`, `watch_match`, `status_changed` |
+| `change_summary` | Human-readable summary |
+| `change_json` | Structured delta details |
+| `materiality` | `low`, `medium`, `high` |
+| `detected_at` | Detection timestamp |
+| `reviewed_at` | Optional review timestamp |
+
+This is the product substrate for repeat usage, not just a notification mechanism.
+
+Current first implementation slice:
+
+- deterministic watchlist derivation now lives under `jobpipe/decision/`
+- deterministic change-event derivation uses prior `job_run_events` history and current application state when available
+- the current slice is projected into dashboard payloads
+- `watchlists` and `change_events` are now first-class tables in the primary DB
+- the current write path is driven from `jobpipe/cli/sync_evaluations.py`
 
 ---
 
@@ -515,6 +691,7 @@ Work:
 - store application events in DB
 - generate `application_state.json` only for compatibility if needed
 - store generated document metadata in DB
+- add decision-support tables as structured state rather than prompt-only logic
 
 Success criteria:
 
@@ -530,6 +707,7 @@ Work:
 - move `out_runs`, `reports`, and related exports under `JOBPIPE_DATA_DIR`
 - keep repo-local defaults only as developer convenience
 - add path helpers for runtime roots, not just personal data files
+- keep watchlists, change events, and exports under the same external data-root policy
 
 Success criteria:
 
@@ -574,9 +752,16 @@ The most practical next implementation sequence is:
    - `candidate_profiles`
    - `application_events`
    - `generated_documents`
-3. Write a bootstrap/import CLI that imports current local files into that schema.
-4. Keep `profile_pack.md` and `application_state.json` as compatibility exports during the transition.
-5. Keep `reports/evaluations_latest.csv` only as a derived reporting export, not a second source of truth.
+3. Extend the canonical state plan to include:
+   - `job_claims`
+   - `job_selection_signals`
+   - `job_decision_tables`
+   - `candidate_evidence_units`
+   - `watchlists`
+   - `change_events`
+4. Write a bootstrap/import CLI that imports current local files into that schema.
+5. Keep `profile_pack.md` and `application_state.json` as compatibility exports during the transition.
+6. Keep `reports/evaluations_latest.csv` only as a derived reporting export, not a second source of truth.
 
 ---
 
@@ -591,3 +776,14 @@ The most natural path for JobPipe is:
 - embeddings as an optional indexed capability, not the foundation
 
 That keeps the app lean today and makes later Postgres or Supabase work straightforward without forcing a premature platform rewrite.
+
+---
+
+## Related specs
+
+- [capability-gap-analysis.md](capability-gap-analysis.md)
+- [local-calibration-learning.md](local-calibration-learning.md)
+- [job-claims-model.md](job-claims-model.md)
+- [hiring-side-selection-model.md](hiring-side-selection-model.md)
+- [controlled-cv-tailoring.md](controlled-cv-tailoring.md)
+- [candidate-narrative-model.md](candidate-narrative-model.md)

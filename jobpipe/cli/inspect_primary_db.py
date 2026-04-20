@@ -13,14 +13,16 @@ from jobpipe.core.io import load_env_file
 
 load_env_file(".env")
 
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import primary_db_path
 from jobpipe.core.primary_db import connect_primary_db
 
 
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -484,6 +486,7 @@ def _print_rows(title: str, rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
+    _configure_stdout()
     ap = argparse.ArgumentParser(
         description="Inspect the primary JobPipe SQLite database used for candidate/profile/application state."
     )

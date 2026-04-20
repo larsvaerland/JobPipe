@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from jobpipe.core.job_catalog import canonical_job_row, ingest_catalog_job, job_source_record_row
+from jobpipe.runtime.catalog import canonical_job_row, ingest_catalog_job, job_source_record_row
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,

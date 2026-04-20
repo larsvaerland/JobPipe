@@ -1,0 +1,31 @@
+version: 1
+audit_name: "public_oss_persona_audit"
+
+notes:
+  - "Fill this file locally before running the first persona audit."
+  - "Do not commit personal data, real candidate files, or copied runtime state."
+  - "This file is a template for the live audit baseline, not a stored result."
+
+public_repo:
+  repo_root: "C:/path/to/Jobpipe"
+  config_path: "C:/path/to/Jobpipe/configs/pipeline.v1.yaml"
+  candidate_id: "default"
+
+runtime_baseline:
+  jobpipe_data_dir: "C:/path/to/JobpipeData"
+  primary_db_path: "C:/path/to/JobpipeData/db/jobpipe.sqlite"
+  artifacts_root: "C:/path/to/JobpipeData/artifacts"
+  exports_root: "C:/path/to/JobpipeData/exports"
+
+audit_scope:
+  use_live_job_corpus: true
+  freeze_config_before_run: true
+  freeze_dashboard_output: true
+  personas_manifest: "tests/fixtures/personas/manifest.json"
+
+review_questions:
+  - "Are top actionable roles plausible for this persona?"
+  - "Are strongest skips actually good skips?"
+  - "Are adjacent roles surfaced where they should be?"
+  - "Is evidence selection credible and reusable?"
+  - "Is the dashboard trustworthy and readable?"

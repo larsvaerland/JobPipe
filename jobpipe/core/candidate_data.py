@@ -6,7 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from jobpipe.core.paths import primary_db_path, profile_pack_path, resume_json_path
+from jobpipe.core.profile_pack import parse_profile_pack
+from jobpipe.runtime.paths import primary_db_path, profile_pack_path, resume_json_path
 
 
 def default_candidate_id() -> str:
@@ -99,4 +100,36 @@ def load_candidate_resume_json(
             return json.loads(fallback.read_text(encoding="utf-8"))
         except Exception:
             return {}
+    return {}
+
+
+def load_candidate_profile_json(
+    profile_path: str | Path | None = None,
+    *,
+    candidate_id: str | None = None,
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    explicit_path = _normalize_path(profile_path)
+    if explicit_path is not None:
+        return parse_profile_pack(explicit_path.read_text(encoding="utf-8"))
+
+    row = _load_active_profile_row(db_path=db_path, candidate_id=candidate_id)
+    if row:
+        try:
+            raw = str(row.get("profile_json") or "").strip()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+        except Exception:
+            pass
+
+        profile_pack_md = str(row.get("profile_pack_md") or "").strip()
+        if profile_pack_md:
+            return parse_profile_pack(profile_pack_md)
+
+    fallback = profile_pack_path()
+    if fallback.exists():
+        return parse_profile_pack(fallback.read_text(encoding="utf-8"))
+
     return {}

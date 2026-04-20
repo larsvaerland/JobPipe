@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -9,15 +10,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from jobpipe.core.io import load_env_file, now_iso, clean, pick, to_float, to_int
+from jobpipe.core.candidate_data import load_candidate_profile_json
+from jobpipe.core.io import load_env_file, now_iso, clean, html_to_text, pick, to_float, to_int
+from jobpipe.core.no_score_reason import derive_no_score_reason
 
 load_env_file(".env")
 
-from jobpipe.core.paths import primary_db_path
+from jobpipe.decision import (
+    MonitoringContext,
+    build_decision_context,
+    build_monitoring_context,
+    persist_job_decision_state,
+    persist_monitoring_state,
+)
+from jobpipe.runtime.paths import artifacts_root, exports_root, primary_db_path
+from jobpipe.runtime.catalog import source_job_key
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
     upsert_job_evaluation,
+    upsert_job_replay_input,
     upsert_job_run_event,
 )
 
@@ -70,6 +82,73 @@ def _safe_load_json(path: Path) -> Dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _safe_parse_json_text(value: Any) -> Dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except Exception:
+        return {}
+
+
+def _decision_job_view(row: Dict[str, Any]) -> Dict[str, Any]:
+    match = _safe_parse_json_text(row.get("raw_match_json"))
+    pivot = _safe_parse_json_text(row.get("raw_pivot_json"))
+    return {
+        **row,
+        "detail": {
+            "overlaps": match.get("overlaps", []),
+            "gaps": match.get("gaps", []),
+            "hard_blockers": match.get("hard_blockers", []),
+            "match_notes": match.get("notes", ""),
+            "pivot_type": pivot.get("pivot_type", ""),
+            "pivot_why": pivot.get("why_it_matters", []),
+        },
+    }
+
+
+def _replay_payload(job: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(job or {})
+    payload.setdefault("job_id", clean(row.get("job_id")))
+    payload.setdefault("title", clean(row.get("title")))
+    payload.setdefault("employer_name", clean(row.get("employer")))
+    payload.setdefault("work_city", clean(row.get("work_city")))
+    payload.setdefault("work_county", clean(row.get("work_county")))
+    payload.setdefault("work_postalCode", clean(row.get("work_postalCode")))
+    payload.setdefault("applicationDue", clean(row.get("applicationDue")))
+    payload.setdefault("sourceurl", clean(row.get("source_url")))
+    payload.setdefault("applicationUrl", clean(row.get("application_url")))
+    payload.setdefault("description_html", clean(row.get("description_html")))
+    if not clean(payload.get("description_text")) and clean(payload.get("description_html")):
+        payload["description_text"] = html_to_text(clean(payload.get("description_html")), max_chars=5000)
+    return payload
+
+
+def _replay_input_row(row: Dict[str, Any], *, mirrored_at: str) -> Dict[str, Any]:
+    payload = dict(row.get("replay_input_json") or {})
+    payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return {
+        "job_id": clean(row.get("job_id")),
+        "source_name": clean(payload.get("source")) or clean(payload.get("_source_name")),
+        "source_job_key": clean(source_job_key(payload)) if payload else "",
+        "source_url": clean(payload.get("sourceurl")) or clean(row.get("source_url")),
+        "application_url": clean(payload.get("applicationUrl")) or clean(row.get("application_url")),
+        "title": clean(payload.get("title")) or clean(row.get("title")),
+        "employer": clean(payload.get("employer_name")) or clean(payload.get("employer")) or clean(row.get("employer")),
+        "work_city": clean(payload.get("work_city")) or clean(row.get("work_city")),
+        "work_county": clean(payload.get("work_county")) or clean(row.get("work_county")),
+        "work_postalCode": clean(payload.get("work_postalCode")) or clean(row.get("work_postalCode")),
+        "applicationDue": clean(payload.get("applicationDue")) or clean(row.get("applicationDue")),
+        "description_text": clean(payload.get("description_text")) or clean(row.get("description_snip")),
+        "description_html": clean(payload.get("description_html")),
+        "input_payload_json": payload,
+        "input_hash": hashlib.sha1(payload_json.encode("utf-8")).hexdigest() if payload_json else "",
+        "captured_from_run_id": clean(row.get("run_id")),
+        "captured_at": clean(row.get("run_seen_at")) or mirrored_at,
+        "updated_at": mirrored_at,
+    }
 
 
 @dataclass
@@ -205,6 +284,14 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         _skip_reason = ""
 
     return {
+        "no_score_reason": derive_no_score_reason(
+            {
+                "fit_score": fit_score,
+                "pivot_score": pivot_score,
+                "skip_reason": _skip_reason,
+                "triage_decision": triage_decision,
+            }
+        ),
         "job_id": ev.job_id,
         "run_id": ev.run_id,
         "run_mtime": ev.run_mtime,
@@ -245,6 +332,7 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         "raw_match_json": json.dumps(match_j, ensure_ascii=False, sort_keys=True)[:20000],
         "raw_pivot_json": json.dumps(pivot_j, ensure_ascii=False, sort_keys=True)[:20000],
         "raw_moderator_json": json.dumps(mod_j, ensure_ascii=False, sort_keys=True)[:20000],
+        "replay_input_json": _replay_payload(job, row),
     }
 
 
@@ -278,6 +366,7 @@ CSV_COLUMNS: List[str] = [
     "feedback_flags",
     "description_snip",
     "skip_reason",
+    "no_score_reason",
     "raw_index_json",
     "raw_match_json",
     "raw_pivot_json",
@@ -298,8 +387,14 @@ def mirror_to_primary_db(
     try:
         ensure_candidate(conn, candidate_id=candidate_id)
         mirrored_at = now_iso()
+        watchlists_by_id: Dict[str, Any] = {}
+        candidate_profile = load_candidate_profile_json(candidate_id=candidate_id, db_path=db_path)
 
         for row in latest_rows:
+            upsert_job_replay_input(
+                conn,
+                _replay_input_row(row, mirrored_at=mirrored_at),
+            )
             upsert_job_evaluation(
                 conn,
                 {
@@ -342,6 +437,38 @@ def mirror_to_primary_db(
                 },
             )
 
+            job_view = _decision_job_view(row)
+            decision_context = build_decision_context(job_view, candidate_profile=candidate_profile)
+            evaluation_id = f"{clean(row.get('run_id'))}:{clean(row.get('job_id'))}"
+            persist_job_decision_state(
+                conn,
+                candidate_id=candidate_id,
+                job_id=clean(row.get("job_id")),
+                evaluation_id=evaluation_id,
+                decision_context=decision_context,
+                updated_at=clean(row.get("updated_at")) or mirrored_at,
+            )
+
+            monitoring_context = build_monitoring_context(
+                job_view,
+                candidate_id=candidate_id,
+                decision_context=decision_context,
+                run_history=[event for event in event_rows if clean(event.get("job_id")) == clean(row.get("job_id"))],
+            )
+            for watch in monitoring_context.watchlists:
+                watchlists_by_id[watch.watchlist_id] = watch
+            persist_monitoring_state(
+                conn,
+                candidate_id=candidate_id,
+                monitoring_context=monitoring_context.model_copy(
+                    update={
+                        "watchlists": [],
+                    }
+                ),
+                updated_at=clean(row.get("updated_at")) or mirrored_at,
+                replace_watchlists_state=False,
+            )
+
         for row in event_rows:
             upsert_job_run_event(
                 conn,
@@ -370,6 +497,16 @@ def mirror_to_primary_db(
                 },
             )
 
+        persist_monitoring_state(
+            conn,
+            candidate_id=candidate_id,
+            monitoring_context=MonitoringContext(
+                watchlists=list(watchlists_by_id.values()),
+                change_events=[],
+            ),
+            updated_at=mirrored_at,
+        )
+
         conn.commit()
     finally:
         conn.close()
@@ -396,10 +533,10 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> None:
-    ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state and report CSVs from out_runs/*/index.jsonl and per-job stage artifacts.")
-    ap.add_argument("--out", default="./out_runs", help="Path to out_runs (default: ./out_runs)")
-    ap.add_argument("--reports", default="./reports", help="Reports folder (default: ./reports)")
-    ap.add_argument("--csv", default="", help="CSV output path (default: <reports>/evaluations_latest.csv)")
+    ap = argparse.ArgumentParser(description="Build incremental JobPipe evaluation state and export CSVs from artifact runs and per-job stage artifacts.")
+    ap.add_argument("--out", default=str(artifacts_root()), help=f"Artifact runs root (default: {artifacts_root()})")
+    ap.add_argument("--reports", default=str(exports_root()), help=f"Exports folder (default: {exports_root()})")
+    ap.add_argument("--csv", default="", help="CSV output path (default: <exports>/evaluations_latest.csv)")
     ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe SQLite DB for mirrored evaluation state")
     ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help=f"Candidate ID for primary DB mirroring (default: {DEFAULT_CANDIDATE_ID})")
     ap.add_argument("--include-description", action="store_true", help="Include a truncated description snippet column.")
@@ -475,7 +612,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     write_csv(csv_path, rows)
 
     print("=== JobPipe Evaluation Sync ===")
-    print(f"out_runs: {out_dir.resolve()}")
+    print(f"Artifacts: {out_dir.resolve()}")
     print(f"CSV:      {csv_path.resolve()}")
     print(f"Primary:  {Path(args.db).resolve()}")
     print(f"Events scanned: {events_scanned}")

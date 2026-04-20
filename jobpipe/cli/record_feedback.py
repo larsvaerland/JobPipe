@@ -14,10 +14,7 @@ from jobpipe.core.io import load_env_file, now_iso
 
 load_env_file(".env")
 
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-from jobpipe.core.paths import primary_db_path
+from jobpipe.runtime.paths import primary_db_path
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
@@ -60,6 +57,11 @@ SIGNALS: dict[str, dict[str, str]] = {
         "label": "bad fit",
     },
 }
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -222,6 +224,7 @@ def _print_result(result: dict[str, Any], *, as_json: bool) -> None:
 
 
 def main() -> int:
+    _configure_stdout()
     args = _parser().parse_args()
     result = record_feedback(
         db_path=Path(args.db),

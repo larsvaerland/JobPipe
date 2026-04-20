@@ -1,18 +1,57 @@
 # CLI Reference
 
+The canonical operator interface is `jobpipe`.
+
+If the console script is not available in your shell, use:
+
+```text
+python -m jobpipe.cli.main ...
+```
+
+`go.ps1` remains a Windows convenience wrapper for the one-shot workflow. It is not the canonical product interface.
+
+## Notes on scope
+
+The CLI is the control-plane surface for JobPipe's local-first workflow system.
+
+It operates the candidate-first data-and-reasoning layer. It is not a public platform API and it should not be treated as the product's main source of business differentiation.
+
 ## Main workflow
 
 Normal run:
 
-```powershell
-.\go.ps1
+```text
+jobpipe run
 ```
 
 Useful variants:
 
+```text
+jobpipe run --dry-run
+jobpipe run --no-open
+jobpipe run --with-suggestions
+```
+
+`jobpipe run --dry-run` is the bounded local smoke path:
+
+- it skips live sheet intake
+- it processes at most two already-queued jobs from the local delta if present
+- it still runs sync/export so the canonical CLI path and dashboard projection path are exercised
+
+Use plain `jobpipe run` when you want the live intake + drain loop.
+
+`jobpipe run --with-suggestions` currently does this before the normal drain/sync/export loop:
+
+- Gmail status scan
+- Gmail suggestion scan
+- suggested-job intake processing
+- FINN search intake processing
+
+Windows wrapper:
+
 ```powershell
+.\go.ps1
 .\go.ps1 -DryRun
-.\go.ps1 -NoOpen
 .\go.ps1 -WithSuggestions
 ```
 
@@ -20,108 +59,155 @@ Useful variants:
 
 Pull from the published sheet export:
 
-```powershell
-python -m jobpipe.cli.pull_sheets_csv --csv-url "<published-csv-url>"
+```text
+jobpipe pull-sheets --csv-url "<published-csv-url>"
 ```
 
 Drain the queue and run the pipeline in batches:
 
-```powershell
-python -m jobpipe.cli.drain_queue --csv-url "<published-csv-url>" --candidate-id default
+```text
+jobpipe drain-queue --csv-url "<published-csv-url>" --candidate-id default
 ```
 
 FINN helpers:
 
-```powershell
-python -m jobpipe.cli.pull_finn_search --config .\configs\pipeline.v1.yaml
-python -m jobpipe.cli.pull_finn_ext
-python -m jobpipe.cli.pull_suggested --dry-run
+```text
+jobpipe pull-finn-search
+jobpipe pull-finn-ext --finn-jobs "/path/to/jobs.jsonl"
+jobpipe pull-suggested --dry-run
 ```
 
 ## Evaluation sync and dashboard export
 
 Mirror latest evaluations into the primary DB and export a reporting CSV:
 
-```powershell
-python -m jobpipe.cli.sync_evaluations --out .\out_runs --candidate-id default
+```text
+jobpipe sync-evaluations --candidate-id default
 ```
 
-Rebuild the dashboard:
+`jobpipe sync-evaluations` also preserves rerunnable job input snapshots from run artifacts in the primary DB so evaluated jobs remain auditable after the live catalog changes.
 
-```powershell
-python -m jobpipe.cli.export_dashboard --candidate-id default
+Rebuild the dashboard export:
+
+```text
+jobpipe export-dashboard --candidate-id default
+```
+
+Export thin companion workflow projections for `jobsync`:
+
+```text
+jobpipe export-jobsync --candidate-id default
+jobpipe export-jobsync --job-id JOB_ID
+```
+
+Export one thin `reactive-resume` tailoring plan:
+
+```text
+jobpipe export-reactive-resume-plan JOB_ID
 ```
 
 ## Candidate state and inspection
 
 Bootstrap current candidate files into the primary DB:
 
-```powershell
-python -m jobpipe.cli.bootstrap_state_db
+```text
+jobpipe bootstrap-state-db
+jobpipe import-reactive-resume /path/to/reactive_resume.json
 ```
 
 Generate a capability-gap report from current evaluation evidence:
 
-```powershell
-python -m jobpipe.cli.gap_analysis_report --candidate-id default
+```text
+jobpipe gap-analysis --candidate-id default
 ```
 
 Record explicit manual feedback for later calibration:
 
-```powershell
-python -m jobpipe.cli.record_feedback JOB_ID good_recommendation
-python -m jobpipe.cli.record_feedback JOB_ID bad_recommendation --notes "Prestigious role, but unrealistic ask"
-python -m jobpipe.cli.record_feedback JOB_ID promote --notes "Non-obvious role family, but strong real match"
-python -m jobpipe.cli.record_feedback JOB_ID demote
-python -m jobpipe.cli.record_feedback JOB_ID good_fit
-python -m jobpipe.cli.record_feedback JOB_ID bad_fit --json
+```text
+jobpipe record-feedback JOB_ID good_recommendation
+jobpipe record-feedback JOB_ID bad_recommendation --notes "Prestigious role, but unrealistic ask"
+jobpipe record-feedback JOB_ID promote --notes "Non-obvious role family, but strong real match"
+jobpipe record-feedback JOB_ID demote
+jobpipe record-feedback JOB_ID good_fit
+jobpipe record-feedback JOB_ID bad_fit --json
 ```
 
 Inspect DB state:
 
-```powershell
-python -m jobpipe.cli.inspect_primary_db --show summary --show applications --show suggestions
-python -m jobpipe.cli.inspect_primary_db --show events --limit 20 --json
-python -m jobpipe.cli.inspect_primary_db --show feedback --show gaps --show gap_assessments --limit 20
+```text
+jobpipe inspect-db --show summary --show applications --show suggestions
+jobpipe inspect-db --show events --limit 20 --json
+jobpipe inspect-db --show feedback --show gaps --show gap_assessments --limit 20
 ```
+
+Persona audit utilities:
+
+```text
+python -m jobpipe.cli.persona_audit --freeze-only
+python -m jobpipe.cli.persona_audit --jobs-per-bucket 2
+```
+
+The persona audit CLI:
+
+- freezes one local live-corpus baseline
+- freezes one small stratified audit slice for the first runnable matrix
+- runs each synthetic persona into its own isolated DB, artifacts root, and dashboard export
+- keeps persona dashboard application state isolated from the normal local sidecar state
+- does not mutate the normal `JOBPIPE_DATA_DIR` state used by day-to-day operation
 
 ## Application tracking
 
 Manual status updates:
 
-```powershell
-python -m jobpipe.cli.mark_status JOB_ID shortlisted
-python -m jobpipe.cli.mark_status JOB_ID applied
-python -m jobpipe.cli.mark_status JOB_ID interview
-python -m jobpipe.cli.mark_status JOB_ID rejected --notes "Form letter"
-python -m jobpipe.cli.mark_status JOB_ID dismissed
-python -m jobpipe.cli.mark_status --list
+```text
+jobpipe mark-status JOB_ID shortlisted
+jobpipe mark-status JOB_ID applied
+jobpipe mark-status JOB_ID interview
+jobpipe mark-status JOB_ID rejected --notes "Form letter"
+jobpipe mark-status JOB_ID dismissed
+jobpipe mark-status --list
+```
+
+Thin `jobsync` write-back event:
+
+```text
+jobpipe record-jobsync-event JOB_ID applied
+jobpipe record-jobsync-event JOB_ID interview --notes "Booked in jobsync"
+```
+
+Thin `reactive-resume` rendered-document write-back:
+
+```text
+jobpipe record-reactive-resume-document JOB_ID tailored_cv_docx "C:/path/to/tailored_cv.docx"
 ```
 
 ## Gmail integration
 
 One-time setup:
 
-```powershell
-python -m jobpipe.cli.scan_gmail --setup
+```text
+jobpipe scan-gmail --setup
 ```
 
 Status scan:
 
-```powershell
-python -m jobpipe.cli.scan_gmail
-python -m jobpipe.cli.scan_gmail --dry-run --verbose
+```text
+jobpipe scan-gmail
+jobpipe scan-gmail --dry-run --verbose
 ```
 
 Suggestion scan:
 
-```powershell
-python -m jobpipe.cli.scan_gmail --scan-suggestions
-python -m jobpipe.cli.scan_gmail --scan-suggestions --dry-run
+```text
+jobpipe scan-gmail --scan-suggestions
+jobpipe scan-gmail --scan-suggestions --dry-run
 ```
 
-## Notes
+## Runtime notes
 
 - The primary DB is the canonical runtime state layer.
 - `JOBPIPE_CANDIDATE_ID` defaults to `default` if not set.
-- For the normal workflow, `go.ps1` is the intended entry point. Use the lower-level CLIs when debugging or operating a specific slice.
+- `JOBPIPE_DATA_DIR` is the recommended boundary for persistent user data.
+- The canonical top-level `jobpipe run` flags are `--artifacts` and `--exports`; low-level module CLIs may still expose legacy `--out`, `--out-runs`, or `--reports` flags during transition.
+- Use the low-level module CLIs when debugging a specific slice.
+- Use `jobpipe run` for normal operation.

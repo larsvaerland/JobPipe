@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import patch, MagicMock
+from jobpipe.model.schema import JobContext, RunMeta, TriageOut
 from jobpipe.stages.triage import triage_stage_factory, _norm_postal, _get_postals
-from jobpipe.core.schema import JobContext, RunMeta
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,6 @@ class TestAllowedPostalCodes:
         # We can't run the LLM in tests, so we patch it to return REVIEW
         with patch("jobpipe.stages.triage.build_triage_agent"), \
              patch("jobpipe.stages.triage.run_agent") as mock_run:
-            from jobpipe.core.schema import TriageOut
             mock_out = MagicMock()
             mock_out.final_output_as.return_value = TriageOut(
                 triage_decision="REVIEW", confidence=0.8, explanation="LLM reached", signals=[]
@@ -164,7 +163,6 @@ class TestRemoteOverride:
         """A job with remote=True and a blocked postal should NOT be geo-skipped."""
         with patch("jobpipe.stages.triage.build_triage_agent"), \
              patch("jobpipe.stages.triage.run_agent") as mock_run:
-            from jobpipe.core.schema import TriageOut
             mock_out = MagicMock()
             mock_out.final_output_as.return_value = TriageOut(
                 triage_decision="REVIEW", confidence=0.7, explanation="remote job", signals=[]
@@ -187,7 +185,6 @@ class TestRemoteOverride:
         """Hybrid in first 300 chars of description should bypass geo block."""
         with patch("jobpipe.stages.triage.build_triage_agent"), \
              patch("jobpipe.stages.triage.run_agent") as mock_run:
-            from jobpipe.core.schema import TriageOut
             mock_out = MagicMock()
             mock_out.final_output_as.return_value = TriageOut(
                 triage_decision="REVIEW", confidence=0.7, explanation="hybrid ok", signals=[]
@@ -233,7 +230,6 @@ class TestCountyFallback:
         """Jobs in Oslo with no postal code must NOT be geo-SKIPped."""
         with patch("jobpipe.stages.triage.build_triage_agent"), \
              patch("jobpipe.stages.triage.run_agent") as mock_run:
-            from jobpipe.core.schema import TriageOut
             mock_out = MagicMock()
             mock_out.final_output_as.return_value = TriageOut(
                 triage_decision="REVIEW", confidence=0.8, explanation="oslo ok", signals=[]
@@ -250,7 +246,6 @@ class TestCountyFallback:
         """Jobs with no postal code AND no county must pass to LLM (don't hard-block unknowns)."""
         with patch("jobpipe.stages.triage.build_triage_agent"), \
              patch("jobpipe.stages.triage.run_agent") as mock_run:
-            from jobpipe.core.schema import TriageOut
             mock_out = MagicMock()
             mock_out.final_output_as.return_value = TriageOut(
                 triage_decision="REVIEW", confidence=0.6, explanation="unknown location", signals=[]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Callable, Tuple
 
-from jobpipe.core.schema import JobContext, ModeratorOut
+from jobpipe.model.schema import JobContext, ModeratorOut
 
 
 def _clamp01(x) -> float:

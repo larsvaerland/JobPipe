@@ -6,7 +6,7 @@ import re
 
 from agents import Agent
 
-from jobpipe.core.schema import JobContext, TriageOut
+from jobpipe.model.schema import JobContext, TriageOut
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 from jobpipe.stages.semantic_filter import build_semantic_filter
 

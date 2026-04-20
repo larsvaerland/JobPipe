@@ -1,7 +1,7 @@
 """Fetch full job content for platform-suggested jobs queued by scan_gmail --scan-suggestions.
 
 Reads queued suggestion leads from the primary JobPipe DB (with
-reports/suggested_jobs.jsonl as a fallback bridge), fetches each job's full
+suggested_jobs.jsonl as a fallback bridge), fetches each job's full
 content from FINN.no (using BeautifulSoup4 to parse JSON-LD structured data),
 normalizes to pipeline JSONL format, and appends to jobs_delta.jsonl with
 suggested_by_platform=true.
@@ -19,10 +19,10 @@ LinkedIn suggestions are queued but not yet auto-fetched (different scraping
 approach needed). They appear in the output as not-yet-fetched entries.
 
 Usage:
-    python -m jobpipe.cli.pull_suggested                        # up to 20 FINN jobs
-    python -m jobpipe.cli.pull_suggested --max 5 --dry-run      # preview only
-    python -m jobpipe.cli.pull_suggested --force-daytime        # skip time guard
-    python -m jobpipe.cli.pull_suggested --max 5 --verbose      # verbose + small batch
+    jobpipe pull-suggested                               # up to 20 FINN jobs
+    jobpipe pull-suggested --max 5 --dry-run             # preview only
+    jobpipe pull-suggested --force-daytime               # skip time guard
+    jobpipe pull-suggested --max 5 --verbose             # verbose + small batch
 """
 from __future__ import annotations
 
@@ -40,16 +40,12 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.job_catalog import ingest_catalog_job, load_source_record_index
+from jobpipe.runtime.catalog import ingest_catalog_job, load_source_record_index
 from jobpipe.core.io import load_env_file
-from jobpipe.core.paths import primary_db_path, suggested_jobs_path
+from jobpipe.runtime.paths import jobs_delta_path, primary_db_path, suggested_jobs_path
 from jobpipe.core.primary_db import connect_primary_db, ensure_candidate, list_suggestion_leads, mark_suggestion_lead_status
 
 load_env_file(".env")
-
-# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # BeautifulSoup4 (required — in requirements.txt)
 try:
@@ -68,7 +64,7 @@ except Exception:
 
 DEFAULT_SUGGESTED_PATH = suggested_jobs_path()
 DEFAULT_DB_PATH = primary_db_path()
-DEFAULT_OUT_PATH = Path("./jobs_delta.jsonl")
+DEFAULT_OUT_PATH = jobs_delta_path()
 DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
 _DAYTIME_START = 9   # 09:00 Oslo — start of allowed window
@@ -80,6 +76,11 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+
+def _configure_stdout() -> None:
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 # --- Time guard ---
@@ -397,6 +398,7 @@ def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Option
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
+    _configure_stdout()
     ap = argparse.ArgumentParser(
         description=(
             "Fetch full job content for platform-suggested FINN jobs. "
@@ -408,7 +410,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--suggested",
         default=str(DEFAULT_SUGGESTED_PATH),
-        help="Path to suggested_jobs.jsonl fallback bridge file (default: reports/suggested_jobs.jsonl)",
+        help=f"Path to suggested_jobs.jsonl fallback bridge file (default: {DEFAULT_SUGGESTED_PATH})",
     )
     ap.add_argument(
         "--db",
@@ -423,7 +425,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument(
         "--out",
         default=str(DEFAULT_OUT_PATH),
-        help="Output JSONL path to append fetched jobs to (default: jobs_delta.jsonl)",
+        help=f"Output JSONL path to append fetched jobs to (default: {DEFAULT_OUT_PATH})",
     )
     ap.add_argument(
         "--max",
@@ -647,9 +649,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     if fetched:
         print(
-            "Next step: run pipeline to process fetched suggestions:\n"
-            "  .\\go.ps1 -DryRun   (test 2 jobs first)\n"
-            "  .\\go.ps1           (full run)"
+            "Next step: run the main workflow to process fetched suggestions:\n"
+            "  jobpipe run --dry-run   (test 2 jobs first)\n"
+            "  jobpipe run             (full run)"
         )
 
 
