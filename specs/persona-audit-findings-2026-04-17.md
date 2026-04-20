@@ -236,37 +236,46 @@ Next hardening move:
 
 Latest audit root:
 
-- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_165145`
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_174339`
 
-Observed movement on the final validated Sprint 3 code state:
+Observed movement on the latest validated code state:
 
 - `persona_b_specialist`
-  - `0 apply / 3 review / 3 skip`
-  - `Produktleder til team Beredskap og krisehåndtering` now falls to `SKIP`
-  - `Produktleder` and `Produktleder for sentrale backend‑tjenester` remain `REVIEW_LOW`
+  - `0 apply / 1 review / 5 skip`
+  - all three product-leadership roles now fall to `SKIP`
+  - only `IT-ingeniør - sikkerhet` remains in `REVIEW_LOW`
 - `persona_c_public_transition`
-  - `0 apply / 4 review / 2 skip`
-  - all three product-leadership roles still remain `REVIEW_LOW`
-  - `Head of Enterprise Architecture` also remains in `REVIEW_LOW`
-- `persona_d_early_adjacent`
   - `0 apply / 2 review / 4 skip`
+  - all three product-leadership roles now fall to `SKIP`
+  - `IT-ingeniør - sikkerhet` and `Head of Enterprise Architecture` remain `REVIEW_LOW`
+- `persona_d_early_adjacent`
+  - `0 apply / 1 review / 5 skip`
   - `Produktleder` remains `REVIEW_LOW`
-  - `Produktleder for sentrale backend‑tjenester` and `Produktleder til team Beredskap og krisehåndtering` both stay `SKIP`
+  - `Produktleder til team Beredskap og krisehåndtering` and `Produktleder for sentrale backend‑tjenester` now fall to `SKIP`
+
+Implementation note:
+
+- this bounded follow-on slice did not add more scoring or monitoring heuristics
+- it tightened the triage safety seam instead:
+  - the global `target-title` forced-review override is now candidate-aware in `jobpipe/stages/triage.py`
+  - the override now respects declared target-role anchors and positive role-family signals from the profile pack
+  - generic product-leadership titles are no longer auto-rescued for profiles that do not actually target product-family roles
 
 Interpretation:
 
 - the bounded Sprint 3 slice is real and visible in the matrix:
   - the reference persona still keeps the three product-leadership roles in the actionable surface, which is the intended contrast
-  - the specialist and early-adjacent personas now show clearer suppression of some off-anchor product-leadership roles
-- product-leadership inertia is therefore **reduced but not resolved**
-- the public-transition persona remains the main unresolved case because all three product-leadership roles still stay in review
+  - the follow-on title-safety hardening now removes all three product-leadership roles from the public-transition and specialist review surfaces
+  - the early-adjacent persona is also stricter, with only one lower-confidence product title still remaining in review
+- product-leadership inertia is therefore **materially reduced and narrowed**
+- the main remaining sticky case is the single `Produktleder` review for the early-adjacent persona
 
 Status update:
 
 - finding `4` remains open
 - the next clean hardening move is narrower:
-  - keep pushing public-sector/governance directionality and target-role-anchor penalties
-  - do not reopen the already-landed bounded Sprint 3 slice
+  - evaluate whether the remaining early-adjacent `Produktleder` review is acceptable adjacency or should be demoted too
+  - do not reopen the already-landed candidate-aware target-title safety slice unless a new audit rerun shows it regressing
 
 ### 5. Monitoring is still too noisy relative to audit slice size
 
@@ -299,36 +308,37 @@ Some of this is legitimate multi-watchlist behavior, but the current ratio still
 
 Latest audit root:
 
-- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_165145`
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_174339`
 
-Observed monitoring summary on the final validated Sprint 3 code state:
+Observed monitoring summary on the latest validated code state:
 
 - reference persona:
-  - `watchlist_count=16`
-  - `watchlist_count_by_materiality: high=2, medium=6, low=8`
+  - `watchlist_count=8`
+  - `watchlist_count_by_materiality: high=3, medium=3, low=2`
   - `change_event_count=6`
 - specialist persona:
-  - `watchlist_count=10`
-  - `watchlist_count_by_materiality: high=0, medium=6, low=4`
+  - `watchlist_count=4`
+  - `watchlist_count_by_materiality: high=0, medium=2, low=2`
   - `change_event_count=6`
 - public-transition persona:
-  - `watchlist_count=15`
-  - `watchlist_count_by_materiality: high=0, medium=6, low=9`
+  - `watchlist_count=6`
+  - `watchlist_count_by_materiality: high=0, medium=4, low=2`
   - `change_event_count=6`
 - early-adjacent persona:
-  - `watchlist_count=8`
-  - `watchlist_count_by_materiality: high=0, medium=4, low=4`
+  - `watchlist_count=4`
+  - `watchlist_count_by_materiality: high=0, medium=2, low=2`
   - `change_event_count=6`
 
 Interpretation:
 
 - the new materiality split is still useful because background watches are now inspectable instead of one flat count
-- but the final validated rerun shows that total watchlist density is still too high:
-  - reference rises to `16`
-  - public-transition rises to `15`
-  - early-adjacent rises to `8`
-- the compatibility-path fix kept dashboard summaries honest, but it did not close the underlying monitoring-noise issue
-- finding `5` is therefore **still open and not yet materially improved overall**
+- the candidate-aware title-safety hardening also reduced total watchlist density materially by shrinking noisy review surfaces:
+  - reference drops to `8`
+  - specialist drops to `4`
+  - public-transition drops to `6`
+  - early-adjacent drops to `4`
+- that is meaningful improvement, but it is still mostly an indirect effect of better decision outcomes rather than a dedicated monitoring-model redesign
+- finding `5` therefore remains open, but it is now **materially improved**
 
 Implementation note:
 

@@ -6,9 +6,20 @@ import re
 
 from agents import Agent
 
+from jobpipe.core.profile_pack import parse_profile_pack
 from jobpipe.model.schema import JobContext, TriageOut
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 from jobpipe.stages.semantic_filter import build_semantic_filter
+
+
+_TITLE_FAMILY_MARKERS: dict[str, tuple[str, ...]] = {
+    "product": ("product", "produkt"),
+    "service": ("service owner", "service manager", "service management", "tjenesteeier", "tjenesteleder", "tjenesteansvar"),
+    "platform": ("platform", "plattform", "systemansvar", "systemeier", "applikasjonsforvalt", "systemforvalt"),
+    "change": ("change", "endrings", "transformation", "transformasjon", "digitalization", "digitalisering"),
+    "governance": ("governance", "process owner", "prosess", "pmo", "program", "portfolio", "portefølje"),
+    "operations": ("operations", "drift", "forvaltning", "crm", "itsm"),
+}
 
 
 def _uniq_hits(rx: re.Pattern | None, s: str, limit: int = 8) -> list[str]:
@@ -144,6 +155,65 @@ def _extract_profile_summary(profile_pack: str, max_chars: int = 900) -> str:
     return summary[:max_chars]
 
 
+def _text_tokens(text: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if token}
+
+
+def _matches_profile_phrase(text: str, phrase: str) -> bool:
+    haystack = text.lower()
+    needle = str(phrase or "").strip().lower()
+    if not needle:
+        return False
+    if needle in haystack:
+        return True
+    needle_tokens = _text_tokens(needle)
+    haystack_tokens = _text_tokens(haystack)
+    return bool(needle_tokens) and needle_tokens.issubset(haystack_tokens)
+
+
+def _candidate_title_safety_terms(profile_pack: str) -> list[str]:
+    if not profile_pack.strip():
+        return []
+    parsed = parse_profile_pack(profile_pack)
+    terms: list[str] = []
+    terms.extend(str(value).strip() for value in parsed.get("target_roles", {}).get("primary", []) if str(value).strip())
+    terms.extend(str(value).strip() for value in parsed.get("target_roles", {}).get("secondary", []) if str(value).strip())
+    keyword_signals = parsed.get("keyword_signals", {})
+    for tier in ("tier_a", "tier_b"):
+        for item in keyword_signals.get(tier, []):
+            for part in str(item).split("|"):
+                text = part.strip()
+                if text:
+                    terms.append(text)
+    return terms
+
+
+def _title_families(text: str) -> set[str]:
+    lowered = str(text or "").lower()
+    return {
+        family
+        for family, markers in _TITLE_FAMILY_MARKERS.items()
+        if any(marker in lowered for marker in markers)
+    }
+
+
+def _candidate_supports_target_title(title: str, profile_pack: str) -> bool:
+    if not profile_pack.strip():
+        return True
+
+    terms = _candidate_title_safety_terms(profile_pack)
+    if any(_matches_profile_phrase(title, term) for term in terms):
+        return True
+
+    title_families = _title_families(title)
+    if not title_families:
+        return False
+
+    profile_family_text = "\n".join(terms)
+    profile_families = _title_families(profile_family_text)
+    return bool(title_families & profile_families)
+
+
 def build_triage_agent(model: str, profile_summary: str) -> Agent:
     instructions = TRIAGE_INSTRUCTIONS_TEMPLATE.format(profile_summary=profile_summary)
     return Agent(
@@ -199,6 +269,11 @@ def triage_stage_factory(
 
     # Build agent with profile baked into instructions — no need to send profile in user input
     profile_summary = _extract_profile_summary(profile_pack) if profile_pack else ""
+    candidate_supports_target_title = (
+        lambda title: _candidate_supports_target_title(title, profile_pack)
+        if profile_pack
+        else True
+    )
     agent = build_triage_agent(model, profile_summary)
 
     # Semantic pre-filter: free local embeddings before any LLM call.
@@ -296,7 +371,7 @@ def triage_stage_factory(
         # Safety override: if title matches a primary target, never let semantic filter kill it.
         ctx = semantic_check(ctx)
         if ctx.triage is not None:
-            if target_re and target_re.search(title):
+            if target_re and target_re.search(title) and candidate_supports_target_title(title):
                 # Title is a primary target — override semantic SKIP, let LLM decide
                 ctx.triage = None
                 pre = list(ctx.notes.get("pre_signals") or [])
@@ -347,13 +422,17 @@ def triage_stage_factory(
 
         if out.triage_decision == "SKIP":
             conf = float(out.confidence or 0.0)
+            target_title_match = bool(target_re and target_re.search(title))
+            candidate_title_supported = candidate_supports_target_title(title)
 
             # 1) Title-target should never SKIP
-            if never_skip_title and target_re and target_re.search(title):
+            if never_skip_title and target_title_match and candidate_title_supported:
                 out.triage_decision = "REVIEW"
                 out.forced_safety = True
                 out.explanation = (out.explanation or "") + " | forced REVIEW (target-title safety)"
                 out.signals = list(dict.fromkeys((out.signals or []) + ["safety:target_title"]))
+            elif target_title_match and not candidate_title_supported:
+                out.signals = list(dict.fromkeys((out.signals or []) + ["candidate_target_title_mismatch"]))
 
             else:
                 # 2) Very-strong override: require >=2 hits unless title itself hits

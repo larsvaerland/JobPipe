@@ -27,31 +27,23 @@ If this file is blank or stale, ignore it and follow the canonical planning docu
 
 No active scoped contract is open right now.
 
-The previous scoped contract in this file was the earlier branch-trustworthiness sprint and is now complete.
+The latest completed scoped sprint on `codex/job-catalog-foundation` was the bounded public-transition hardening slice for:
 
-The latest completed scoped sprint on `codex/job-catalog-foundation` was the bounded public-hardening slice for:
-
-- Sprint 3 Topic 7: persona differentiation hardening
-- Sprint 3 Topic 8: monitoring noise reduction
+- Sprint 4 Topic 9: candidate-aware target-title safety
+- Sprint 4 Topic 10: focused persona-audit evidence refresh
 
 Completed on 2026-04-20 with this evidence:
 
-- `python -m pytest tests/ -q` -> `187 passed`
+- `python -m pytest tests/test_triage_target_safety.py tests/test_geo_filter.py -q` -> `32 passed in 2.55s`
+- `python -m pytest tests/ -q` -> `191 passed in 5.96s`
 - `python compile_check.py` -> `OK — 70 files parsed cleanly`
 - `python -m jobpipe.cli.main run --dry-run --no-open` -> OK (`Events scanned: 749; Unique jobs (latest): 748; 871 jobs / 24 actionable / 1 tracked`)
-- `python -m jobpipe.cli.main inspect-db --show summary` -> live DB reports `Schema version: 8`
-- `python -m jobpipe.cli.persona_audit` -> latest audit root `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_165145`
+- `python -m jobpipe.cli.persona_audit` -> latest audit root `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_174339`
 
 Tracked code/docs aligned with that closure:
 
-- `jobpipe/decision/derive.py`
-- `jobpipe/decision/models.py`
-- `jobpipe/decision/monitoring.py`
-- `jobpipe/decision/persistence.py`
-- `jobpipe/projections/dashboard.py`
-- `jobpipe/core/primary_db.py`
-- `tests/test_decision_context.py`
-- `tests/test_monitoring_context.py`
+- `jobpipe/stages/triage.py`
+- `tests/test_triage_target_safety.py`
 - `specs/persona-audit-findings-2026-04-17.md`
 
 ## Next handoff
