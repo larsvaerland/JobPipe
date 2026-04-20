@@ -115,6 +115,39 @@ jobpipe bootstrap-state-db
 jobpipe import-reactive-resume /path/to/reactive_resume.json
 ```
 
+Archive generated runtime state and create a fresh post-refactor baseline root:
+
+```text
+jobpipe reset-runtime
+jobpipe reset-runtime --tag post_refactor_baseline
+```
+
+`jobpipe reset-runtime`:
+
+- requires `JOBPIPE_DATA_DIR`
+- archives generated runtime state under `<JOBPIPE_DATA_DIR>/_archives/<tag>/`
+- recreates fresh `db/`, `artifacts/`, `exports/`, and `cache/` roots
+- restores the active `application_state.json` by default so tracked application history can be re-bootstrapped into the fresh DB
+- leaves candidate inputs, secrets, and audit outputs in place
+
+The intended rebuild sequence is:
+
+```text
+jobpipe reset-runtime
+jobpipe bootstrap-state-db
+jobpipe run --no-open
+```
+
+That sequence is for a bounded fresh baseline plus the normal loop.
+
+If you explicitly want a new full first-pass pull from the sheet/NAV queue, use the lower-level queue command later:
+
+```text
+jobpipe drain-queue --reset-state
+```
+
+That path is intentionally slower and should be treated as a deliberate operator action, not as the normal smoke or sprint-closure validation surface.
+
 Generate a capability-gap report from current evaluation evidence:
 
 ```text

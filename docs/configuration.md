@@ -94,6 +94,23 @@ For single-user clean installs that already have a flat `JOBPIPE_DATA_DIR`, JobP
 
 Use `bootstrap-state-db` to import current local candidate data into the DB.
 
+For a controlled post-refactor rebuild of generated runtime state, use:
+
+```text
+jobpipe reset-runtime
+jobpipe bootstrap-state-db
+```
+
+`reset-runtime` archives generated state under `<JOBPIPE_DATA_DIR>/_archives/` and recreates fresh runtime folders. It is designed for the current hybrid layout too, so flat compatibility files such as `profile_pack.md`, `resume.json`, Gmail secrets, and preserved application-state inputs are not silently destroyed.
+
+A full first-pass queue rebuild remains separate:
+
+```text
+jobpipe drain-queue --reset-state
+```
+
+Use that only when you intentionally want to repull the large source queue. It is not required for normal smoke validation after a reset.
+
 ## Transitional compatibility files
 
 Some file-shaped runtime data still exists during migration, including items such as:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from jobpipe.cli import main as cli_main
 
@@ -123,3 +124,19 @@ def test_run_defaults_honor_env_file_data_root(tmp_path, monkeypatch) -> None:
     assert str(data_root / "exports") in sync_argv
     assert str(data_root / "db" / "jobpipe.sqlite") in sync_argv
     assert str(data_root / "exports" / "dashboard.html") in export_argv
+
+
+def test_reset_runtime_proxies_module(monkeypatch) -> None:
+    calls: list[tuple[str, list[str]]] = []
+
+    def _fake_run_module(module: str, argv: list[str], *, allow_failure: bool = False) -> int:
+        calls.append((module, list(argv)))
+        return 0
+
+    monkeypatch.setattr(cli_main, "_run_module", _fake_run_module)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main.main(["reset-runtime", "--", "--tag", "baseline_a"])
+
+    assert exc.value.code == 0
+    assert calls == [("jobpipe.cli.reset_runtime", ["--tag", "baseline_a"])]

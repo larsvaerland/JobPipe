@@ -40,6 +40,7 @@ MODULE_COMMANDS = {
     "record-feedback": "jobpipe.cli.record_feedback",
     "record-jobsync-event": "jobpipe.cli.record_jobsync_event",
     "record-reactive-resume-document": "jobpipe.cli.record_reactive_resume_document",
+    "reset-runtime": "jobpipe.cli.reset_runtime",
     "scan-gmail": "jobpipe.cli.scan_gmail",
     "sync-evaluations": "jobpipe.cli.sync_evaluations",
 }
@@ -357,7 +358,10 @@ def main(argv: list[str] | None = None) -> None:
     raw_argv = list(argv if argv is not None else sys.argv[1:])
     if raw_argv and raw_argv[0] in MODULE_COMMANDS:
         module = MODULE_COMMANDS[raw_argv[0]]
-        raise SystemExit(_run_module(module, raw_argv[1:]))
+        forwarded = raw_argv[1:]
+        if forwarded and forwarded[0] == "--":
+            forwarded = forwarded[1:]
+        raise SystemExit(_run_module(module, forwarded))
 
     _preload_env_from_argv(raw_argv)
     ap = _build_parser()
