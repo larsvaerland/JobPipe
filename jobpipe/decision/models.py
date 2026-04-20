@@ -82,6 +82,8 @@ NarrativeEvidenceLinkType = Literal[
 
 WatchType = Literal["employer", "role_family", "search_pattern", "source_feed", "job"]
 
+WatchMateriality = Literal["low", "medium", "high"]
+
 ChangeType = Literal[
     "new_job",
     "job_changed",
@@ -258,6 +260,7 @@ class Watchlist(BaseModel):
     watch_label: str
     watch_config_json: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True
+    materiality: WatchMateriality = "low"
 
 
 class ChangeEvent(BaseModel):
@@ -366,6 +369,7 @@ __all__ = [
     "SelectionSignalType",
     "SelectionStage",
     "SignalStrength",
+    "WatchMateriality",
     "WatchType",
     "Watchlist",
 ]

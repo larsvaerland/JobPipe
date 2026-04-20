@@ -145,6 +145,96 @@ def test_build_decision_context_penalizes_leadership_scope_for_specialist_profil
     assert specialist.decision_table.can_get.score < baseline.decision_table.can_get.score
 
 
+def test_build_decision_context_flags_off_anchor_product_leadership_for_public_transition() -> None:
+    public_transition_profile = parse_profile_pack(
+        dedent(
+            """
+        ## 0) Candidate snapshot (quick facts)
+        - Level: Mid-Senior
+        - Positioning: Public-sector service management and digitalization transition candidate.
+
+        ### Strategic direction (priority signal for triage)
+        Prioritize digitalization advisor, service manager, PMO advisor, process owner, and governance roles.
+
+        ## 1) Target roles (TITLE ANCHORS) - keep if close match
+        ### Primary targets (highest priority)
+        - Digitalization Advisor
+        - Service Manager
+        - PMO Advisor
+        - Process Owner
+
+        ### Secondary targets
+        - Program Coordinator
+        - Governance Advisor
+
+        ### Hard NO (even as stepping stone)
+        - Pure software engineer
+        - Frontline care role
+        """
+        )
+    )
+    reference_profile = parse_profile_pack(
+        dedent(
+            """
+        ## 0) Candidate snapshot (quick facts)
+        - Level: Mid-Senior
+        - Positioning: Product manager with platform delivery track record.
+
+        ### Strategic direction (priority signal for triage)
+        Prioritize product manager, product owner, and platform product leadership roles.
+
+        ## 1) Target roles (TITLE ANCHORS) - keep if close match
+        ### Primary targets (highest priority)
+        - Product Manager
+        - Product Owner
+        - Senior Product Manager
+
+        ### Secondary targets
+        - Platform Lead
+
+        ### Hard NO (even as stepping stone)
+        - Pure backend engineer
+        """
+        )
+    )
+    job = {
+        "title": "Produktleder",
+        "sector": "Public Sector",
+        "fit_score": 62,
+        "pivot_score": 50,
+        "final_decision": "REVIEW_HIGH",
+        "recommendation_reason": "Product leadership scope with platform delivery overlap.",
+        "description_snip": "Own product roadmap for a central backend platform. Product Manager responsibilities.",
+        "detail": {
+            "overlaps": ["Product leadership"],
+            "gaps": ["Public-sector context"],
+            "hard_blockers": [],
+            "match_notes": "Attractive leadership title but off-anchor for this profile.",
+        },
+    }
+
+    baseline = build_decision_context(job)
+    public_transition = build_decision_context(job, candidate_profile=public_transition_profile)
+    reference = build_decision_context(job, candidate_profile=reference_profile)
+
+    pt_signal_keys = {signal.normalized_key for signal in public_transition.selection_signals}
+    ref_signal_keys = {signal.normalized_key for signal in reference.selection_signals}
+
+    assert "candidate_leadership_title_off_anchor" in pt_signal_keys
+    assert "candidate_product_leadership_off_anchor" in pt_signal_keys
+    assert "candidate_leadership_title_off_anchor" not in ref_signal_keys
+    assert "candidate_product_leadership_off_anchor" not in ref_signal_keys
+
+    assert public_transition.selection_assessment.screenability_score < baseline.selection_assessment.screenability_score
+    assert public_transition.selection_assessment.selection_risk_level in {"high", "very_high"}
+    assert any(
+        "product-leadership" in vector.lower() or "outside declared target" in vector.lower()
+        for vector in public_transition.selection_assessment.likely_rejection_vectors
+    )
+    assert public_transition.selection_assessment.assessment_json["candidate_profile_flags"]["product_leadership_off_anchor"] is True
+    assert reference.selection_assessment.assessment_json["candidate_profile_flags"]["product_leadership_off_anchor"] is False
+
+
 def test_build_decision_context_boosts_primary_target_alignment() -> None:
     specialist_profile = parse_profile_pack(
         dedent(

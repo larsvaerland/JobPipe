@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 from jobpipe.core.io import now_iso
 
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "8"
 
 
 def _json_text(value: Any) -> str:
@@ -583,6 +583,7 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
             watch_label TEXT NOT NULL DEFAULT '',
             watch_config_json TEXT NOT NULL DEFAULT '{}',
             is_active INTEGER NOT NULL DEFAULT 1,
+            materiality TEXT NOT NULL DEFAULT 'low',
             updated_at TEXT NOT NULL,
             FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
         );
@@ -610,6 +611,13 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         """
     )
 
+    _ensure_column(
+        conn,
+        table="watchlists",
+        column="materiality",
+        ddl="ALTER TABLE watchlists ADD COLUMN materiality TEXT NOT NULL DEFAULT 'low'",
+    )
+
     ts = now_iso()
     conn.execute(
         """
@@ -622,6 +630,19 @@ def connect_primary_db(path: str | Path) -> sqlite3.Connection:
         ["schema_version", SCHEMA_VERSION, ts],
     )
     return conn
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    column: str,
+    ddl: str,
+) -> None:
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    existing = {str(row[1]) for row in cursor.fetchall()}
+    if column not in existing:
+        conn.execute(ddl)
 
 
 def _upsert(

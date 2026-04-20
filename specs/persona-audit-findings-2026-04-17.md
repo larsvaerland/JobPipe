@@ -232,6 +232,42 @@ Next hardening move:
 - tighten public-sector / governance directionality in the candidate-sensitive selection layer
 - add stronger penalties when leadership/product titles are outside declared target-role anchors even if the raw fit language still looks attractive
 
+**Latest rerun evidence — 2026-04-20**
+
+Latest audit root:
+
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_165145`
+
+Observed movement on the final validated Sprint 3 code state:
+
+- `persona_b_specialist`
+  - `0 apply / 3 review / 3 skip`
+  - `Produktleder til team Beredskap og krisehåndtering` now falls to `SKIP`
+  - `Produktleder` and `Produktleder for sentrale backend‑tjenester` remain `REVIEW_LOW`
+- `persona_c_public_transition`
+  - `0 apply / 4 review / 2 skip`
+  - all three product-leadership roles still remain `REVIEW_LOW`
+  - `Head of Enterprise Architecture` also remains in `REVIEW_LOW`
+- `persona_d_early_adjacent`
+  - `0 apply / 2 review / 4 skip`
+  - `Produktleder` remains `REVIEW_LOW`
+  - `Produktleder for sentrale backend‑tjenester` and `Produktleder til team Beredskap og krisehåndtering` both stay `SKIP`
+
+Interpretation:
+
+- the bounded Sprint 3 slice is real and visible in the matrix:
+  - the reference persona still keeps the three product-leadership roles in the actionable surface, which is the intended contrast
+  - the specialist and early-adjacent personas now show clearer suppression of some off-anchor product-leadership roles
+- product-leadership inertia is therefore **reduced but not resolved**
+- the public-transition persona remains the main unresolved case because all three product-leadership roles still stay in review
+
+Status update:
+
+- finding `4` remains open
+- the next clean hardening move is narrower:
+  - keep pushing public-sector/governance directionality and target-role-anchor penalties
+  - do not reopen the already-landed bounded Sprint 3 slice
+
 ### 5. Monitoring is still too noisy relative to audit slice size
 
 **Severity:** medium
@@ -258,6 +294,53 @@ Some of this is legitimate multi-watchlist behavior, but the current ratio still
 - deduplicate or aggregate watchlists per job where possible
 - make high-materiality change signals more visually distinct from background monitoring
 - reduce candidate-facing monitoring noise before adding more dashboard complexity
+
+**Latest rerun evidence — 2026-04-20**
+
+Latest audit root:
+
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_165145`
+
+Observed monitoring summary on the final validated Sprint 3 code state:
+
+- reference persona:
+  - `watchlist_count=16`
+  - `watchlist_count_by_materiality: high=2, medium=6, low=8`
+  - `change_event_count=6`
+- specialist persona:
+  - `watchlist_count=10`
+  - `watchlist_count_by_materiality: high=0, medium=6, low=4`
+  - `change_event_count=6`
+- public-transition persona:
+  - `watchlist_count=15`
+  - `watchlist_count_by_materiality: high=0, medium=6, low=9`
+  - `change_event_count=6`
+- early-adjacent persona:
+  - `watchlist_count=8`
+  - `watchlist_count_by_materiality: high=0, medium=4, low=4`
+  - `change_event_count=6`
+
+Interpretation:
+
+- the new materiality split is still useful because background watches are now inspectable instead of one flat count
+- but the final validated rerun shows that total watchlist density is still too high:
+  - reference rises to `16`
+  - public-transition rises to `15`
+  - early-adjacent rises to `8`
+- the compatibility-path fix kept dashboard summaries honest, but it did not close the underlying monitoring-noise issue
+- finding `5` is therefore **still open and not yet materially improved overall**
+
+Implementation note:
+
+- a broader validation sweep after the Sprint 3 code landed exposed one dashboard fallback compatibility regression:
+  - when persisted monitoring state was absent, the fallback payload could collapse actionable/review rows to `watchlist_count=0` if the sparse derived decision table returned `act_now=skip`
+  - fixed on 2026-04-20 by making monitoring fallback prefer the stored `final_decision` bucket for watchlist derivation when the full persisted decision surface is unavailable
+- that fix keeps repo-wide validation honest and preserves the intended monitoring summary in compatibility paths without widening the Sprint 3 scope
+
+Status update:
+
+- finding `5` remains open
+- next hardening should focus on further per-job aggregation or demotion of medium-noise watches, not on reopening the current materiality model
 
 ## Active hardening order
 

@@ -92,6 +92,11 @@ _SCOPE_CAUTION_MARKERS = (
     "mid",
 )
 
+_PRODUCT_FAMILY_MARKERS = (
+    "product",
+    "produkt",
+)
+
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
@@ -185,6 +190,8 @@ def _candidate_alignment_flags(
             "hard_no_alignment": False,
             "negative_keyword_overlap": False,
             "scope_mismatch": False,
+            "leadership_title_off_anchor": False,
+            "product_leadership_off_anchor": False,
         }
 
     title = _clean_text(job.get("title")).lower()
@@ -211,12 +218,25 @@ def _candidate_alignment_flags(
     leadership_scope = any(marker in title for marker in _LEADERSHIP_SCOPE_MARKERS)
     scope_mismatch = leadership_scope and scope_caution and not (primary_target_alignment or secondary_target_alignment)
 
+    has_declared_anchors = bool(primary_targets or secondary_targets or hard_no_targets)
+    leadership_title_off_anchor = (
+        has_declared_anchors
+        and leadership_scope
+        and not primary_target_alignment
+        and not secondary_target_alignment
+        and not hard_no_alignment
+    )
+    product_scope = any(marker in title for marker in _PRODUCT_FAMILY_MARKERS)
+    product_leadership_off_anchor = leadership_title_off_anchor and product_scope
+
     return {
         "primary_target_alignment": primary_target_alignment,
         "secondary_target_alignment": secondary_target_alignment,
         "hard_no_alignment": hard_no_alignment,
         "negative_keyword_overlap": negative_keyword_overlap,
         "scope_mismatch": scope_mismatch,
+        "leadership_title_off_anchor": leadership_title_off_anchor,
+        "product_leadership_off_anchor": product_leadership_off_anchor,
     }
 
 
@@ -597,6 +617,36 @@ def derive_selection_signals(
             )
         )
 
+    if alignment["leadership_title_off_anchor"]:
+        signals.append(
+            JobSelectionSignal(
+                signal_type="screening_signal",
+                signal_label="Leadership title sits outside the candidate's declared target roles",
+                selection_stage="recruiter_screen",
+                signal_strength="moderate",
+                normalized_key="candidate_leadership_title_off_anchor",
+                evidence_required="Only keep if the underlying work still maps cleanly to declared target roles despite the leadership title.",
+                confidence_score=0.76,
+                importance_score=0.72,
+                source_basis="evaluation_state",
+            )
+        )
+
+    if alignment["product_leadership_off_anchor"]:
+        signals.append(
+            JobSelectionSignal(
+                signal_type="screening_signal",
+                signal_label="Product-leadership title is attractive but outside declared candidate target roles",
+                selection_stage="recruiter_screen",
+                signal_strength="strong",
+                normalized_key="candidate_product_leadership_off_anchor",
+                evidence_required="Do not let attractive product-leadership titles crowd out role-family-aligned roles for this candidate.",
+                confidence_score=0.82,
+                importance_score=0.8,
+                source_basis="evaluation_state",
+            )
+        )
+
     return signals
 
 
@@ -626,6 +676,8 @@ def derive_selection_assessment(
     candidate_hard_no = 1 if "candidate_hard_no_alignment" in signal_map else 0
     candidate_negative = 1 if "candidate_negative_keyword_overlap" in signal_map else 0
     scope_mismatch = 1 if "candidate_scope_mismatch" in signal_map else 0
+    leadership_off_anchor = 1 if "candidate_leadership_title_off_anchor" in signal_map else 0
+    product_leadership_off_anchor = 1 if "candidate_product_leadership_off_anchor" in signal_map else 0
 
     structural_pass = not (
         hard_blockers
@@ -642,6 +694,8 @@ def derive_selection_assessment(
         - (15 * scope_mismatch)
         - (12 * candidate_negative)
         - (20 * candidate_hard_no)
+        - (10 * leadership_off_anchor)
+        - (6 * product_leadership_off_anchor)
     )
     domain_continuity_score = _bounded_score(
         domain_continuity_score
@@ -659,6 +713,8 @@ def derive_selection_assessment(
     ambiguity_risk += 15 * scope_mismatch
     ambiguity_risk += 10 * candidate_negative
     ambiguity_risk += 18 * candidate_hard_no
+    ambiguity_risk += 12 * leadership_off_anchor
+    ambiguity_risk += 8 * product_leadership_off_anchor
     ambiguity_risk -= 10 * primary_alignment
     ambiguity_risk -= 5 * secondary_alignment
     ambiguity_risk_score = _bounded_score(ambiguity_risk)
@@ -669,6 +725,8 @@ def derive_selection_assessment(
     evidence_burden += 12 * scope_mismatch
     evidence_burden += 8 * candidate_negative
     evidence_burden += 10 * candidate_hard_no
+    evidence_burden += 8 * leadership_off_anchor
+    evidence_burden += 6 * product_leadership_off_anchor
     evidence_burden -= 8 * primary_alignment
     evidence_burden -= 4 * secondary_alignment
     evidence_burden_score = _bounded_score(evidence_burden)
@@ -687,6 +745,8 @@ def derive_selection_assessment(
     screenability -= 15 * scope_mismatch
     screenability -= 10 * candidate_negative
     screenability -= 25 * candidate_hard_no
+    screenability -= 12 * leadership_off_anchor
+    screenability -= 8 * product_leadership_off_anchor
     screenability_score = _bounded_score(screenability)
 
     rejection_vectors: list[str] = []
@@ -713,6 +773,12 @@ def derive_selection_assessment(
     if scope_mismatch:
         rejection_vectors.append("The role scope looks broader or more leadership-heavy than the candidate's current target profile.")
         mitigation_moves.append("Only pursue with explicit evidence of equivalent ownership scope and role-family continuity.")
+    if product_leadership_off_anchor:
+        rejection_vectors.append("Title signals product-leadership scope that is outside declared target roles for this candidate.")
+        mitigation_moves.append("Do not let attractive product-leadership titles crowd out role-family-aligned roles for this candidate.")
+    elif leadership_off_anchor:
+        rejection_vectors.append("Title signals leadership scope outside declared target roles even if underlying language still overlaps.")
+        mitigation_moves.append("Only keep if the underlying work still maps cleanly to declared target roles despite the leadership title.")
     if hard_blockers:
         rejection_vectors.append("Current match output already shows material blockers.")
         mitigation_moves.append("Only pursue if the blocker can be mitigated with explicit evidence or a direct explanation.")
@@ -756,6 +822,8 @@ def derive_selection_assessment(
                 "hard_no_alignment": bool(candidate_hard_no),
                 "negative_keyword_overlap": bool(candidate_negative),
                 "scope_mismatch": bool(scope_mismatch),
+                "leadership_title_off_anchor": bool(leadership_off_anchor),
+                "product_leadership_off_anchor": bool(product_leadership_off_anchor),
             },
         },
     )

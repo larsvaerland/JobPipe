@@ -310,6 +310,7 @@ def persist_monitoring_state(
                     "watch_label": watch.watch_label,
                     "watch_config_json": watch.watch_config_json,
                     "is_active": 1 if watch.is_active else 0,
+                    "materiality": watch.materiality,
                     "updated_at": ts,
                 }
                 for watch in monitoring_context.watchlists

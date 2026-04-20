@@ -78,6 +78,22 @@ def _feed_host(job: Mapping[str, Any]) -> str:
         return ""
 
 
+def _monitoring_act_now(job: Mapping[str, Any], decision_context: DecisionContext | None) -> str:
+    act_now = decision_context.decision_table.act_now if decision_context else ""
+    if act_now in {"pursue_now", "review_then_pursue", "monitor"}:
+        return act_now
+
+    # Dashboard/export fallback reads may only have persisted evaluation rows, not the
+    # full upstream decision-state surface. In that case, prefer the stored final decision
+    # over a sparse fallback decision table that collapses to "skip".
+    final_decision = _clean_text(job.get("final_decision")).upper()
+    if final_decision in {"APPLY_STRONGLY", "APPLY"}:
+        return "pursue_now"
+    if final_decision in {"REVIEW_HIGH", "REVIEW_LOW"}:
+        return "review_then_pursue"
+    return act_now
+
+
 def _detected_at(job: Mapping[str, Any], app_entry: Mapping[str, Any] | None = None) -> str:
     if app_entry:
         updated = _clean_text(app_entry.get("updated_at"))
@@ -114,6 +130,7 @@ def _watchlist(
     watch_key: str,
     watch_label: str,
     watch_config_json: Mapping[str, Any] | None = None,
+    materiality: str = "low",
 ) -> Watchlist:
     return Watchlist(
         watchlist_id=_hash_id("watch", candidate_id, watch_type, watch_key),
@@ -123,6 +140,7 @@ def _watchlist(
         watch_label=watch_label,
         watch_config_json=dict(watch_config_json or {}),
         is_active=True,
+        materiality=materiality,  # type: ignore[arg-type]
     )
 
 
@@ -134,7 +152,7 @@ def derive_watchlists(
 ) -> list[Watchlist]:
     watchlists: list[Watchlist] = []
     seen: set[tuple[str, str]] = set()
-    act_now = decision_context.decision_table.act_now if decision_context else ""
+    act_now = _monitoring_act_now(job, decision_context)
     title = _clean_text(job.get("title"))
     employer = _clean_text(job.get("employer"))
     job_id = _clean_text(job.get("job_id"))
@@ -151,6 +169,13 @@ def derive_watchlists(
         watchlists.append(watch)
 
     if job_id and act_now in {"pursue_now", "review_then_pursue", "monitor"}:
+        job_materiality = (
+            "high"
+            if act_now == "pursue_now"
+            else "medium"
+            if act_now == "review_then_pursue"
+            else "low"
+        )
         add_watch(
             _watchlist(
                 candidate_id=candidate_id,
@@ -158,10 +183,16 @@ def derive_watchlists(
                 watch_key=job_id,
                 watch_label=f"{title or 'Job'} at {employer}".strip(),
                 watch_config_json={"job_id": job_id},
+                materiality=job_materiality,
             )
         )
 
     if employer and act_now != "skip":
+        employer_materiality = (
+            "medium"
+            if act_now in {"pursue_now", "review_then_pursue"}
+            else "low"
+        )
         add_watch(
             _watchlist(
                 candidate_id=candidate_id,
@@ -169,10 +200,13 @@ def derive_watchlists(
                 watch_key=_slug(employer),
                 watch_label=employer,
                 watch_config_json={"employer": employer},
+                materiality=employer_materiality,
             )
         )
 
-    for role_family in role_families:
+    # Deduplicate role-family noise: keep two families only for actively pursued roles.
+    role_family_limit = 2 if act_now == "pursue_now" else 1
+    for role_family in role_families[:role_family_limit]:
         if act_now == "skip":
             break
         add_watch(
@@ -182,6 +216,7 @@ def derive_watchlists(
                 watch_key=role_family,
                 watch_label=f"{_pretty_label(role_family)} roles",
                 watch_config_json={"role_family": role_family},
+                materiality="low",
             )
         )
 
@@ -200,10 +235,13 @@ def derive_watchlists(
                         "work_city": city,
                         "sector": sector,
                     },
+                    materiality="low",
                 )
             )
 
-    if host and act_now in {"review_then_pursue", "monitor"}:
+    # Source-feed watch is background monitoring only; do not add it when we already have
+    # a narrower search_pattern / role_family watch driving review-stage attention.
+    if host and act_now == "monitor":
         add_watch(
             _watchlist(
                 candidate_id=candidate_id,
@@ -211,6 +249,7 @@ def derive_watchlists(
                 watch_key=host,
                 watch_label=f"{host} feed",
                 watch_config_json={"host": host},
+                materiality="low",
             )
         )
 

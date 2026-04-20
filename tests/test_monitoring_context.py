@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from jobpipe.decision import build_decision_context, build_monitoring_context
+from jobpipe.decision.monitoring import derive_watchlists
 
 
 def test_build_monitoring_context_suggests_watchlists_for_monitorable_role() -> None:
@@ -149,3 +150,66 @@ def test_build_monitoring_context_surfaces_application_status_change() -> None:
     status_events = [event for event in context.change_events if event.change_type == "status_changed"]
     assert status_events
     assert status_events[0].materiality == "high"
+
+
+def test_derive_watchlists_assigns_materiality_and_dedups_source_feed() -> None:
+    pursue_job = {
+        "job_id": "job-pursue",
+        "title": "Senior Product Manager",
+        "employer": "Acme AS",
+        "sector": "SaaS",
+        "work_city": "Oslo",
+        "source_url": "https://example.test/pursue",
+        "fit_score": 85,
+        "pivot_score": 72,
+        "final_decision": "APPLY_STRONGLY",
+        "recommendation_reason": "Strong product overlap.",
+        "description_snip": "Product and platform roadmap ownership.",
+        "detail": {"overlaps": ["Product strategy"], "gaps": [], "hard_blockers": [], "match_notes": "Strong."},
+    }
+    review_job = {
+        "job_id": "job-review",
+        "title": "Program Manager",
+        "employer": "Beta AS",
+        "sector": "Public Sector",
+        "work_city": "Oslo",
+        "source_url": "https://example.test/review",
+        "fit_score": 64,
+        "pivot_score": 48,
+        "final_decision": "REVIEW_HIGH",
+        "recommendation_reason": "Program delivery overlap.",
+        "description_snip": "Program delivery and stakeholder management.",
+        "detail": {"overlaps": ["Delivery"], "gaps": [], "hard_blockers": [], "match_notes": "Viable."},
+    }
+
+    pursue_ctx = build_decision_context(pursue_job)
+    review_ctx = build_decision_context(review_job)
+    monitor_ctx = review_ctx.model_copy(
+        update={
+            "decision_table": review_ctx.decision_table.model_copy(update={"act_now": "monitor"})
+        }
+    )
+
+    pursue_watches = derive_watchlists(pursue_job, candidate_id="candidate-a", decision_context=pursue_ctx)
+    review_watches = derive_watchlists(review_job, candidate_id="candidate-a", decision_context=review_ctx)
+    monitor_watches = derive_watchlists(review_job, candidate_id="candidate-a", decision_context=monitor_ctx)
+
+    pursue_by_type = {watch.watch_type: watch for watch in pursue_watches}
+    review_types = {watch.watch_type for watch in review_watches}
+    monitor_types = {watch.watch_type for watch in monitor_watches}
+
+    # Pursue-now gets a high-materiality job watch and a medium-materiality employer watch.
+    assert pursue_by_type["job"].materiality == "high"
+    assert pursue_by_type["employer"].materiality == "medium"
+    # Role-family watches are always background noise (low materiality).
+    assert all(
+        watch.materiality == "low"
+        for watch in pursue_watches
+        if watch.watch_type == "role_family"
+    )
+    # Review-then-pursue no longer emits a source_feed watch (background-only signal).
+    assert "source_feed" not in review_types
+    # True monitor mode still keeps the background source-feed watch.
+    assert "source_feed" in monitor_types
+    # Review-then-pursue keeps at most one role_family watch so monitoring stays bounded.
+    assert sum(1 for watch in review_watches if watch.watch_type == "role_family") <= 1

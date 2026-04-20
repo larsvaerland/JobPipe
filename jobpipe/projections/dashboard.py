@@ -456,6 +456,7 @@ def _load_promoted_decision_state_from_db(
         "watchlists": [],
         "change_events_by_job": {},
         "watchlist_count": 0,
+        "watchlist_count_by_materiality": {"high": 0, "medium": 0, "low": 0},
         "change_event_count": 0,
         "high_materiality_change_events": 0,
         "state_available": False,
@@ -544,7 +545,7 @@ def _load_promoted_decision_state_from_db(
             for r in conn.execute(
                 """
                 SELECT watchlist_id, candidate_id, watch_type, watch_key, watch_label,
-                       watch_config_json, is_active
+                       watch_config_json, is_active, materiality
                 FROM watchlists
                 WHERE candidate_id = ? AND is_active = 1
                 ORDER BY watch_type ASC, watch_label ASC, watch_key ASC
@@ -722,11 +723,16 @@ def _load_promoted_decision_state_from_db(
         }
 
     normalized_watchlists: List[Dict[str, Any]] = []
+    watchlist_materiality_counts = {"high": 0, "medium": 0, "low": 0}
     for row in watchlists:
         try:
             watch_config_json = json.loads(row.get("watch_config_json") or "{}")
         except Exception:
             watch_config_json = {}
+        materiality = _clean_text(row.get("materiality")) or "low"
+        if materiality not in watchlist_materiality_counts:
+            materiality = "low"
+        watchlist_materiality_counts[materiality] += 1
         normalized_watchlists.append(
             {
                 "watchlist_id": _clean_text(row.get("watchlist_id")),
@@ -736,6 +742,7 @@ def _load_promoted_decision_state_from_db(
                 "watch_label": _clean_text(row.get("watch_label")),
                 "watch_config_json": watch_config_json,
                 "is_active": bool(row.get("is_active")),
+                "materiality": materiality,
             }
         )
 
@@ -783,6 +790,7 @@ def _load_promoted_decision_state_from_db(
         "watchlists": normalized_watchlists,
         "change_events_by_job": change_events_by_job,
         "watchlist_count": len(normalized_watchlists),
+        "watchlist_count_by_materiality": watchlist_materiality_counts,
         "change_event_count": len(change_events),
         "high_materiality_change_events": high_materiality_change_events,
         "state_available": state_available,
@@ -1055,10 +1063,20 @@ def build_payload(
     )
     if persisted_state["state_available"]:
         watchlist_count = persisted_state["watchlist_count"]
+        watchlist_count_by_materiality = persisted_state.get(
+            "watchlist_count_by_materiality", {"high": 0, "medium": 0, "low": 0}
+        )
         change_event_count = persisted_state["change_event_count"]
         high_materiality_change_events = persisted_state["high_materiality_change_events"]
     else:
         watchlist_count = sum(len(row.get("watchlists", [])) for row in jobs)
+        watchlist_count_by_materiality = {"high": 0, "medium": 0, "low": 0}
+        for row in jobs:
+            for watch in row.get("watchlists", []):
+                materiality = str(watch.get("materiality") or "").strip() or "low"
+                if materiality not in watchlist_count_by_materiality:
+                    materiality = "low"
+                watchlist_count_by_materiality[materiality] += 1
         change_event_count = sum(len(row.get("change_events", [])) for row in jobs)
         high_materiality_change_events = sum(
             1
@@ -1078,6 +1096,7 @@ def build_payload(
             "tracked_applications": sum(app_status_counts.values()),
             "application_status_counts": app_status_counts,
             "watchlist_count": watchlist_count,
+            "watchlist_count_by_materiality": watchlist_count_by_materiality,
             "change_event_count": change_event_count,
             "high_materiality_change_events": high_materiality_change_events,
             "calibration_summary": calibration_summary.model_dump(mode="json"),

@@ -75,6 +75,7 @@ from .models import (
     SelectionSignalType,
     SelectionStage,
     SignalStrength,
+    WatchMateriality,
     WatchType,
     Watchlist,
 )
@@ -120,6 +121,7 @@ __all__ = [
     "SelectionSignalType",
     "SelectionStage",
     "SignalStrength",
+    "WatchMateriality",
     "WatchType",
     "Watchlist",
     "build_candidate_calibration_context",
