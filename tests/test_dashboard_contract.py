@@ -609,7 +609,7 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
     assert event["skip_reason"] == "passed"
 
     profile = payload["profile"]
-    assert profile["schema_version"] == "jobpipe.profile-layer.v1"
+    assert profile["schema_version"] == "jobpipe.profile-layer.v2"
     assert profile["basics"]["name"] == "Lars Værland"
     assert profile["basics"]["base"] == "Arendal"
     assert profile["builder_state"]["headline"] == "Endringsleder | Produkteier"
@@ -658,11 +658,15 @@ def test_build_payload_exposes_versioned_contract_fields(tmp_path: Path) -> None
     assert automations["connector_counts"]["lead_connector_rows"] == 0
     assert automations["connector_counts"]["merged_queue_rows"] == 0
     assert {action["key"] for action in automations["actions"]} >= {
+        "scheduled_full_run",
         "nav_refresh",
         "mailbox_leads_dry_run",
         "merge_connectors",
         "export_dashboard",
     }
+    assert automations["scheduled_flow"]["schema_version"] == "jobpipe.scheduled-run-control.v1"
+    assert automations["scheduled_flow"]["summary"]["status"] == "never_run"
+    assert automations["scheduled_flow"]["entrypoint_command"] == ".\\go.ps1"
 
 
 def test_build_payload_normalizes_shared_app_status_but_keeps_internal_timeline(tmp_path: Path) -> None:
@@ -1679,3 +1683,42 @@ def test_tracked_dashboard_template_contains_outcome_loop_surface() -> None:
     assert "Outcome ranking" in html
     assert "Outcome verdict" in html
     assert "Outcome-to-shadow handoff" in html
+
+
+def test_tracked_dashboard_template_contains_scheduled_run_surface() -> None:
+    template_path = Path(__file__).resolve().parents[1] / "reports" / "dashboard_template.html"
+    html = render_dashboard_html(
+        {
+            "schema_version": "jobpipe.dashboard.v2",
+            "jobs": [],
+            "events": [],
+            "automations": {
+                "schema_version": "jobpipe.automation.v1",
+                "actions": [],
+                "connector_counts": {},
+                "recent_runs": [],
+                "summary": {},
+                "scheduled_flow": {
+                    "schema_version": "jobpipe.scheduled-run-control.v1",
+                    "entrypoint_command": ".\\go.ps1",
+                    "underlying_cli": "python -m jobpipe.cli.run_scheduled_flow",
+                    "summary": {},
+                },
+            },
+            "experiments": {},
+            "outcomes": {
+                "schema_version": "jobpipe.outcomes-dashboard.v1",
+                "summary": {"total": 0},
+                "audit_summary": {},
+                "calibration_summary": {},
+                "recommendation": {},
+                "recent_feedback": [],
+            },
+        },
+        template_path,
+    )
+
+    assert "Feed freshness" in html
+    assert "Companion preflight" in html
+    assert "Scheduled flow state" in html
+    assert "run_scheduled_flow" in html

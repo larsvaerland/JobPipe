@@ -135,6 +135,8 @@ The planned user workflow is not one monolithic app. It is a companion stack wit
 - **Reactive Resume** is the tailored CV authoring and export surface
 - **Word / Docs-style editing** is the cover-letter and screening-answer iteration surface
 
+The missing piece is now explicit: **JobPipe also owns the case-scoped agent workspace that lets Lars chat and edit at the same time**.
+
 The critical seam is: **promote a lead into an application case**.
 
 That means the key JobPipe output is not just a score. It is an application packet containing:
@@ -146,6 +148,14 @@ That means the key JobPipe output is not just a score. It is an application pack
 - target artifact folder and linkage metadata
 
 From that point on, JobSync should track the active case while external authoring tools produce the actual submission artifacts.
+
+The intended low-noise apply loop is:
+- JobPipe shortlists and promotes
+- JobSync becomes the active case shell
+- JobPipe prepares the structured tailoring context, tailored resume JSON, and cover-letter brief
+- Lars edits the CV in Reactive Resume and the letter in a doc editor
+- Lars can chat with JobPipe on the same case context while editing
+- final artifacts save back to the case without manual reconstruction of context
 
 ---
 
@@ -175,6 +185,8 @@ This preserves product agility without turning the rest of the stack into fragil
 - triage, scoring, and explainability
 - application-packet generation
 - apply-session generation
+- case-scoped authoring session state
+- structured tailoring logic for CV and cover letter
 - raw stage artifacts, pipeline memory, and calibration data
 - control-plane settings for targeting, integrations, and mailbox lead intake
 
@@ -194,6 +206,11 @@ This preserves product agility without turning the rest of the stack into fragil
 - resume export artifacts and references
 
 Reactive Resume should therefore be treated as the preferred structured resume surface, but JobPipe should still own the job-specific tailoring logic that selects which approved content is shown for a given case.
+
+The editing rule is:
+- `Reactive Resume` owns manual resume editing, analysis, and export
+- Word / Docs-style tools own manual cover-letter editing and export
+- JobPipe owns the structured context, suggestion logic, patch history, and saveback provenance around those edits
 
 ### Shared common ground
 
@@ -378,9 +395,10 @@ NAV connector output + suggested-lead connector output
 7. JobSync receives that case as a `new` tracked job and owns the day-to-day workflow after promotion.
 8. When Lars clicks `apply`, the system should:
    - open the job ad and the application portal in new tabs
+   - open the JobPipe case workspace with the same structured context
    - trigger tailored CV work through Reactive Resume or a connected authoring flow
    - trigger cover-letter / screening-answer drafting in a document-oriented AI workspace
-9. Lars edits the generated artifacts manually.
+9. Lars chats with JobPipe on the same case while editing the artifacts manually.
 10. Final files are saved into the application folder for that job.
 11. Lars submits manually.
 12. Mailbox signals and manual updates continue to drive follow-up and status tracking.
@@ -599,39 +617,26 @@ Key capabilities v3 would need:
 ## Now / Next / Later (operational)
 
 ### Now
-- [ ] **Application pack — agentic rewrite:** Multi-step authoring pipeline for cover letter and CV highlights, using the thinner decision/authoring briefs instead of the old broad packet shape.
+- [x] **Sprint 1 / Topic 29 — person-model spine and resume underlay:** the canonical JobPipe-owned profile/resume underlay now exists with `ResumeMaster`, `ContentLibrary`, `SelectionRules`, `LayoutProfile`, explicit provenance, and deterministic adapters for the current local sources plus optional RR-style layout metadata when present.
+- [ ] **Sprint 2 / Topic 30 — tailoring plan and deterministic resume compilation:** compile a case-specific Reactive Resume JSON plus sidecar audit from approved structured content.
+- [ ] **Sprint 3 / Topic 31 — case-scoped authoring session:** add concurrent chat + edit support with bounded `SuggestedPatch` / `AcceptedPatch` tracking.
+- [ ] **Sprint 4 / Topic 32 — external authoring completion and saveback:** finish the operational handoff/saveback loop for CV, cover letter, and screening answers.
+- [ ] **Sprint 5 / Topic 33 — live operator cutover:** validate the low-noise flow on real jobs and document remaining friction honestly.
 - [ ] Automated daily run setup (Cowork scheduled task)
 - [ ] Fix Apps Script buildIndex_() performance
 - [ ] Make scheduled operation auditable:
   - companion drift preflight in the normal runbook
   - feed freshness timestamp and stale-run visibility
   - one repeatable local operator checklist for the full stack
-- [ ] Define the first real JobPipe person/profile spine:
-  - `ProfileSnapshot`
-  - `TargetingProfile`
-  - `TriageProfile`
-  - `AuthoringProfile`
-  - `ApplicationCaseProjection`
 
 ### Next (weeks)
 - [ ] LinkedIn email lead extraction
 - [ ] Occupation code pre-filtering (NAV styrk08 codes)
 - [ ] Geo filter for city-name-based sources (LinkedIn leads have city, not postal code)
-- [ ] Replace direct early-stage dependence on `profile_pack.md` narrative text with a derived profile adapter layer fed by Reactive Resume-compatible source data and local targeting settings
-- [ ] Define the structured resume-tailoring model and source adapters:
-  - `ResumeMaster`
-  - `RoleRecord`
-  - `RoleVariant`
-  - `ProjectVariant`
-  - `EvidenceAtom`
-  - `SkillAtom`
-  - `NarrativeProfile`
-  - `TailoringPlan`
-- [ ] Migrate one deterministic consumer and one scoring consumer onto the new profile/person-model spine
-- [ ] Make the external authoring flow operationally complete without overcoupling:
-  - Reactive Resume launch + AI-supported editing handoff
-  - deterministic CV export capture
-  - deterministic cover-letter and screening-answer export storage/registration
+- [ ] Add deeper structured authoring aids after the live cutover only if they reduce real operator friction:
+  - tighter Reactive Resume launch/import/export ergonomics
+  - better cover-letter workspace automation
+  - bounded saveback/autoregistration improvements
 - [ ] Add deadline and freshness signals that support day-to-day operation, not just offline debugging
 
 ### Later (months)

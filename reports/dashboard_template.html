@@ -1692,6 +1692,7 @@ function getAutomationData() {
     actions: [],
     connector_counts: {},
     recent_runs: [],
+    scheduled_flow: {},
     summary: {},
     state_path: "",
     updated_at: "",
@@ -3229,6 +3230,12 @@ function renderAutomations() {
   const counts = automations.connector_counts || {};
   const actions = Array.isArray(automations.actions) ? automations.actions : [];
   const runs = Array.isArray(automations.recent_runs) ? automations.recent_runs : [];
+  const scheduled = automations.scheduled_flow || {};
+  const scheduledSummary = scheduled.summary || {};
+  const companion = scheduled.last_companion_check || {};
+  const currentRun = scheduled.current_run || {};
+  const lastAttempt = scheduled.last_attempt || {};
+  const lastSuccess = scheduled.last_success || {};
 
   renderSummaryCards("automationStats", [
     {
@@ -3249,11 +3256,38 @@ function renderAutomations() {
       sub: (summary.last_run_at ? "Last run " + String(summary.last_run_at).slice(0, 19).replace("T", " ") : "No recorded run yet."),
       color: Number(summary.failed || 0) ? "var(--red)" : "var(--green)",
     },
+    {
+      label: "Feed freshness",
+      value: String(scheduledSummary.freshness_label || "Unknown"),
+      sub: scheduledSummary.last_success_at
+        ? ("Last success " + String(scheduledSummary.last_success_at).slice(0, 19).replace("T", " "))
+        : "No successful scheduled flow recorded yet.",
+      color: scheduledSummary.freshness_status === "fresh"
+        ? "var(--green)"
+        : scheduledSummary.freshness_status === "aging"
+          ? "var(--amber)"
+          : "var(--red)",
+    },
+    {
+      label: "Companion preflight",
+      value: humanizeToken(String(scheduledSummary.companion_status || "unknown")),
+      sub: companion.checked_at
+        ? ("Last checked " + String(companion.checked_at).slice(0, 19).replace("T", " "))
+        : "No companion preflight has been recorded yet.",
+      color: scheduledSummary.companion_status === "aligned" ? "var(--green)" : scheduledSummary.companion_status === "unknown" ? "var(--text-soft)" : "var(--red)",
+    },
   ]);
 
   document.getElementById("automationOverview").innerHTML =
-    '<div class="section-head"><div><h3>Automation control plane</h3><p>Use these actions as operator-grade triggers. They run one connector or rebuild step at a time and leave a local run trail behind.</p></div></div>' +
+    '<div class="section-head"><div><h3>Automation control plane</h3><p>Use these actions as operator-grade triggers. Topic 28 makes one scheduled flow explicit, with companion drift preflight and freshness state instead of relying on ad hoc shell memory.</p></div></div>' +
     '<div class="kv-list">' +
+      '<div class="kv-row"><span class="kv-label">Canonical entrypoint</span><div>' + esc(scheduled.entrypoint_command || ".\\go.ps1") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Underlying CLI</span><div>' + esc(scheduled.underlying_cli || "python -m jobpipe.cli.run_scheduled_flow") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Scheduled flow status</span><div>' + esc(humanizeToken(String(scheduledSummary.status || "never_run"))) + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Current or last run</span><div>' + esc((currentRun.label || lastAttempt.label || "No scheduled flow yet") + ((currentRun.status || lastAttempt.status) ? (" | " + humanizeToken(String(currentRun.status || lastAttempt.status || ""))) : "")) + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Last success</span><div>' + esc(scheduledSummary.last_success_at || "No successful scheduled flow yet") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Freshness</span><div>' + esc(String(scheduledSummary.freshness_label || "Unknown") + (scheduledSummary.hours_since_success != null ? (" | " + String(scheduledSummary.hours_since_success) + "h ago") : "")) + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Companion preflight</span><div>' + esc(humanizeToken(String(scheduledSummary.companion_status || "unknown")) + (companion.summary ? (" | " + String(companion.summary || "")) : "")) + '</div></div>' +
       '<div class="kv-row"><span class="kv-label">NAV connector staging</span><div>' + esc(String(counts.nav_connector_rows || 0) + " rows") + '</div></div>' +
       '<div class="kv-row"><span class="kv-label">Lead connector staging</span><div>' + esc(String(counts.lead_connector_rows || 0) + " rows") + '</div></div>' +
       '<div class="kv-row"><span class="kv-label">Merged pre-triage queue</span><div>' + esc(String(counts.merged_queue_rows || 0) + " rows") + '</div></div>' +
@@ -3265,8 +3299,11 @@ function renderAutomations() {
     '<div class="section-head"><div><h3>Local run state</h3><p>The shell should surface where automation-facing state actually lives instead of hiding it in ad hoc scripts.</p></div></div>' +
     '<div class="kv-list">' +
       '<div class="kv-row"><span class="kv-label">Automation state file</span><div>' + esc(automations.state_path || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Scheduled flow state</span><div>' + esc(scheduled.state_path || "Not set") + '</div></div>' +
       '<div class="kv-row"><span class="kv-label">Server mode</span><div>' + esc(SERVER_MODE ? "interactive local server" : "static export") + '</div></div>' +
-      '<div class="kv-row"><span class="kv-label">Action model</span><div>' + esc("Connector actions are intentionally runnable one by one.") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Action model</span><div>' + esc("Connector actions stay runnable one by one, but the scheduled flow is now tracked as one operator path.") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Last attempt summary</span><div>' + esc(lastAttempt.summary || "No scheduled attempt recorded yet") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Last success summary</span><div>' + esc(lastSuccess.summary || "No successful scheduled run recorded yet") + '</div></div>' +
     '</div>';
 
   document.getElementById("automationActions").innerHTML = actions.length

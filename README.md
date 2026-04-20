@@ -90,12 +90,37 @@ Useful direct commands:
 ```powershell
 .venv\Scripts\python.exe compile_check.py
 .venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 1
 .venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
 .venv\Scripts\python.exe -m jobpipe.cli.sync_mailbox_leads --dry-run
 .venv\Scripts\python.exe -m jobpipe.cli.sync_ledger
 .venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
 start $HOME\JobpipeData\exports\dashboard.html
 ```
+
+## Current Delivery Arc
+
+The next implementation run is Scrum-style and topic-scoped.
+
+- Sprint 1 / Topic 29: person-model spine and resume underlay completed
+- Sprint 2 / Topic 30: `TailoringPlan` and deterministic Reactive Resume compilation is the active next sprint
+- Sprint 3 / Topic 31: case-scoped `AuthoringSession` with concurrent chat + edit and bounded patch tracking
+- Sprint 4 / Topic 32: external authoring handoff and saveback hardening
+- Sprint 5 / Topic 33: live operator cutover on real jobs
+
+Sprint-close rule:
+- validate the sprint scope
+- clean up topic-local clutter
+- align canonical docs with the implementation
+- update `AUDIT.md` and `AGENT_STATUS.md`
+- only then checkpoint/sync repo state for continuation
+
+The user-facing target flow is:
+- JobPipe removes feed noise and prepares a case
+- JobSync becomes the active application shell
+- Reactive Resume is used for final CV polish/export
+- a doc editor is used for final cover-letter polish/export
+- JobPipe stays available as the structured case/chat workspace while those edits happen
 
 ## Dashboard Modes
 
@@ -337,6 +362,7 @@ Use this after dashboard/export/server changes:
 .venv\Scripts\python.exe compile_check.py
 .venv\Scripts\python.exe -m pytest tests -q
 .venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
+.venv\Scripts\python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 1
 .venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
 .venv\Scripts\python.exe -m jobpipe.cli.dashboard_server --no-open
 ```
@@ -411,7 +437,8 @@ The current project direction is:
 - keep the companion stack auditable through pinned sibling revisions plus a local drift check
 - keep the local-first data boundary consistent across runtime, docs, and versioning
 - keep the OSS track portable and valuable without hosted infrastructure
-- define the next execution arc around daily run reliability, the profile/person-model spine, and the application-pack rewrite
+- keep one canonical scheduled-flow path with companion preflight and visible feed freshness in the control plane
+- move from the completed profile/person-model spine into deterministic tailoring-plan and resume-compilation work
 
 ## Historical Note
 

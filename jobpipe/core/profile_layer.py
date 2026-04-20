@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from jobpipe.core.paths import JobPipePaths
 
-PROFILE_LAYER_SCHEMA_VERSION = "jobpipe.profile-layer.v1"
+PROFILE_LAYER_SCHEMA_VERSION = "jobpipe.profile-layer.v2"
 
 
 class ResumeMaster(BaseModel):
@@ -24,6 +24,7 @@ class ResumeMaster(BaseModel):
     narrative_profile_id: str
     updated_at: str = ""
     schema_version: str = PROFILE_LAYER_SCHEMA_VERSION
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RoleRecord(BaseModel):
@@ -92,6 +93,48 @@ class SkillAtom(BaseModel):
     evidence_atom_ids: List[str] = Field(default_factory=list)
 
 
+class ContentLibrary(BaseModel):
+    content_library_id: str
+    resume_master_id: str
+    role_variant_ids: List[str] = Field(default_factory=list)
+    project_variant_ids: List[str] = Field(default_factory=list)
+    evidence_atom_ids: List[str] = Field(default_factory=list)
+    skill_atom_ids: List[str] = Field(default_factory=list)
+    section_inventory: Dict[str, List[str]] = Field(default_factory=dict)
+    schema_version: str = PROFILE_LAYER_SCHEMA_VERSION
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SelectionRules(BaseModel):
+    selection_rules_id: str
+    resume_master_id: str
+    default_role_variant_ids: List[str] = Field(default_factory=list)
+    default_project_variant_ids: List[str] = Field(default_factory=list)
+    featured_skill_atom_ids: List[str] = Field(default_factory=list)
+    evidence_priority_ids: List[str] = Field(default_factory=list)
+    preferred_section_order: List[str] = Field(default_factory=list)
+    section_visibility: Dict[str, bool] = Field(default_factory=dict)
+    max_items_per_section: Dict[str, int] = Field(default_factory=dict)
+    schema_version: str = PROFILE_LAYER_SCHEMA_VERSION
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
+class LayoutProfile(BaseModel):
+    layout_profile_id: str
+    resume_master_id: str
+    engine: str = "reactive-resume"
+    template_key: str = "rr-json-resume-baseline"
+    locale: str = "nb-NO"
+    section_order: List[str] = Field(default_factory=list)
+    visible_sections: List[str] = Field(default_factory=list)
+    hidden_sections: List[str] = Field(default_factory=list)
+    item_limits: Dict[str, int] = Field(default_factory=dict)
+    page_settings: Dict[str, Any] = Field(default_factory=dict)
+    rr_compat: Dict[str, Any] = Field(default_factory=dict)
+    schema_version: str = PROFILE_LAYER_SCHEMA_VERSION
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
 class NarrativeProfile(BaseModel):
     narrative_profile_id: str
     voice_traits: List[str] = Field(default_factory=list)
@@ -99,6 +142,7 @@ class NarrativeProfile(BaseModel):
     do_not_claim: List[str] = Field(default_factory=list)
     language_preferences: str = ""
     operator_notes: str = ""
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProfileSnapshot(BaseModel):
@@ -111,6 +155,7 @@ class ProfileSnapshot(BaseModel):
     core_skills: List[str] = Field(default_factory=list)
     core_evidence_atom_ids: List[str] = Field(default_factory=list)
     constraints: List[str] = Field(default_factory=list)
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TargetingProfile(BaseModel):
@@ -122,6 +167,7 @@ class TargetingProfile(BaseModel):
     hard_no_title_patterns: List[str] = Field(default_factory=list)
     preferred_domains: List[str] = Field(default_factory=list)
     connector_policies: Dict[str, Any] = Field(default_factory=dict)
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TriageProfile(BaseModel):
@@ -133,6 +179,7 @@ class TriageProfile(BaseModel):
     skill_clusters: List[str] = Field(default_factory=list)
     must_not_miss_patterns: List[str] = Field(default_factory=list)
     evidence_atoms_compact: List[str] = Field(default_factory=list)
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AuthoringProfile(BaseModel):
@@ -145,6 +192,7 @@ class AuthoringProfile(BaseModel):
     value_prop_templates: List[str] = Field(default_factory=list)
     gap_handling_templates: List[str] = Field(default_factory=list)
     writing_constraints: List[str] = Field(default_factory=list)
+    source_provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ProfileLayerBundle(BaseModel):
@@ -170,6 +218,9 @@ class ProfileLayerBundle(BaseModel):
     project_variants: List[ProjectVariant] = Field(default_factory=list)
     evidence_atoms: List[EvidenceAtom] = Field(default_factory=list)
     skill_atoms: List[SkillAtom] = Field(default_factory=list)
+    content_library: ContentLibrary
+    selection_rules: SelectionRules
+    layout_profile: LayoutProfile
     narrative_profile: NarrativeProfile
     profile_snapshot: ProfileSnapshot
     targeting_profile: TargetingProfile
@@ -218,6 +269,24 @@ def _compute_source_hash(
     ).hexdigest()
 
 
+def _build_source_provenance(
+    *,
+    object_kind: str,
+    source_files: Optional[List[str]],
+    source_hash: str,
+    inputs: Optional[List[str]] = None,
+    notes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    return {
+        "object_kind": object_kind,
+        "adapter": PROFILE_LAYER_SCHEMA_VERSION,
+        "source_hash": source_hash,
+        "source_files": [str(path) for path in (source_files or []) if str(path).strip()],
+        "inputs": [str(item) for item in (inputs or []) if str(item).strip()],
+        "notes": [str(item) for item in (notes or []) if str(item).strip()],
+    }
+
+
 def _safe_read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -245,6 +314,99 @@ def _slug(text: str) -> str:
 def _compact_text(text: str, max_len: int = 220) -> str:
     value = re.sub(r"\s+", " ", str(text or "")).strip()
     return value[:max_len]
+
+
+def _infer_default_language(profile_text: str, resume: Dict[str, Any]) -> str:
+    languages = resume.get("languages", []) if isinstance(resume.get("languages"), list) else []
+    haystacks = [profile_text]
+    for entry in languages:
+        if not isinstance(entry, dict):
+            continue
+        haystacks.extend([str(entry.get("language") or ""), str(entry.get("fluency") or "")])
+    joined = " ".join(part.lower() for part in haystacks if part)
+    if any(token in joined for token in ["norsk", "norwegian", "bokmål", "bokmal"]):
+        return "nb"
+    if "english" in joined:
+        return "en"
+    return "nb"
+
+
+def _locale_for_language(language: str) -> str:
+    return {
+        "nb": "nb-NO",
+        "nn": "nn-NO",
+        "en": "en-US",
+    }.get((language or "").lower(), "nb-NO")
+
+
+def _default_section_order() -> List[str]:
+    return [
+        "basics",
+        "work",
+        "projects",
+        "skills",
+        "education",
+        "certificates",
+        "languages",
+        "volunteer",
+        "interests",
+        "references",
+    ]
+
+
+def _normalize_resume_section_name(value: Any) -> str:
+    normalized = _normalize_heading_key(str(value or ""))
+    aliases = {
+        "basics": "basics",
+        "summary": "basics",
+        "work": "work",
+        "experience": "work",
+        "projects": "projects",
+        "project": "projects",
+        "skills": "skills",
+        "education": "education",
+        "certificates": "certificates",
+        "certifications": "certificates",
+        "languages": "languages",
+        "volunteer": "volunteer",
+        "interests": "interests",
+        "references": "references",
+    }
+    return aliases.get(normalized, "")
+
+
+def _extract_resume_source_traits(resume: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = resume.get("metadata") if isinstance(resume.get("metadata"), dict) else {}
+    if not metadata:
+        metadata = resume.get("meta") if isinstance(resume.get("meta"), dict) else {}
+    layout = resume.get("layout") if isinstance(resume.get("layout"), dict) else {}
+    sections = resume.get("sections")
+    source_section_order: List[str] = []
+    if isinstance(sections, list):
+        for item in sections:
+            if isinstance(item, str):
+                section_name = _normalize_resume_section_name(item)
+            elif isinstance(item, dict):
+                section_name = _normalize_resume_section_name(
+                    item.get("key") or item.get("id") or item.get("name") or item.get("section")
+                )
+            else:
+                section_name = ""
+            if section_name and section_name not in source_section_order:
+                source_section_order.append(section_name)
+    elif isinstance(sections, dict):
+        for key in sections.keys():
+            section_name = _normalize_resume_section_name(key)
+            if section_name and section_name not in source_section_order:
+                source_section_order.append(section_name)
+    return {
+        "source_type": "reactive-resume.v5" if metadata or layout or source_section_order else "json-resume",
+        "meta_version": str(metadata.get("version") or metadata.get("schemaVersion") or ""),
+        "layout": layout,
+        "source_section_order": source_section_order,
+        "metadata_keys": sorted(metadata.keys()),
+        "layout_keys": sorted(layout.keys()),
+    }
 
 
 def _section_key_for_title(title: str) -> str:
@@ -521,6 +683,7 @@ def _build_narrative_profile(
     basics: Dict[str, Any],
     strategic_direction: str,
     motivation_language: str,
+    source_provenance: Dict[str, Any],
 ) -> NarrativeProfile:
     voice_traits = [trait for trait in [basics.get("positioning", ""), motivation_language] if trait]
     preferred_positioning = [part for part in [basics.get("label", ""), strategic_direction] if part]
@@ -530,6 +693,160 @@ def _build_narrative_profile(
         preferred_positioning=[_compact_text(part, max_len=180) for part in preferred_positioning if part][:4],
         language_preferences=str(basics.get("languages") or ""),
         operator_notes=_compact_text(strategic_direction, max_len=240),
+        source_provenance=source_provenance,
+    )
+
+
+def _build_content_library(
+    *,
+    resume_master_id: str,
+    role_variants: List[RoleVariant],
+    project_variants: List[ProjectVariant],
+    evidence_atoms: List[EvidenceAtom],
+    skill_atoms: List[SkillAtom],
+    role_records: List[RoleRecord],
+    project_records: List[ProjectRecord],
+    source_provenance: Dict[str, Any],
+) -> ContentLibrary:
+    section_inventory = {
+        "work": [record.role_record_id for record in role_records],
+        "projects": [record.project_record_id for record in project_records],
+        "skills": [skill.skill_atom_id for skill in skill_atoms],
+        "evidence": [atom.evidence_atom_id for atom in evidence_atoms],
+    }
+    return ContentLibrary(
+        content_library_id="content_library:default",
+        resume_master_id=resume_master_id,
+        role_variant_ids=[variant.role_variant_id for variant in role_variants],
+        project_variant_ids=[variant.project_variant_id for variant in project_variants],
+        evidence_atom_ids=[atom.evidence_atom_id for atom in evidence_atoms],
+        skill_atom_ids=[skill.skill_atom_id for skill in skill_atoms],
+        section_inventory=section_inventory,
+        source_provenance=source_provenance,
+    )
+
+
+def _build_selection_rules(
+    *,
+    resume_master_id: str,
+    content_library: ContentLibrary,
+    role_variants: List[RoleVariant],
+    project_variants: List[ProjectVariant],
+    skill_atoms: List[SkillAtom],
+    evidence_atoms: List[EvidenceAtom],
+    education_entries: List[Dict[str, Any]],
+    certificates: List[Dict[str, Any]],
+    volunteer: List[Dict[str, Any]],
+    languages: List[Dict[str, Any]],
+    resume: Dict[str, Any],
+    resume_traits: Dict[str, Any],
+    source_provenance: Dict[str, Any],
+) -> SelectionRules:
+    derived_section_order = [
+        section
+        for section in _default_section_order()
+        if (
+            section == "basics"
+            or (section == "work" and bool(content_library.section_inventory.get("work")))
+            or (section == "projects" and bool(content_library.section_inventory.get("projects")))
+            or (section == "skills" and bool(content_library.section_inventory.get("skills")))
+            or (section == "education" and bool(education_entries))
+            or (section == "certificates" and bool(certificates))
+            or (section == "languages" and bool(languages))
+            or (section == "volunteer" and bool(volunteer))
+            or (section == "interests" and bool(resume.get("interests")))
+            or (section == "references" and bool(resume.get("references")))
+        )
+    ]
+    preferred_section_order = [
+        section
+        for section in resume_traits.get("source_section_order", [])
+        if section in derived_section_order
+    ] + [
+        section
+        for section in derived_section_order
+        if section not in set(resume_traits.get("source_section_order", []))
+    ]
+    section_visibility = {section: section in preferred_section_order for section in _default_section_order()}
+    max_items_per_section = {
+        "work": min(4, len(content_library.section_inventory.get("work", []))),
+        "projects": min(4, len(content_library.section_inventory.get("projects", []))),
+        "skills": min(8, len(content_library.section_inventory.get("skills", []))),
+        "education": min(2, len(education_entries)),
+        "certificates": min(4, len(certificates)),
+        "languages": min(4, len(languages)),
+        "volunteer": min(2, len(volunteer)),
+    }
+    return SelectionRules(
+        selection_rules_id="selection_rules:default",
+        resume_master_id=resume_master_id,
+        default_role_variant_ids=[variant.role_variant_id for variant in role_variants[:4]],
+        default_project_variant_ids=[variant.project_variant_id for variant in project_variants[:4]],
+        featured_skill_atom_ids=[skill.skill_atom_id for skill in skill_atoms[:8]],
+        evidence_priority_ids=[atom.evidence_atom_id for atom in evidence_atoms[:8]],
+        preferred_section_order=preferred_section_order,
+        section_visibility=section_visibility,
+        max_items_per_section={key: value for key, value in max_items_per_section.items() if value > 0},
+        source_provenance=source_provenance,
+    )
+
+
+def _build_layout_profile(
+    *,
+    resume_master_id: str,
+    default_language: str,
+    selection_rules: SelectionRules,
+    resume: Dict[str, Any],
+    resume_traits: Dict[str, Any],
+    source_provenance: Dict[str, Any],
+) -> LayoutProfile:
+    preferred_order = [
+        section
+        for section in resume_traits.get("source_section_order", [])
+        if selection_rules.section_visibility.get(section, False)
+    ] + [
+        section
+        for section in selection_rules.preferred_section_order
+        if selection_rules.section_visibility.get(section, False)
+        and section not in set(resume_traits.get("source_section_order", []))
+    ]
+    visible_sections = [
+        section
+        for section in preferred_order
+        if selection_rules.section_visibility.get(section, False)
+    ]
+    hidden_sections = [section for section in _default_section_order() if section not in visible_sections]
+    layout_source = resume_traits.get("layout", {}) if isinstance(resume_traits.get("layout"), dict) else {}
+    locale = _locale_for_language(default_language)
+    return LayoutProfile(
+        layout_profile_id="layout_profile:rr-default",
+        resume_master_id=resume_master_id,
+        engine="reactive-resume",
+        template_key=str(layout_source.get("template") or layout_source.get("templateKey") or "rr-json-resume-baseline"),
+        locale=str(layout_source.get("locale") or locale),
+        section_order=visible_sections,
+        visible_sections=visible_sections,
+        hidden_sections=hidden_sections,
+        item_limits=dict(selection_rules.max_items_per_section),
+        page_settings={
+            "paper_size": str(
+                layout_source.get("paperSize")
+                or (layout_source.get("page") or {}).get("format")
+                or "A4"
+            ),
+            "locale": str(layout_source.get("locale") or locale),
+            "line_height": str(layout_source.get("lineHeight") or "normal"),
+        },
+        rr_compat={
+            "resume_schema": str(resume.get("$schema") or ""),
+            "meta_version": str(resume_traits.get("meta_version") or ""),
+            "source_type": str(resume_traits.get("source_type") or ""),
+            "metadata_keys": list(resume_traits.get("metadata_keys", [])),
+            "layout_keys": list(resume_traits.get("layout_keys", [])),
+            "section_order": visible_sections,
+            "section_visibility": dict(selection_rules.section_visibility),
+        },
+        source_provenance=source_provenance,
     )
 
 
@@ -540,6 +857,7 @@ def build_profile_layer(
     source_files: Optional[List[str]] = None,
 ) -> ProfileLayerBundle:
     sections = _parse_markdown_sections(profile_text)
+    source_hash = _compute_source_hash(profile_text, resume, source_files)
     basics = _extract_profile_basics(profile_text, resume)
     strategic_direction = "\n\n".join(_section_paragraphs(sections, "Strategic direction"))
     primary_roles = _section_bullets(sections, "Primary targets")
@@ -564,6 +882,8 @@ def build_profile_layer(
     }
     motivation_language = _extract_motivation_language(sections)
     strength_areas = _strength_areas_from_resume(resume)
+    default_language = _infer_default_language(profile_text, resume)
+    resume_traits = _extract_resume_source_traits(resume)
 
     role_records, role_variants, role_evidence, work_entries = _build_evidence_and_roles(
         resume,
@@ -585,16 +905,37 @@ def build_profile_layer(
         }
         for atom in evidence_atoms[:10]
     ]
-    narrative_profile = _build_narrative_profile(basics, strategic_direction, motivation_language)
+    resume_master_provenance = _build_source_provenance(
+        object_kind="ResumeMaster",
+        source_files=source_files,
+        source_hash=source_hash,
+        inputs=["profile_pack.md", "resume.json"],
+        notes=["Derived from local profile pack and resume source."],
+    )
+    narrative_profile_provenance = _build_source_provenance(
+        object_kind="NarrativeProfile",
+        source_files=source_files,
+        source_hash=source_hash,
+        inputs=["Candidate snapshot", "Strategic direction", "Motivation language core"],
+        notes=["Narrative profile remains a JobPipe-owned derived layer, not resume-edit truth."],
+    )
+    narrative_profile = _build_narrative_profile(
+        basics,
+        strategic_direction,
+        motivation_language,
+        narrative_profile_provenance,
+    )
 
     resume_master = ResumeMaster(
         resume_master_id="resume_master:default",
-        source_type="jobpipe.local",
+        source_type=str(resume_traits.get("source_type") or "jobpipe.local"),
         source_ref="::".join(source_files or []),
+        default_language=default_language,
         role_record_ids=[record.role_record_id for record in role_records],
         project_record_ids=[record.project_record_id for record in project_records],
         skill_atom_ids=[skill.skill_atom_id for skill in skill_atoms],
         narrative_profile_id=narrative_profile.narrative_profile_id,
+        source_provenance=resume_master_provenance,
     )
     core_skills = [skill.name for skill in skill_atoms][:10]
     core_evidence_ids = [atom.evidence_atom_id for atom in evidence_atoms[:8]]
@@ -608,6 +949,12 @@ def build_profile_layer(
         core_skills=core_skills,
         core_evidence_atom_ids=core_evidence_ids,
         constraints=[constraint for constraint in [basics.get("base", ""), remote_policy] if constraint],
+        source_provenance=_build_source_provenance(
+            object_kind="ProfileSnapshot",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["ResumeMaster", "Target roles", "Geography rules", "Strength areas"],
+        ),
     )
     targeting_profile = TargetingProfile(
         targeting_profile_id="targeting_profile:default",
@@ -616,6 +963,12 @@ def build_profile_layer(
         target_title_patterns=[*primary_roles, *secondary_roles, *stepping_roles],
         preferred_domains=[area.get("name", "") for area in strength_areas if area.get("name")][:6],
         connector_policies={"suggested_leads_bypass_geo": True},
+        source_provenance=_build_source_provenance(
+            object_kind="TargetingProfile",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["Target roles", "Location rules", "Connector policies"],
+        ),
     )
     triage_profile = TriageProfile(
         triage_profile_id="triage_profile:default",
@@ -634,6 +987,12 @@ def build_profile_layer(
         skill_clusters=core_skills[:8],
         must_not_miss_patterns=targeting_profile.target_title_patterns[:8],
         evidence_atoms_compact=[atom.text for atom in evidence_atoms[:6]],
+        source_provenance=_build_source_provenance(
+            object_kind="TriageProfile",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["ProfileSnapshot", "Evidence atoms", "Strength areas"],
+        ),
     )
     authoring_profile = AuthoringProfile(
         authoring_profile_id="authoring_profile:default",
@@ -659,8 +1018,66 @@ def build_profile_layer(
             ]
             if value
         ],
+        source_provenance=_build_source_provenance(
+            object_kind="AuthoringProfile",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["NarrativeProfile", "Evidence atoms", "Role records", "Project records"],
+        ),
     )
-    source_hash = _compute_source_hash(profile_text, resume, source_files)
+    content_library = _build_content_library(
+        resume_master_id=resume_master.resume_master_id,
+        role_variants=role_variants,
+        project_variants=project_variants,
+        evidence_atoms=evidence_atoms,
+        skill_atoms=skill_atoms,
+        role_records=role_records,
+        project_records=project_records,
+        source_provenance=_build_source_provenance(
+            object_kind="ContentLibrary",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["Role variants", "Project variants", "Evidence atoms", "Skill atoms"],
+        ),
+    )
+    languages = resume.get("languages", []) if isinstance(resume.get("languages"), list) else []
+    education_entries = resume.get("education", []) if isinstance(resume.get("education"), list) else []
+    certificates = resume.get("certificates", []) if isinstance(resume.get("certificates"), list) else []
+    volunteer = resume.get("volunteer", []) if isinstance(resume.get("volunteer"), list) else []
+    selection_rules = _build_selection_rules(
+        resume_master_id=resume_master.resume_master_id,
+        content_library=content_library,
+        role_variants=role_variants,
+        project_variants=project_variants,
+        skill_atoms=skill_atoms,
+        evidence_atoms=evidence_atoms,
+        education_entries=education_entries,
+        certificates=certificates,
+        volunteer=volunteer,
+        languages=languages,
+        resume=resume,
+        resume_traits=resume_traits,
+        source_provenance=_build_source_provenance(
+            object_kind="SelectionRules",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["ContentLibrary", "Section availability", "Default item limits"],
+        ),
+    )
+    layout_profile = _build_layout_profile(
+        resume_master_id=resume_master.resume_master_id,
+        default_language=default_language,
+        selection_rules=selection_rules,
+        resume=resume,
+        resume_traits=resume_traits,
+        source_provenance=_build_source_provenance(
+            object_kind="LayoutProfile",
+            source_files=source_files,
+            source_hash=source_hash,
+            inputs=["SelectionRules", "Resume section order", "JSON Resume compatibility"],
+            notes=["Stable RR-compatible presentation defaults until a richer RR master source is available."],
+        ),
+    )
     return ProfileLayerBundle(
         source_files=source_files or [],
         source_hash=source_hash,
@@ -683,6 +1100,9 @@ def build_profile_layer(
         project_variants=project_variants,
         evidence_atoms=evidence_atoms,
         skill_atoms=skill_atoms,
+        content_library=content_library,
+        selection_rules=selection_rules,
+        layout_profile=layout_profile,
         narrative_profile=narrative_profile,
         profile_snapshot=profile_snapshot,
         targeting_profile=targeting_profile,
@@ -801,6 +1221,9 @@ def build_authoring_context(layer: ProfileLayerBundle) -> Dict[str, Any]:
         "profile_snapshot": layer.profile_snapshot.model_dump(),
         "authoring_profile": layer.authoring_profile.model_dump(),
         "resume_master": layer.resume_master.model_dump(),
+        "content_library": layer.content_library.model_dump(),
+        "selection_rules": layer.selection_rules.model_dump(),
+        "layout_profile": layer.layout_profile.model_dump(),
         "narrative_profile": layer.narrative_profile.model_dump(),
         "role_records": relevant_role_records,
         "role_variants": relevant_role_variants,
@@ -892,6 +1315,9 @@ def build_profile_dashboard_payload(
         "derived": {
             "source_hash": layer.source_hash,
             "resume_master": layer.resume_master.model_dump(),
+            "content_library": layer.content_library.model_dump(),
+            "selection_rules": layer.selection_rules.model_dump(),
+            "layout_profile": layer.layout_profile.model_dump(),
             "profile_snapshot": layer.profile_snapshot.model_dump(),
             "targeting_profile": layer.targeting_profile.model_dump(),
             "triage_profile": layer.triage_profile.model_dump(),
@@ -903,6 +1329,7 @@ def build_profile_dashboard_payload(
                 "project_variants": len(layer.project_variants),
                 "evidence_atoms": len(layer.evidence_atoms),
                 "skill_atoms": len(layer.skill_atoms),
+                "content_library_sections": len(layer.content_library.section_inventory),
             },
         },
     }

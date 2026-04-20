@@ -157,7 +157,7 @@ def test_application_pack_payload_uses_derived_authoring_context(monkeypatch, tm
     assert "profile_pack" not in payload
     assert "resume_work" not in payload
     assert "resume_projects" not in payload
-    assert payload["authoring_context"]["schema_version"] == "jobpipe.profile-layer.v1"
+    assert payload["authoring_context"]["schema_version"] == "jobpipe.profile-layer.v2"
     assert payload["authoring_context"]["profile_snapshot"]["target_roles"][0] == "Produktleder"
     assert payload["authoring_context"]["authoring_profile"]["strongest_storylines"]
     assert payload["authoring_context"]["role_records"][0]["company"] == "Avinor"

@@ -2447,7 +2447,7 @@ Outcomes:
 
 ## Topic 28. Scheduled Run Reliability And Freshness Baseline
 
-Status: active
+Status: done on 2026-04-20
 
 Scope:
 - make the current stack reliable as a day-to-day operator system instead of a manually resumed engineering baseline
@@ -2464,55 +2464,154 @@ Validation:
 - freshness state is visible without opening raw files
 - the stack runbook can detect sibling drift before broader validation
 
+Runtime progress (2026-04-20 — Topic 28 scheduled-flow baseline):
+- `jobpipe/core/scheduled_run_state.py` now owns a versioned local scheduled-run state at `<data-root>/reports/scheduled_run_state.json`.
+- The canonical operator flow is now explicit:
+  - `python -m jobpipe.cli.run_scheduled_flow`
+  - `.\go.ps1` is now a thin wrapper over that CLI
+- The scheduled flow now records:
+  - last attempt
+  - last success
+  - feed freshness status
+  - companion-revision preflight result
+  - per-step outcome for the bounded operator path
+- `jobpipe/core/automation_state.py` now exposes `automations.scheduled_flow` alongside the existing action history.
+- `reports/dashboard_template.html` now surfaces Topic 28 state directly in the `Automations` tab:
+  - feed freshness
+  - companion preflight
+  - scheduled-flow command/path visibility
+  - local scheduled-flow state path
+- `dashboard_server.py` now exposes the same canonical scheduled flow through the existing automation action runner instead of leaving it only in PowerShell.
+- Implementability correction resolved:
+  - the old `go.ps1` path had drifted back to repo-local `sync_ledger` arguments
+  - the Topic 28 flow now runs against the JobPipe data-root contract end to end
+- Validation completed for Topic 28:
+  - `pytest tests/test_scheduled_run_state.py tests/test_automation_state.py tests/test_dashboard_contract.py -q`
+  - `compile_check.py`
+  - `python -m jobpipe.cli.check_companion_revisions --strict`
+  - live smoke run: `python -m jobpipe.cli.run_scheduled_flow --max-jobs 1`
+
 ## Topic 29. Person-Model Spine And Resume Source Adapters
 
-Status: pending
+Status: done on 2026-04-20
 
 Scope:
 - replace parallel profile truth with one JobPipe-owned person/profile spine
 - adapt current profile sources into stable derived objects without deep sibling coupling
+- make resume structure and presentation explicit enough that JobPipe can prepare a deterministic Reactive Resume handoff without turning Reactive Resume into the tailoring authority
 
 Implementation targets:
 - define the first persisted `ProfileSnapshot` / `TargetingProfile` / `TriageProfile` / `AuthoringProfile` family
-- build adapters from `profile_pack.md`, `resume.json`, and Reactive Resume-compatible inputs
+- define the first persisted resume-underlay family:
+  - `ResumeMaster`
+  - `ContentLibrary`
+  - `SelectionRules`
+  - `LayoutProfile`
+- build adapters from `profile_pack.md`, `resume.json`, Reactive Resume-compatible inputs, and a Reactive Resume v5-style master JSON source when available
 - keep Reactive Resume as an external resume system, not a runtime dependency
 
 Validation:
 - one canonical derived profile family exists and is persisted or rebuilt deterministically
 - source provenance is explicit for every derived profile object
+- one chosen `LayoutProfile` resolves to a stable RR-compatible presentation definition that later tailoring work can reuse
 
-## Topic 30. Derived-Profile Consumer Migration
+Implementability note:
+- the first profile-family spine is already live in the current codebase and should not be rebuilt from scratch during Topic 29
+- `jobpipe/core/profile_layer.py` already persists:
+  - `ResumeMaster`
+  - `ProfileSnapshot`
+  - `TargetingProfile`
+  - `TriageProfile`
+  - `AuthoringProfile`
+- current runtime consumers already read that derived layer in:
+  - `run_feed.py`
+  - `semantic_filter.py`
+  - `profile_match.py`
+  - `pivot.py`
+  - `reverse_triage.py`
+  - `application_pack.py`
+  - dashboard/profile payload paths
+- the remaining Topic 29 scope is therefore:
+  - explicit source provenance on the derived objects
+  - the missing resume-underlay family:
+    - `ContentLibrary`
+    - `SelectionRules`
+    - `LayoutProfile`
+  - stable adapter behavior for current local resume sources and RR-compatible sources when available
+
+Outcomes:
+- `jobpipe/core/profile_layer.py` now closes the first JobPipe-owned resume underlay instead of stopping at the older profile-family baseline.
+- The persisted profile layer now includes:
+  - `ResumeMaster`
+  - `ContentLibrary`
+  - `SelectionRules`
+  - `LayoutProfile`
+  - `ProfileSnapshot`
+  - `TargetingProfile`
+  - `TriageProfile`
+  - `AuthoringProfile`
+- explicit source provenance is now attached to each derived profile/underlay object instead of leaving object origin implicit at the bundle level only
+- the underlay remains deterministic for the current local sources:
+  - `profile_pack.md`
+  - `resume.json`
+  - `resume_fixed.json`
+- adapter behavior is now also stable when an RR-style master JSON exposes optional:
+  - `metadata`
+  - `layout`
+  - `sections`
+- the profile payload and authoring context now expose the new underlay objects so later tailoring work can consume them without re-deriving layout/selection assumptions ad hoc
+
+Validation:
+- `python -m pytest tests/test_profile_layer.py tests/test_profile_match_context.py tests/test_application_pack_context.py tests/test_dashboard_contract.py -q`
+- `python compile_check.py`
+- `python -m pytest -q`
+- `python -m jobpipe.cli.export_dashboard --data-root "$HOME\\JobpipeData"`
+
+## Topic 30. Tailoring Plan And Deterministic Resume Compilation
+
+Status: active
+
+Scope:
+- turn the new person/profile spine into a deterministic job-specific resume composition layer
+- prefer structured selection, visibility, and ordering over freeform rewriting
+
+Implementation targets:
+- define `TailoringPlan` as the bounded case-specific selection object
+- compile one deterministic tailored Reactive Resume JSON from:
+  - `ResumeMaster`
+  - approved content variants
+  - `SelectionRules`
+  - `LayoutProfile`
+- emit a sidecar audit artifact that records:
+  - selected variants
+  - hidden records/sections
+  - ordering choices
+  - layout profile used
+
+Validation:
+- one live-like job can produce a deterministic `TailoringPlan`, tailored RR JSON, and sidecar audit without manual assembly
+- the compiled output is explainable and traceable to approved source content plus explicit layout choice
+
+## Topic 31. Authoring Session, Concurrent Chat, And Patch Tracking
 
 Status: pending
 
 Scope:
-- move real runtime consumers onto the new person/profile spine before adding more authoring complexity
+- turn authoring from one broad draft blob into a case-scoped shared workspace where chat and manual editing can happen in parallel
+- keep agents bounded: suggestions should be attributable patches and alternatives, not silent whole-document rewrites
 
 Implementation targets:
-- switch one deterministic consumer onto `TargetingProfile`
-- switch one scoring consumer onto `TriageProfile`
-- switch one authoring consumer onto `AuthoringProfile`
+- define:
+  - `AuthoringSession`
+  - `SuggestedPatch`
+  - `AcceptedPatch`
+- persist case-scoped chat state that reads the same `jobSummary`, `DecisionBrief`, `NarrativeStrategy`, `TailoringPlan`, and save targets as the rest of the apply flow
+- let resume and cover-letter agents propose bounded section-level suggestions while external manual editing remains the human truth surface
+- keep applicant-facing artifacts clean; audit/provenance stays in sidecar state
 
 Validation:
-- the selected consumers no longer depend primarily on raw `profile_pack.md` narrative text
-- tests prove the new derived objects are actually being read in those paths
-
-## Topic 31. Application-Pack Rewrite And Tailoring Plan
-
-Status: pending
-
-Scope:
-- upgrade the current application-pack stage from one broad draft object into a thinner, more controllable authoring pipeline
-- prefer structured selection and ordering over freeform rewriting
-
-Implementation targets:
-- define `TailoringPlan`-style selection outputs
-- rewrite the application-pack pipeline around thinner decision and authoring briefs
-- improve cover-letter/CV output quality through a multi-step authoring flow
-
-Validation:
-- one shortlisted job can produce a stronger bounded authoring package than the current single-pass pack flow
-- the new outputs remain explainable and traceable to approved source content
+- one case supports concurrent chat + manual editing without losing attribution for suggested vs accepted changes
+- the new authoring outputs remain explainable, case-scoped, and traceable to source content plus accepted patches
 
 ## Topic 32. External Authoring Completion And Saveback Hardening
 
@@ -2520,15 +2619,60 @@ Status: pending
 
 Scope:
 - complete the current external authoring launch/saveback seam without collapsing external tools into JobPipe
+- make the Reactive Resume and document-authoring handoff operational enough that the user can finish a real application with minimal noise
 
 Implementation targets:
-- finish the operational Reactive Resume handoff
+- finish the operational Reactive Resume handoff around the compiled tailored JSON and final export/saveback
 - finish deterministic export capture for CV / cover letter / screening answers
+- capture provenance for:
+  - compiled tailored resume
+  - final exported resume JSON/PDF
+  - final cover-letter document
+  - layout profile
+  - accepted patch set or equivalent session refs
 - keep JobSync mirroring at the ref/provenance layer only
 
 Validation:
 - one full case can move from JobPipe shortlist to external authoring to saveback with deterministic refs and artifact outputs
 - no sibling repo absorbs JobPipe pipeline logic to make that happen
+
+## Topic 33. Live Operator Flow And Real-Data Cutover
+
+Status: pending
+
+Scope:
+- prove that the refined JobPipe -> JobSync -> Reactive Resume / document workflow is actually easier to use on real jobs
+- remove workflow noise only after the structured authoring and saveback path is stable on live data
+
+Implementation targets:
+- run the end-to-end flow on real shortlisted jobs
+- tighten naming, launch order, saveback behavior, and operator prompts based on real use
+- add one explicit operator checklist for sprint-close validation on live-like cases
+
+Validation:
+- the user can move from shortlist to promoted case to polished artifacts to manual submission on live data with low noise
+- remaining friction is documented explicitly in `AUDIT.md` instead of carried as implicit tribal knowledge
+
+## Sprint Operating Rule
+
+Treat each active topic as one Scrum-style sprint.
+
+Sprint sequence:
+- confirm the documented intent before writing code
+- check current-code implementability before widening scope
+- implement only the active sprint/topic
+- run sprint-relevant validation before calling it done
+- clean up topic-local clutter that can be safely removed within scope
+- update canonical docs to match what was actually built
+- update `AUDIT.md` and `AGENT_STATUS.md` with what changed, what was validated, and what remains open
+- only then align/checkpoint the repo state for continuation
+
+Definition of done:
+- working code or an explicit doc-only correction when implementation is not yet honest
+- validation run and recorded
+- docs aligned
+- audit/history updated
+- topic-local cleanup complete enough that the next sprint starts from a clean, attributable baseline
 
 ## Research Backlog
 

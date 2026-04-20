@@ -85,7 +85,7 @@ def test_profile_match_context_comes_from_derived_profile_layer(monkeypatch, tmp
     layer = load_profile_layer_for_paths(get_jobpipe_paths(data_root=tmp_path))
     context = build_profile_match_context(layer)
 
-    assert context["schema_version"] == "jobpipe.profile-layer.v1"
+    assert context["schema_version"] == "jobpipe.profile-layer.v2"
     assert context["profile_snapshot"]["target_roles"][:2] == ["Produktleder", "Tjenesteeier"]
     assert "Produkt" in context["triage_profile"]["skill_clusters"]
     assert context["selected_role_variants"][0]["summary"]

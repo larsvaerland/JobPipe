@@ -64,6 +64,8 @@ def test_build_automation_payload_counts_staging_and_recent_runs(tmp_path: Path)
     assert payload["summary"]["failed"] == 0
     assert payload["summary"]["last_run_at"] == "2026-04-18T10:02:00Z"
     assert payload["recent_runs"][0]["summary"] == "Connector refreshed."
+    assert payload["scheduled_flow"]["schema_version"] == "jobpipe.scheduled-run-control.v1"
+    assert payload["scheduled_flow"]["summary"]["status"] == "never_run"
 
 
 def test_automation_run_history_keeps_most_recent_entry_first(tmp_path: Path) -> None:
@@ -105,3 +107,4 @@ def test_automation_run_history_keeps_most_recent_entry_first(tmp_path: Path) ->
     assert [run["run_id"] for run in payload["recent_runs"]] == ["newer", "older"]
     assert payload["summary"]["failed"] == 1
     assert payload["summary"]["succeeded"] == 1
+    assert {action["key"] for action in payload["actions"]} >= {"scheduled_full_run", "nav_refresh", "export_dashboard"}

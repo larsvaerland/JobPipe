@@ -161,6 +161,10 @@ class JobPipePaths:
         return self.reports_dir / "automation_runs.json"
 
     @property
+    def scheduled_run_state_path(self) -> Path:
+        return self.reports_dir / "scheduled_run_state.json"
+
+    @property
     def profile_embedding_path(self) -> Path:
         return self.cache_dir / "profile_embedding.npy"
 
@@ -223,6 +227,7 @@ def _legacy_copy_plan(paths: JobPipePaths, include_artifacts: bool) -> Iterable[
         (paths.repo_reports_dir / "outcome_feedback_state.json", paths.outcome_feedback_state_path, False),
         (paths.repo_reports_dir / "settings_state.json", paths.settings_state_path, False),
         (paths.repo_reports_dir / "automation_runs.json", paths.automation_state_path, False),
+        (paths.repo_reports_dir / "scheduled_run_state.json", paths.scheduled_run_state_path, False),
         (paths.repo_reports_dir / "profile_embedding.npy", paths.profile_embedding_path, False),
         (paths.repo_root / "jobs_state.json", paths.jobs_state_path, False),
         (paths.repo_root / "jobs_delta.jsonl", paths.jobs_delta_path, False),

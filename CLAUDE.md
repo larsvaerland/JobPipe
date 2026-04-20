@@ -2,11 +2,17 @@
 
 ## Read these files first — every session, no exceptions
 
-Before writing any code or making any changes, read these three files in order:
+Before writing any code or making any changes, read these files in order:
 
-1. **`AGENT_STATUS.md`** — shared memory bus. Current state of all workstreams, what's been changed, open cross-agent requests.
-2. **`AUDIT.md`** — deep audit log. Open bugs, data quality issues, tech debt. Check your section; fix what you can.
-3. **`PRODUCT_VISION.md`** — product goals, success metrics, design principles, roadmap. Align your work with it.
+1. **`docs/mvp-task-plan.md`** — ordered execution contract. Identify the active topic before touching code.
+2. **`docs/architecture-plan.md`** — ownership and boundary contract. Confirm the work is implementable without hidden repo coupling.
+3. **`AUDIT.md`** — deep audit log. Open bugs, data quality issues, tech debt. Check your section; fix what you can.
+4. **`CLAUDE.md`** — repo operating guide. Follow the working rules here.
+
+Then read supporting docs as needed:
+- `AGENT_STATUS.md` — shared memory bus. Current state of all workstreams, what changed recently, open handoffs.
+- `PRODUCT_VISION.md` — product goals, success metrics, and long-range user workflow.
+- `README.md` / `DASHBOARD_SPEC.md` / other subsystem docs when relevant.
 
 After making changes: **update your sections in AGENT_STATUS.md and AUDIT.md**.
 
@@ -51,6 +57,28 @@ Planning split:
 - `AUDIT.md` = defects / quality / debt
 - `AGENT_STATUS.md` = current state and handoffs
 
+## Sprint discipline
+
+Treat the active roadmap topic as the current sprint.
+
+Sprint sequence:
+1. confirm what the docs intend
+2. verify the intended change is implementable in the current codebase
+3. make the smallest doc correction first if the plan and code reality disagree
+4. implement only the active sprint/topic
+5. run sprint-relevant validation before calling it done
+6. clean up topic-local clutter that is safe to remove
+7. align canonical docs with what actually shipped
+8. update `AUDIT.md` and `AGENT_STATUS.md` with changes, validation, open items, and deviations
+9. only then checkpoint/sync repo state
+
+Definition of done:
+- working code or an explicit doc-only correction when code would be dishonest
+- validation run and recorded
+- docs aligned
+- audit/history updated
+- continuation state clear enough that the next agent can understand both the big picture and the current sprint details without reverse-engineering chat logs
+
 ---
 
 ## Companion system target
@@ -93,6 +121,12 @@ Source-of-truth rule:
 - JobPipe owns pipeline/runtime truth
 - JobSync owns active application-workflow truth
 - Reactive Resume owns resume-structure truth
+
+Authoring rule:
+- JobPipe owns structured tailoring, case-scoped chat state, patch tracking, and saveback provenance
+- Reactive Resume owns manual CV editing, analysis, and export
+- Word / Docs-style tools own manual cover-letter editing and export
+- the user should be able to chat with JobPipe on the same case while editing externally
 
 ---
 
@@ -244,6 +278,7 @@ When modifying a stage, preserve existing output fields. Add new fields freely. 
 .\go.ps1 -NoOpen      # full run, skip auto-opening browser
 ```
 `go.ps1` always uses `.venv\Scripts\python.exe` — no system Python issues.
+It now delegates the canonical scheduled flow to `python -m jobpipe.cli.run_scheduled_flow`, which also records companion preflight and feed-freshness state.
 
 Local user state now lives under a stable JobPipe data root outside the repo:
 - Windows: `~/JobpipeData`
@@ -322,6 +357,14 @@ Rule:
 .venv\Scripts\python.exe -m jobpipe.cli.check_companion_revisions --strict
 ```
 Use this before stack-level validation when the current JobPipe checkpoint depends on sibling repos.
+
+### Scheduled flow
+```powershell
+.venv\Scripts\python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 1
+.\go.ps1 -DryRun
+```
+`run_scheduled_flow` is the canonical operator path under Topic 28.
+It writes `<data-root>/reports/scheduled_run_state.json` and blocks on sibling drift unless explicitly overridden.
 
 ### Test with small batch first
 ```powershell

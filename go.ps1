@@ -65,63 +65,22 @@ if ($Serve) {
     exit 0
 }
 
-# --- Optional: Suggestion intake (settings-aware mailbox leads + FINN search scrape) ---
-# Only when -WithSuggestions is passed. The mailbox step respects Settings / Integrations
-# lead-intake enablement and routes fetched leads into the normal jobs_delta connector.
-# Daytime guards still apply where scraping is involved.
+Write-Host "Running canonical scheduled flow..." -ForegroundColor Yellow
+
+$runArgs = @(
+    "-m", "jobpipe.cli.run_scheduled_flow",
+    "--data-root", $dataRoot,
+    "--max-jobs", $maxJobs
+)
 if ($WithSuggestions) {
-    Write-Host "[0a/4] sync_mailbox_leads (Gmail recommendations -> jobs_delta connector)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.sync_mailbox_leads `
-        --days 30 `
-        --max 20
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "sync_mailbox_leads failed (exit $LASTEXITCODE). Continuing."
-    }
-
-    Write-Host ""
-    Write-Host "[0b/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.pull_finn_search `
-        --max 40 `
-        @overlayArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pull_finn_search failed (exit $LASTEXITCODE). Continuing."
-    }
-    Write-Host ""
+    $runArgs += "--with-suggestions"
 }
+$runArgs += $overlayArgs
 
-# 1. Pull + process
-Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.drain_queue `
-    --batch-size $maxJobs `
-    --max-total-jobs $maxJobs `
-    --overwrite `
-    @overlayArgs
+& $py @runArgs
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "drain_queue failed (exit $LASTEXITCODE)"
-    exit $LASTEXITCODE
-}
-
-# 2. Sync ledger
-Write-Host ""
-Write-Host "[2/3] sync_ledger..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.sync_ledger `
-    --out .\out_runs `
-    --sqlite .\reports\ledger.sqlite `
-    --csv .\reports\ledger_latest.csv
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "sync_ledger failed (exit $LASTEXITCODE)"
-    exit $LASTEXITCODE
-}
-
-# 3. Rebuild dashboard
-Write-Host ""
-Write-Host "[3/3] export_dashboard..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.export_dashboard @overlayArgs
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "export_dashboard failed (exit $LASTEXITCODE)"
+    Write-Error "run_scheduled_flow failed (exit $LASTEXITCODE)"
     exit $LASTEXITCODE
 }
 

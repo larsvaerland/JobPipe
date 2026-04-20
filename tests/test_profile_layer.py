@@ -67,6 +67,7 @@ def _write_sources(tmp_path: Path) -> tuple[Path, Path, Path]:
                     "label": "Produkteier",
                     "summary": "Experienced product and service owner.",
                 },
+                "meta": {"version": "v1.0.0"},
                 "work": [
                     {
                         "name": "Avinor",
@@ -132,15 +133,24 @@ def test_build_profile_layer_creates_person_model_and_runtime_profiles(tmp_path:
 
     assert layer.schema_version == PROFILE_LAYER_SCHEMA_VERSION
     assert layer.resume_master.resume_master_id == "resume_master:default"
+    assert layer.resume_master.default_language == "nb"
     assert len(layer.role_records) == 2
     assert len(layer.role_variants) == 2
     assert len(layer.project_records) == 1
     assert len(layer.evidence_atoms) >= 4
+    assert layer.content_library.section_inventory["work"] == [record.role_record_id for record in layer.role_records]
+    assert layer.selection_rules.preferred_section_order[:4] == ["basics", "work", "projects", "skills"]
+    assert layer.layout_profile.engine == "reactive-resume"
+    assert layer.layout_profile.template_key == "rr-json-resume-baseline"
+    assert layer.layout_profile.locale == "nb-NO"
+    assert layer.layout_profile.rr_compat["section_order"] == layer.layout_profile.section_order
     assert layer.profile_snapshot.target_roles[:2] == ["Produktleder", "Tjenesteeier"]
     assert layer.targeting_profile.allowed_geos == ["Agder", "Oslo"]
     assert "Produktleder" in layer.triage_profile.role_summary
     assert layer.authoring_profile.selected_evidence_atom_ids
     assert layer.narrative_profile.language_preferences == "Norwegian + English"
+    assert layer.profile_snapshot.source_provenance["object_kind"] == "ProfileSnapshot"
+    assert layer.layout_profile.source_provenance["object_kind"] == "LayoutProfile"
 
 
 def test_build_triage_profile_text_uses_derived_profile_layer(tmp_path: Path) -> None:
@@ -183,8 +193,12 @@ def test_build_profile_dashboard_payload_exposes_derived_contract(tmp_path: Path
     assert payload["target_roles"]["primary"] == ["Produktleder", "Tjenesteeier"]
     assert payload["target_geography"]["remote_policy"] == "always OK"
     assert payload["derived"]["profile_snapshot"]["target_roles"][0] == "Produktleder"
+    assert payload["derived"]["content_library"]["section_inventory"]["work"]
+    assert payload["derived"]["selection_rules"]["preferred_section_order"][0] == "basics"
+    assert payload["derived"]["layout_profile"]["engine"] == "reactive-resume"
     assert payload["derived"]["counts"]["role_records"] == 2
     assert payload["derived"]["counts"]["skill_atoms"] == 2
+    assert payload["derived"]["counts"]["content_library_sections"] >= 4
 
 
 def test_profile_layer_can_be_persisted_and_reloaded_as_projection(tmp_path: Path) -> None:
@@ -203,6 +217,8 @@ def test_profile_layer_can_be_persisted_and_reloaded_as_projection(tmp_path: Pat
     assert persisted.schema_version == PROFILE_LAYER_SCHEMA_VERSION
     assert persisted.source_hash == layer.source_hash
     assert persisted.targeting_profile.preferred_domains == ["Produkt", "ServiceNow"]
+    assert persisted.selection_rules.featured_skill_atom_ids[:2] == [skill.skill_atom_id for skill in layer.skill_atoms[:2]]
+    assert persisted.layout_profile.rr_compat["meta_version"] == "v1.0.0"
 
 
 def test_load_or_build_profile_layer_for_paths_uses_projection_boundary(tmp_path: Path) -> None:
@@ -223,3 +239,35 @@ def test_load_or_build_profile_layer_for_paths_uses_projection_boundary(tmp_path
     assert persisted is not None
     assert persisted.source_hash == layer.source_hash
     assert persisted.profile_snapshot.target_roles[:2] == ["Produktleder", "Tjenesteeier"]
+    assert persisted.layout_profile.section_order[:3] == ["basics", "work", "projects"]
+
+
+def test_profile_layer_prefers_rr_style_layout_when_available(tmp_path: Path) -> None:
+    profile_path, resume_path, _ = _write_sources(tmp_path)
+    resume_payload = json.loads(resume_path.read_text(encoding="utf-8"))
+    resume_payload["metadata"] = {"version": "v5.2.0", "source": "reactive-resume"}
+    resume_payload["layout"] = {
+        "template": "azurill",
+        "locale": "en-US",
+        "paperSize": "Letter",
+        "lineHeight": "relaxed",
+    }
+    resume_payload["sections"] = [
+        {"key": "basics"},
+        {"key": "skills"},
+        {"key": "work"},
+        {"key": "projects"},
+    ]
+
+    layer = build_profile_layer(
+        profile_path.read_text(encoding="utf-8"),
+        resume_payload,
+        source_files=[str(profile_path), str(resume_path)],
+    )
+
+    assert layer.resume_master.source_type == "reactive-resume.v5"
+    assert layer.selection_rules.preferred_section_order[:4] == ["basics", "skills", "work", "projects"]
+    assert layer.layout_profile.template_key == "azurill"
+    assert layer.layout_profile.locale == "en-US"
+    assert layer.layout_profile.page_settings["paper_size"] == "Letter"
+    assert layer.layout_profile.rr_compat["meta_version"] == "v5.2.0"

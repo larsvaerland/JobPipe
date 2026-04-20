@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from jobpipe.core.paths import JobPipePaths
+from jobpipe.core.scheduled_run_state import build_scheduled_run_payload
 
 AUTOMATION_SCHEMA_VERSION = "jobpipe.automation.v1"
 AUTOMATION_STATE_VERSION = "jobpipe.automation-runs.v1"
@@ -23,6 +24,13 @@ class AutomationAction:
 
 
 AUTOMATION_ACTIONS: List[AutomationAction] = [
+    AutomationAction(
+        key="scheduled_full_run",
+        label="Run scheduled flow",
+        category="pipeline",
+        description="Run the canonical JobPipe operator flow with companion drift preflight and dashboard rebuild.",
+        impact="Refreshes the local pipeline baseline and writes scheduled-run health/freshness state.",
+    ),
     AutomationAction(
         key="nav_refresh",
         label="Refresh NAV connector",
@@ -157,6 +165,7 @@ def build_automation_payload(paths: JobPipePaths, *, state_path: Path | None = N
             "recent_runs": len(runs),
             "last_run_at": last_run_at,
         },
+        "scheduled_flow": build_scheduled_run_payload(paths),
         "actions": [
             {
                 "key": action.key,

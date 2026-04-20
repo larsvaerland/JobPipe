@@ -168,7 +168,7 @@ def _tail_log_text(text: str, *, limit: int = 1200) -> str:
     return cleaned[-limit:]
 
 
-def _run_subprocess_action(args: list[str]) -> Dict[str, Any]:
+def _run_subprocess_action(args: list[str], *, timeout: int = 120) -> Dict[str, Any]:
     completed = subprocess.run(
         args,
         capture_output=True,
@@ -177,11 +177,18 @@ def _run_subprocess_action(args: list[str]) -> Dict[str, Any]:
         errors="replace",
         cwd=str(PATHS.repo_root),
         env=_command_env(),
-        timeout=120,
+        timeout=timeout,
         check=False,
     )
-    combined = "\n".join(part for part in [completed.stdout.strip(), completed.stderr.strip()] if part)
-    summary = combined.splitlines()[-1] if combined else f"Exit code {completed.returncode}"
+    stdout_clean = completed.stdout.strip()
+    stderr_clean = completed.stderr.strip()
+    combined = "\n".join(part for part in [stdout_clean, stderr_clean] if part)
+    if stdout_clean:
+        summary = stdout_clean.splitlines()[-1]
+    elif stderr_clean:
+        summary = stderr_clean.splitlines()[-1]
+    else:
+        summary = f"Exit code {completed.returncode}"
     return {
         "status": "succeeded" if completed.returncode == 0 else "failed",
         "exit_code": int(completed.returncode),
@@ -191,6 +198,17 @@ def _run_subprocess_action(args: list[str]) -> Dict[str, Any]:
 
 
 def _run_automation_action(action_key: str) -> Dict[str, Any]:
+    if action_key == "scheduled_full_run":
+        return _run_subprocess_action(
+            [
+                sys.executable,
+                "-m",
+                "jobpipe.cli.run_scheduled_flow",
+                "--data-root",
+                str(PATHS.data_root),
+            ],
+            timeout=7200,
+        )
     if action_key == "nav_refresh":
         return _run_subprocess_action(
             [

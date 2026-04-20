@@ -317,6 +317,16 @@ Rule:
 - late cross-system boundaries should consume smaller task-specific briefs
 - `JobPipe` may keep thick/raw truth internally, but it should not mirror that whole dataset across boundaries
 
+Current implementation note:
+
+- the first derived profile family is already live in `jobpipe/core/profile_layer.py`
+- current runtime consumers already use that layer in semantic filtering, run-feed setup, profile match, pivot, reverse triage, application-pack context, and dashboard/profile payload projection
+- the active architectural gap is no longer "create any profile spine at all"
+- the active gap is to complete the resume-underlay side with explicit provenance plus:
+  - `ContentLibrary`
+  - `SelectionRules`
+  - `LayoutProfile`
+
 ### Greenfield Rewrite Target
 
 If the system were built from scratch for the north star, the major sections would be:
@@ -370,7 +380,11 @@ Preferred greenfield objects:
 - `SkillCluster`
 - `NarrativeProfile`
 - `SectionPolicy`
+- `LayoutProfile`
 - `TailoringPlan`
+- `AuthoringSession`
+- `SuggestedPatch`
+- `AcceptedPatch`
 
 Meaning:
 
@@ -387,6 +401,7 @@ Rule:
 
 - prefer selection, ranking, visibility, and ordering over freeform rewriting
 - treat final prose generation as a later, narrower stage
+- treat layout and presentation as part of the authoring contract, not as a cosmetic afterthought
 
 ### Topic 18 Target: Person Model And Resume Underlay
 
@@ -648,9 +663,13 @@ Each stage should read only the smallest truth needed for its single job:
    - match features + evidence inventory only
 5. `NarrativeStrategy`
    - selected job/evidence signals + small human narrative layer
-6. `TailoringPlan`
-   - structured resume object only
-7. `AuthoringBrief`
+6. `LayoutProfile`
+   - explicit resume presentation/layout policy only
+7. `TailoringPlan`
+   - structured resume composition only
+8. `AuthoringSession`
+   - case-scoped shared authoring state for chat + manual editing
+9. `AuthoringBrief`
    - selected outputs from earlier stages only
 
 This is preferred over repeated giant prompts that re-read the whole job, the whole CV, and the whole chain of previous outputs every time.
@@ -696,6 +715,26 @@ The best long-term split is:
 - Reactive Resume owns editing and rendering of structured resume truth
 - JobPipe owns job-specific tailoring logic and `TailoringPlan` generation
 - JobSync owns operator workflow and visibility into which plan/export/artifacts were actually used
+
+### Concurrent Authoring Rule
+
+The intended authoring experience is not "generate once, then leave the user alone". It is a case-scoped shared workspace.
+
+Rule:
+
+- JobPipe owns the structured case context:
+  - `jobSummary`
+  - `DecisionBrief`
+  - `NarrativeStrategy`
+  - `LayoutProfile`
+  - `TailoringPlan`
+  - save targets and artifact provenance
+- external editors remain the manual truth surfaces:
+  - `Reactive Resume` for CV polish, analysis, and export
+  - Word / Docs-style editing for cover letters and screening answers
+- chat agents should propose bounded `SuggestedPatch` outputs and alternate phrasings against the same case state
+- accepted changes should be recorded as `AcceptedPatch` or equivalent session state instead of disappearing into untracked chat history
+- final applicant-facing artifacts should stay clean; audit and rationale should live in sidecars or persisted session state
 
 Do not duplicate ownership for discovery, pipeline reasoning, mailbox classification, or primary artifact authoring inside JobSync in v1.
 
@@ -972,15 +1011,26 @@ Rule:
    - input truth:
      - structured resume object family
      - narrative strategy
+     - layout profile
    - job:
-     - select, hide/show, and reorder approved CV content
-9. `AuthoringBrief`
+      - select, hide/show, and reorder approved CV content
+      - choose which approved layout/presentation profile applies
+9. `AuthoringSession`
    - input truth:
      - canonical job
+     - decision brief
      - narrative strategy
      - tailoring plan
    - job:
-     - feed the final CV / cover-letter / screening-answer authoring steps
+     - persist chat state, suggestion state, and accepted changes while manual editing happens in parallel
+10. `AuthoringBrief`
+   - input truth:
+      - canonical job
+      - narrative strategy
+      - tailoring plan
+      - accepted authoring-session state when present
+   - job:
+      - feed the final CV / cover-letter / screening-answer authoring steps
 
 #### Hard gate shape
 
@@ -1106,20 +1156,22 @@ The preferred product flow should now be read as one dependency spine from intak
    - produce `TriageFeatures` and `TriageDecision`
 5. shortlist understanding
    - produce `AdvantageAssessment` and `NarrativeStrategy`
-6. structured CV composition
+6. presentation and structured CV composition
    - consume `ResumeMaster` family
-   - produce `TailoringPlan`
-7. artifact-specific authoring
+   - produce `LayoutProfile` and `TailoringPlan`
+7. case-scoped authoring
+   - produce `AuthoringSession` and bounded patch suggestions
+8. artifact-specific authoring
    - produce `AuthoringBrief`
    - external tools create exported artifacts
-8. workflow projection
+9. workflow projection
    - produce `ApplicationCaseProjection`
    - JobSync owns tasks, notes, and statuses after promotion
-9. saveback and outcome loop
+10. saveback and outcome loop
    - `ArtifactRef`
    - `StatusEvent`
    - `OutcomeFeedback`
-10. experimentation and calibration
+11. experimentation and calibration
    - compare gates, features, rankers, tailoring plans, and outcomes without risking hidden live regressions
 
 Upstream/downstream rule:
@@ -1506,8 +1558,16 @@ The next implemented slice is now live as well:
 - the old top-pill dashboard shell is replaced by a sidebar app shell inside the shared local dashboard runtime
 - a versioned `automations` payload object now exposes connector counts, action definitions, and recent local run history
 - local automation state persists at `<data-root>/reports/automation_runs.json`
+- a versioned `scheduled_flow` control-plane object now exposes:
+  - canonical entrypoint command
+  - last-attempt / last-success state
+  - feed-freshness status
+  - last companion-preflight result
+- local scheduled-flow state persists at `<data-root>/reports/scheduled_run_state.json`
+- `go.ps1` is now a thin wrapper around `python -m jobpipe.cli.run_scheduled_flow`
 - the dashboard server now exposes `POST /api/automation/run` so connector/control-plane actions can be triggered one by one from the shell instead of hiding behind one massive pull
 - the first automation-facing actions are intentionally narrow and local:
+  - run the canonical scheduled operator flow
   - refresh NAV connector staging
   - mailbox lead intake dry run
   - rebuild the merged pre-triage queue
@@ -1682,8 +1742,10 @@ Rules:
 Current JobPipe-side verification seam:
 
 - `python -m jobpipe.cli.check_companion_revisions --strict`
+- `python -m jobpipe.cli.run_scheduled_flow --max-jobs 1`
 
-That command checks the pinned local path, git identity, branch, commit, and dirty state for each recorded companion repo before broader stack validation.
+The drift-check command verifies the pinned local path, git identity, branch, commit, and dirty state for each recorded companion repo.
+The scheduled-flow command records that preflight result into JobPipe's local control-plane state before queue processing and dashboard rebuild.
 
 Recommended local layout:
 
