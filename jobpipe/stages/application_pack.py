@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agents import Agent
 
+from jobpipe.core.profile_layer import build_authoring_context, load_or_build_profile_layer_for_paths
 from jobpipe.core.schema import JobContext, ApplicationPackOut
 from jobpipe.core.paths import get_jobpipe_paths
 from jobpipe.stages._common import run_agent
@@ -56,9 +57,13 @@ Du mottar kontekst som JSON og produserer en komplett søknadspakke.
 - profile_match: fit_score, overlaps, gaps, hard_blockers
 - pivot: pivot_score og pivot-vurdering
 - moderator: endelig beslutning og cv_focus-anbefalinger
-- profile_pack: kandidatens profil, mål og nøkkelerfaring (narrativ)
-- resume_work: arbeidshistorie med highlights (JSON Resume-format)
-- resume_projects: prosjektportefølje
+- authoring_context: JobPipe-avledet personmodell for denne kandidaten
+  - authoring_profile
+  - profile_snapshot
+  - resume_master
+  - role_records / role_variants
+  - project_records / project_variants
+  - selected_evidence_atoms
 
 ━━━ PRIORITERING ━━━
 Overlaps fra profile_match er de sterkeste kortene. Bygg brevet rundt dem.
@@ -67,36 +72,43 @@ cover_letter_angle er din interne analyse av vinkelen — cover_letter_text er
 det faktiske brevet basert på den analysen.
 """
 
-
-def _load_resume_context() -> dict:
-    """Load JSON Resume and extract work + projects for the prompt."""
+def _build_application_pack_payload(ctx: JobContext) -> dict:
     paths = get_jobpipe_paths()
-    resume_path = paths.resume_json_path if paths.resume_json_path.exists() else paths.resume_fixed_json_path
-    if not resume_path.exists():
-        return {"resume_work": [], "resume_projects": []}
     try:
-        with open(resume_path, encoding="utf-8") as f:
-            data = json.load(f)
-        # Compact work entries: keep name, position, dates, summary, highlights
-        work = []
-        for w in data.get("work", []):
-            work.append({
-                "company": w.get("name") or w.get("company", ""),
-                "position": w.get("position", ""),
-                "start": w.get("startDate", ""),
-                "end": w.get("endDate", "present"),
-                "summary": (w.get("summary") or "")[:200],
-                "highlights": w.get("highlights", []),
-            })
-        # Compact projects: keep name + description
-        projects = [
-            {"name": p.get("name", ""), "description": (p.get("description") or "")[:200]}
-            for p in data.get("projects", [])
-        ]
-        return {"resume_work": work, "resume_projects": projects}
+        authoring_context = build_authoring_context(load_or_build_profile_layer_for_paths(paths))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[application_pack] could not load resume.json from %s: %s", resume_path, exc)
-        return {"resume_work": [], "resume_projects": []}
+        logger.warning("[application_pack] could not build derived authoring context: %s", exc)
+        authoring_context = {
+            "schema_version": "jobpipe.profile-layer.v1",
+            "profile_snapshot": {},
+            "authoring_profile": {},
+            "resume_master": {},
+            "narrative_profile": {},
+            "role_records": [],
+            "role_variants": [],
+            "project_records": [],
+            "project_variants": [],
+            "selected_evidence_atoms": [],
+            "strength_areas": [],
+            "motivation_language": "",
+        }
+
+    return {
+        "job_header": {
+            "title": ctx.job.get("title"),
+            "employer_name": ctx.job.get("employer_name"),
+            "sector": ctx.job.get("sector"),
+            "deadline": ctx.job.get("applicationDue"),
+            "source_url": ctx.job.get("sourceurl") or ctx.job.get("link"),
+        },
+        "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
+        "profile_match": ctx.profile_match.model_dump() if ctx.profile_match else {},
+        "pivot": ctx.pivot.model_dump() if ctx.pivot else {},
+        "advantage_assessment": ctx.advantage_assessment_v3.model_dump() if ctx.advantage_assessment_v3 else {},
+        "narrative_strategy": ctx.narrative_strategy_v3.model_dump() if ctx.narrative_strategy_v3 else {},
+        "moderator": ctx.moderator.model_dump() if ctx.moderator else {},
+        "authoring_context": authoring_context,
+    }
 
 
 def _generate_cv_docx(pack_data: dict, job_input: dict, job_path: Path) -> None:
@@ -204,30 +216,13 @@ def application_pack_stage_factory(model: str, web_search: bool = False):  # noq
         instructions=PACK_INSTRUCTIONS,
         output_type=ApplicationPackOut,
     )
-    resume_ctx = _load_resume_context()
 
     def should_run(ctx: JobContext) -> bool:
         return bool(ctx.moderator and ctx.moderator.final_decision in ("APPLY_STRONGLY", "APPLY"))
 
     def run(ctx: JobContext, job_dir: str) -> JobContext:
         job_path = Path(job_dir)
-
-        payload = {
-            "job_header": {
-                "title": ctx.job.get("title"),
-                "employer_name": ctx.job.get("employer_name"),
-                "sector": ctx.job.get("sector"),
-                "deadline": ctx.job.get("applicationDue"),
-                "source_url": ctx.job.get("sourceurl") or ctx.job.get("link"),
-            },
-            "job_parsed": ctx.parsed.model_dump() if ctx.parsed else {},
-            "profile_match": ctx.profile_match.model_dump() if ctx.profile_match else {},
-            "pivot": ctx.pivot.model_dump() if ctx.pivot else {},
-            "moderator": ctx.moderator.model_dump() if ctx.moderator else {},
-            "profile_pack": ctx.profile_pack[:3000],
-            "resume_work": resume_ctx["resume_work"],
-            "resume_projects": resume_ctx["resume_projects"],
-        }
+        payload = _build_application_pack_payload(ctx)
 
         input_text = "Kontekst (JSON):\n" + json.dumps(payload, ensure_ascii=False, indent=2)
         logger.info("[application_pack] running for job %s", ctx.job_id)

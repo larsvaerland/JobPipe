@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Callable, Tuple
+from typing import Any, Dict
 
-from jobpipe.core.schema import JobContext, ModeratorOut
+from jobpipe.core.schema import HardGates, JobContext, ModeratorOut
+from jobpipe.core.triage_v3 import aggregate_triage_decision
+from jobpipe.stages.triage_features import build_triage_features, persist_triage_features
+from jobpipe.stages.triage_decision_v3 import persist_triage_decision_v3
+from jobpipe.stages.triage_ambiguity_v3 import persist_triage_ambiguity_v3
 
 
 def _clamp01(x) -> float:
@@ -30,8 +34,8 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
     pivot_boost_apply = int(thr.get("pivot_boost_apply", 72))
 
     # NYE "gate"-terskler
-    review_min_fit = int(thr.get("review_min_fit", 25))              # <- løsere gate (justér i yaml)
-    review_high_min_fit = int(thr.get("review_high_min_fit", 52))    # <- under denne blir det alltid REVIEW_LOW
+    review_min_fit = int(thr.get("review_min_fit", 25))
+    review_high_min_fit = int(thr.get("review_high_min_fit", 52))
 
     def should_run(ctx: JobContext) -> bool:
         return True
@@ -59,12 +63,28 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
         conf = 0.40 + 0.45 * _clamp01(fit / 100.0) + 0.15 * _clamp01(pivot / 100.0)
         conf = round(float(_clamp01(conf)), 2)
 
+        if ctx.triage_features is None:
+            ctx.triage_features = build_triage_features(ctx)
+            persist_triage_features(job_dir, ctx.triage_features)
+
+        hard_gates = ctx.triage.hard_gates if ctx.triage and ctx.triage.hard_gates else HardGates()
+        if ctx.triage_decision_v3 is None:
+            ctx.triage_decision_v3 = aggregate_triage_decision(ctx.triage_features, hard_gates)
+            persist_triage_decision_v3(job_dir, ctx.triage_decision_v3)
+        if ctx.triage_ambiguity_v3 is not None:
+            triage_decision_v3 = ctx.triage_ambiguity_v3.final_decision
+        else:
+            triage_decision_v3 = ctx.triage_decision_v3
+            if triage_decision_v3.needs_ambiguity_pass is False and ctx.triage_ambiguity_v3:
+                persist_triage_ambiguity_v3(job_dir, ctx.triage_ambiguity_v3)
+
         ctx.moderator = ModeratorOut(
             final_decision=final,
             confidence=conf,
             recommendation_reason=f"fit={fit}, pivot={pivot}",
             cv_focus=[],
             feedback_flags=[],
+            triage_decision_v3=triage_decision_v3,
         )
         return ctx
 

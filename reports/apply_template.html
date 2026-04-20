@@ -43,6 +43,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-blue { background:var(--blue-bg); border-color:rgba(96,165,250,.35); color:var(--blue); }
 .btn-blue:hover { background:rgba(96,165,250,.18); }
 .btn-amber { background:var(--amber-bg); border-color:rgba(251,191,36,.35); color:var(--amber); }
+.btn-purple { background:rgba(167,139,250,.10); border-color:rgba(167,139,250,.35); color:var(--purple); }
+.btn-purple:hover { background:rgba(167,139,250,.18); }
 
 /* ── Main layout: left editor + right chat ── */
 .workspace { display:flex; flex:1; overflow:hidden; }
@@ -58,6 +60,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 .tab-pane { display:none; flex:1; flex-direction:column; overflow:hidden; padding:20px 24px; }
 .tab-pane.active { display:flex; }
+
+.session-strip { display:flex; flex-wrap:wrap; gap:12px; padding:12px 24px; border-bottom:1px solid var(--border);
+                 background:rgba(255,255,255,0.02); font-size:12px; color:var(--text-dim); }
+.session-card { min-width:220px; flex:1; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+.session-card strong { display:block; color:var(--text); font-size:12px; margin-bottom:6px; }
+.session-card ul { padding-left:16px; }
+.session-card li { margin-bottom:4px; }
+.session-card code { color:var(--text); word-break:break-all; }
+.session-card.empty { display:flex; align-items:center; }
+.session-card .summary-list { padding-left:16px; }
+
+.authoring-panel { padding:12px 24px 0 24px; }
+.authoring-form { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; }
+.authoring-form h3 { font-size:12px; color:var(--text); margin-bottom:10px; }
+.authoring-form p { color:var(--text-dim); font-size:12px; margin-bottom:12px; }
+.authoring-grid { display:grid; grid-template-columns:repeat(2, minmax(220px, 1fr)); gap:10px 12px; }
+.authoring-field { display:flex; flex-direction:column; gap:6px; }
+.authoring-field label { font-size:11px; color:var(--text-dim); font-weight:600; }
+.authoring-field input { background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:12px; padding:8px 10px; }
+.authoring-field input:focus { outline:none; border-color:var(--blue); }
+.authoring-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.authoring-note { margin-top:10px; font-size:11px; color:var(--text-dim); }
+.authoring-quick-actions { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 12px 0; }
 
 /* Cover letter textarea */
 .letter-area { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:10px;
@@ -166,6 +191,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   <div class="job-title" id="jobTitle">Laster…</div>
   <div class="topbar-actions">
     <a id="sourceLink" class="btn btn-green" href="#" target="_blank" style="display:none">🔗 Annonse</a>
+    <a id="applicationLink" class="btn btn-blue" href="#" target="_blank" style="display:none">📝 Søkeportal</a>
+    <a id="reactiveResumeLink" class="btn btn-purple" href="#" target="_blank" style="display:none">📄 Reactive Resume</a>
+    <a id="documentWorkspaceLink" class="btn btn-amber" href="#" target="_blank" style="display:none">📝 Dokumentverktøy</a>
+    <button class="btn btn-purple" id="startApplyBtn" onclick="startApplySession()" style="display:none">▶ Start apply</button>
+    <a id="manifestLink" class="btn" href="#" target="_blank" style="display:none">📦 Manifest</a>
     <button class="btn btn-blue" id="downloadDocxBtn" style="display:none" onclick="downloadDocx()">📥 Last ned DOCX</button>
     <button class="btn" onclick="window.location.href='/'">← Dashboard</button>
   </div>
@@ -175,6 +205,107 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
   <!-- ── Left: document editor ── -->
   <div class="editor-panel">
+    <div class="session-strip">
+      <div class="session-card" id="launchCard">
+        <strong>Apply session</strong>
+        <div id="launchSummary">Laster apply-kontrakt…</div>
+      </div>
+      <div class="session-card" id="saveTargetsCard">
+        <strong>Saveback targets</strong>
+        <div id="saveTargetsSummary">Laster lagringsmål…</div>
+      </div>
+      <div class="session-card" id="authoringStateCard">
+        <strong>Authoring saveback</strong>
+        <div id="authoringStateSummary">Laster forfattertilstand…</div>
+      </div>
+    </div>
+    <div class="authoring-panel">
+      <div class="authoring-form">
+        <h3>Registrer ekstern authoring</h3>
+        <p>Bruk dette når en CV-variant i Reactive Resume eller et eksternt dokument er valgt, så saken beholder variant- og dokumentreferanser sammen med de faste lagringsmålene.</p>
+        <div class="authoring-quick-actions">
+          <button class="btn btn-purple" type="button" id="openReactiveResumeBtn" onclick="openReactiveResume()" style="display:none">Åpne Reactive Resume</button>
+          <button class="btn" type="button" onclick="copyResumeBrief()">Kopier CV-brief</button>
+          <button class="btn btn-amber" type="button" id="openDocumentWorkspaceBtn" onclick="openDocumentWorkspace()" style="display:none">Åpne dokumentverktøy</button>
+          <button class="btn" type="button" onclick="copyCoverLetterBrief()">Kopier søknadsbrief</button>
+          <button class="btn" type="button" onclick="copyScreeningBrief()">Kopier screening-brief</button>
+        </div>
+        <div class="authoring-grid">
+          <div class="authoring-field">
+            <label for="resumeVariantRef">Reactive Resume variant ref</label>
+            <input id="resumeVariantRef" placeholder="rr:resume-id:variant-id">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeVariantLabel">Resume variant label</label>
+            <input id="resumeVariantLabel" placeholder="Tilpasset CV v1">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeSourceUrl">Resume source URL</label>
+            <input id="resumeSourceUrl" placeholder="http://localhost:3000/...">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeExportRef">Resume export ref</label>
+            <input id="resumeExportRef" placeholder="rr-export-123">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeExportLabel">Resume export label</label>
+            <input id="resumeExportLabel" placeholder="Tailored Resume PDF">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeExportUrl">Resume export URL</label>
+            <input id="resumeExportUrl" placeholder="http://localhost:3000/exports/...">
+          </div>
+          <div class="authoring-field">
+            <label for="resumeExportFormat">Resume export format</label>
+            <input id="resumeExportFormat" placeholder="pdf">
+          </div>
+          <div class="authoring-field">
+            <label for="coverLetterDocRef">Cover letter doc ref</label>
+            <input id="coverLetterDocRef" placeholder="word-doc-123">
+          </div>
+          <div class="authoring-field">
+            <label for="coverLetterSourceUrl">Cover letter source URL</label>
+            <input id="coverLetterSourceUrl" placeholder="https://docs.example.test/...">
+          </div>
+          <div class="authoring-field">
+            <label for="coverLetterExportRef">Cover letter export ref</label>
+            <input id="coverLetterExportRef" placeholder="docx-export-123">
+          </div>
+          <div class="authoring-field">
+            <label for="coverLetterExportLabel">Cover letter export label</label>
+            <input id="coverLetterExportLabel" placeholder="Final cover letter DOCX">
+          </div>
+          <div class="authoring-field">
+            <label for="coverLetterExportUrl">Cover letter export URL</label>
+            <input id="coverLetterExportUrl" placeholder="https://docs.example.test/export/...">
+          </div>
+          <div class="authoring-field">
+            <label for="screeningDocRef">Screening answers doc ref</label>
+            <input id="screeningDocRef" placeholder="screening-doc-123">
+          </div>
+          <div class="authoring-field">
+            <label for="screeningSourceUrl">Screening answers source URL</label>
+            <input id="screeningSourceUrl" placeholder="https://docs.example.test/...">
+          </div>
+          <div class="authoring-field">
+            <label for="screeningExportRef">Screening export ref</label>
+            <input id="screeningExportRef" placeholder="screening-export-123">
+          </div>
+          <div class="authoring-field">
+            <label for="screeningExportLabel">Screening export label</label>
+            <input id="screeningExportLabel" placeholder="Final screening answers DOCX">
+          </div>
+          <div class="authoring-field">
+            <label for="screeningExportUrl">Screening export URL</label>
+            <input id="screeningExportUrl" placeholder="https://docs.example.test/export/...">
+          </div>
+        </div>
+        <div class="authoring-actions">
+          <button class="btn btn-blue" type="button" onclick="saveAuthoringState()">Lagre refs</button>
+        </div>
+        <div class="authoring-note" id="authoringStateHint">Faste lagringsmål vises over. Registrer både valgt variant og den faktiske CV-eksporten som ble brukt, så saken kan speile riktig resume-link tilbake til JobSync.</div>
+      </div>
+    </div>
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('letter')">✉️ Søknadsbrev</button>
       <button class="tab-btn" onclick="switchTab('cv')">📋 CV-highlights</button>
@@ -255,9 +386,27 @@ const API = window.location.origin || `http://localhost:${PORT}`;
 const INITIAL_TAB = new URLSearchParams(window.location.search).get('tab') || 'letter';
 
 let PACK = null;
+let APPLY_SESSION = null;
+let AUTHORING_STATE = null;
 let chatHistory = [];   // [{role, content}]
 let _saveTimer = null;
 let _currentTab = 'letter';
+
+function getDecisionBrief() {
+  return ((APPLY_SESSION || {}).decisionBrief) || {};
+}
+
+function getAuthoringBriefs() {
+  return ((APPLY_SESSION || {}).authoringBriefs) || {};
+}
+
+function getAuthoringBrief(kind) {
+  return getAuthoringBriefs()[kind] || {};
+}
+
+function getArtifactPlan() {
+  return ((APPLY_SESSION || {}).artifactPlan) || {};
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
@@ -268,6 +417,7 @@ async function init() {
     if (data.error) { showToast('Feil: ' + data.error, true); return; }
     PACK = data;
     renderHeader(data);
+    await loadApplySession();
     renderContextCards(data);
     renderHighlights(data.pack);
     renderInterview(data.pack);
@@ -302,8 +452,305 @@ function renderHeader(data) {
     lnk.href = j.source_url;
     lnk.style.display = '';
   }
+  if (j.application_url) {
+    const lnk = document.getElementById('applicationLink');
+    lnk.href = j.application_url;
+    lnk.style.display = '';
+  }
+  const resumeLaunchUrl = getAuthoringBrief('resume').launch_url || APPLY_SESSION?.authoring?.resume?.launchUrl || '';
+  const reactiveLink = document.getElementById('reactiveResumeLink');
+  if (resumeLaunchUrl) {
+    reactiveLink.href = resumeLaunchUrl;
+    reactiveLink.style.display = '';
+  } else {
+    reactiveLink.style.display = 'none';
+  }
+  const documentWorkspaceUrl = getAuthoringBrief('coverLetter').launch_url || APPLY_SESSION?.authoring?.coverLetter?.launchUrl || '';
+  const documentLink = document.getElementById('documentWorkspaceLink');
+  if (documentWorkspaceUrl) {
+    documentLink.href = documentWorkspaceUrl;
+    documentLink.style.display = '';
+  } else {
+    documentLink.style.display = 'none';
+  }
   if (data.has_docx) {
     document.getElementById('downloadDocxBtn').style.display = '';
+  }
+}
+
+async function loadApplySession() {
+  try {
+    const res = await fetch(`${API}/api/apply_session/${encodeURIComponent(JOB_ID)}`);
+    const data = await res.json();
+    if (data.error) {
+      renderApplySession(null, data.error);
+      return;
+    }
+    APPLY_SESSION = data;
+    renderApplySession(data);
+  } catch (e) {
+    renderApplySession(null, 'Kunne ikke laste apply-kontrakt.');
+  }
+}
+
+function renderApplySession(session, errorMessage = '') {
+  const launchSummary = document.getElementById('launchSummary');
+  const saveTargetsSummary = document.getElementById('saveTargetsSummary');
+  const authoringStateSummary = document.getElementById('authoringStateSummary');
+  const startBtn = document.getElementById('startApplyBtn');
+  const manifestLink = document.getElementById('manifestLink');
+  const reactiveLink = document.getElementById('reactiveResumeLink');
+  const openReactiveBtn = document.getElementById('openReactiveResumeBtn');
+  const documentLink = document.getElementById('documentWorkspaceLink');
+  const openDocumentBtn = document.getElementById('openDocumentWorkspaceBtn');
+
+  if (!session) {
+    launchSummary.textContent = errorMessage || 'Apply-kontrakt ikke tilgjengelig.';
+    saveTargetsSummary.textContent = 'Ingen lagringsmål tilgjengelige.';
+    authoringStateSummary.textContent = 'Ingen authoring-tilstand tilgjengelig.';
+    return;
+  }
+
+  const openUrls = (session.launch && session.launch.openUrls) || [];
+  const saveTargets = session.saveTargets || {};
+  const artifactPlan = session.artifactPlan || {};
+  const preferredSaveTargets = artifactPlan.save_targets || saveTargets;
+  const targetEntries = Object.values(preferredSaveTargets);
+  const missingTargets = targetEntries.filter(entry => !entry.exists);
+  const launchItems = openUrls.length
+    ? '<ul>' + openUrls.map(entry => `<li>${entry.label === 'job_ad' ? 'Annonse' : 'Søkeportal'}: ${esc(entry.url)}</li>`).join('') + '</ul>'
+    : 'Ingen åpne lenker funnet i datagrunnlaget.';
+  launchSummary.innerHTML = `${launchItems}<div style="margin-top:6px">Klikk <strong>Start apply</strong> for å åpne alle lenkene og oppdatere manifestet.</div>`;
+  saveTargetsSummary.innerHTML = targetEntries.length
+    ? '<ul>' + targetEntries.map(entry => `<li>${esc(entry.label)}: <code>${esc(entry.path)}</code>${entry.exists ? ' ✓' : ''}</li>`).join('') + '</ul>'
+    : 'Ingen lagringsmål definert.';
+
+  AUTHORING_STATE = session.authoringState || null;
+  renderAuthoringState(AUTHORING_STATE);
+  authoringStateSummary.innerHTML = buildAuthoringStateSummary(AUTHORING_STATE);
+  const reactiveResumeUrl = ((session.authoringBriefs || {}).resume || {}).launch_url || (((session.authoring || {}).resume || {}).launchUrl) || '';
+  const documentWorkspaceUrl = ((session.authoringBriefs || {}).coverLetter || {}).launch_url || (((session.authoring || {}).coverLetter || {}).launchUrl) || '';
+  reactiveLink.href = reactiveResumeUrl || '#';
+  reactiveLink.style.display = reactiveResumeUrl ? '' : 'none';
+  openReactiveBtn.style.display = reactiveResumeUrl ? '' : 'none';
+  documentLink.href = documentWorkspaceUrl || '#';
+  documentLink.style.display = documentWorkspaceUrl ? '' : 'none';
+  openDocumentBtn.style.display = documentWorkspaceUrl ? '' : 'none';
+  startBtn.style.display = openUrls.length ? '' : 'none';
+  manifestLink.href = `${API}/download/${encodeURIComponent(JOB_ID)}/apply_session.json`;
+  manifestLink.style.display = '';
+  manifestLink.textContent = `📦 Manifest (${missingTargets.length} mangler)`;
+}
+
+function buildAuthoringStateSummary(state) {
+  if (!state) return 'Ingen authoring-refs registrert ennå.';
+  const lines = [];
+  if (state.resume && (state.resume.variantRef || state.resume.sourceUrl)) {
+    lines.push(`CV: ${esc(state.resume.variantLabel || state.resume.variantRef || state.resume.sourceUrl)}`);
+  }
+  if (state.resume && (state.resume.exportRef || state.resume.exportUrl || state.resume.exportLabel)) {
+    const exportValue = state.resume.exportLabel || state.resume.exportRef || state.resume.exportUrl;
+    const exportFormat = state.resume.exportFormat ? ` [${esc(state.resume.exportFormat)}]` : '';
+    const exportedAt = state.resume.exportedAt ? ` @ ${esc(state.resume.exportedAt)}` : '';
+    lines.push(`CV-eksport: ${esc(exportValue)}${exportFormat}${exportedAt}`);
+  }
+  if (state.coverLetter && (state.coverLetter.documentRef || state.coverLetter.sourceUrl)) {
+    lines.push(`Søknad: ${esc(state.coverLetter.documentLabel || state.coverLetter.documentRef || state.coverLetter.sourceUrl)}`);
+  }
+  if (state.coverLetter && (state.coverLetter.exportRef || state.coverLetter.exportUrl || state.coverLetter.exportLabel)) {
+    const exportValue = state.coverLetter.exportLabel || state.coverLetter.exportRef || state.coverLetter.exportUrl;
+    const exportFormat = state.coverLetter.exportFormat ? ` [${esc(state.coverLetter.exportFormat)}]` : '';
+    const exportedAt = state.coverLetter.exportedAt ? ` @ ${esc(state.coverLetter.exportedAt)}` : '';
+    lines.push(`Søknad-eksport: ${esc(exportValue)}${exportFormat}${exportedAt}`);
+  }
+  if (state.screeningAnswers && (state.screeningAnswers.documentRef || state.screeningAnswers.sourceUrl)) {
+    lines.push(`Screening: ${esc(state.screeningAnswers.documentLabel || state.screeningAnswers.documentRef || state.screeningAnswers.sourceUrl)}`);
+  }
+  if (state.screeningAnswers && (state.screeningAnswers.exportRef || state.screeningAnswers.exportUrl || state.screeningAnswers.exportLabel)) {
+    const exportValue = state.screeningAnswers.exportLabel || state.screeningAnswers.exportRef || state.screeningAnswers.exportUrl;
+    const exportFormat = state.screeningAnswers.exportFormat ? ` [${esc(state.screeningAnswers.exportFormat)}]` : '';
+    const exportedAt = state.screeningAnswers.exportedAt ? ` @ ${esc(state.screeningAnswers.exportedAt)}` : '';
+    lines.push(`Screening-eksport: ${esc(exportValue)}${exportFormat}${exportedAt}`);
+  }
+  if (!lines.length) {
+    return 'Ingen authoring-refs registrert ennå.';
+  }
+  const updatedAt = state.updatedAt ? `<div style="margin-top:6px;color:var(--text-dim)">Oppdatert: ${esc(state.updatedAt)}</div>` : '';
+  return '<ul class="summary-list">' + lines.map(line => `<li>${line}</li>`).join('') + '</ul>' + updatedAt;
+}
+
+function renderAuthoringState(state) {
+  const safe = state || {};
+  const resume = safe.resume || {};
+  const coverLetter = safe.coverLetter || {};
+  const screeningAnswers = safe.screeningAnswers || {};
+  document.getElementById('resumeVariantRef').value = resume.variantRef || '';
+  document.getElementById('resumeVariantLabel').value = resume.variantLabel || '';
+  document.getElementById('resumeSourceUrl').value = resume.sourceUrl || '';
+  document.getElementById('resumeExportRef').value = resume.exportRef || '';
+  document.getElementById('resumeExportLabel').value = resume.exportLabel || '';
+  document.getElementById('resumeExportUrl').value = resume.exportUrl || '';
+  document.getElementById('resumeExportFormat').value = resume.exportFormat || 'pdf';
+  document.getElementById('coverLetterDocRef').value = coverLetter.documentRef || '';
+  document.getElementById('coverLetterSourceUrl').value = coverLetter.sourceUrl || '';
+  document.getElementById('coverLetterExportRef').value = coverLetter.exportRef || '';
+  document.getElementById('coverLetterExportLabel').value = coverLetter.exportLabel || '';
+  document.getElementById('coverLetterExportUrl').value = coverLetter.exportUrl || '';
+  document.getElementById('screeningDocRef').value = screeningAnswers.documentRef || '';
+  document.getElementById('screeningSourceUrl').value = screeningAnswers.sourceUrl || '';
+  document.getElementById('screeningExportRef').value = screeningAnswers.exportRef || '';
+  document.getElementById('screeningExportLabel').value = screeningAnswers.exportLabel || '';
+  document.getElementById('screeningExportUrl').value = screeningAnswers.exportUrl || '';
+}
+
+async function startApplySession() {
+  if (!APPLY_SESSION) {
+    await loadApplySession();
+  }
+  if (!APPLY_SESSION) {
+    showToast('Apply-kontrakt ikke tilgjengelig', true);
+    return;
+  }
+  const openUrls = (APPLY_SESSION.launch && APPLY_SESSION.launch.openUrls) || [];
+  const resumeLaunchUrl = getAuthoringBrief('resume').launch_url || (((APPLY_SESSION.authoring || {}).resume || {}).launchUrl) || '';
+  const documentWorkspaceUrl = getAuthoringBrief('coverLetter').launch_url || (((APPLY_SESSION.authoring || {}).coverLetter || {}).launchUrl) || '';
+  if (!openUrls.length) {
+    if (resumeLaunchUrl) {
+      window.open(resumeLaunchUrl, '_blank', 'noopener');
+      if (documentWorkspaceUrl) {
+        window.open(documentWorkspaceUrl, '_blank', 'noopener');
+      }
+      showToast('Åpnet authoring-verktøy for denne saken');
+      return;
+    }
+    if (documentWorkspaceUrl) {
+      window.open(documentWorkspaceUrl, '_blank', 'noopener');
+      showToast('Åpnet dokumentverktøy for denne saken');
+      return;
+    }
+    showToast('Ingen lenker å åpne for denne saken', true);
+    return;
+  }
+  for (const entry of openUrls) {
+    window.open(entry.url, '_blank', 'noopener');
+  }
+  if (resumeLaunchUrl) {
+    window.open(resumeLaunchUrl, '_blank', 'noopener');
+  }
+  if (documentWorkspaceUrl) {
+    window.open(documentWorkspaceUrl, '_blank', 'noopener');
+  }
+  showToast(`Åpnet ${openUrls.length} lenke${openUrls.length === 1 ? '' : 'r'} og oppdatert apply-kontrakten`);
+}
+
+function openReactiveResume() {
+  const resumeLaunchUrl = getAuthoringBrief('resume').launch_url || (((APPLY_SESSION || {}).authoring || {}).resume || {}).launchUrl || '';
+  if (!resumeLaunchUrl) {
+    showToast('Reactive Resume er ikke aktivert i settings', true);
+    return;
+  }
+  window.open(resumeLaunchUrl, '_blank', 'noopener');
+}
+
+function openDocumentWorkspace() {
+  const documentWorkspaceUrl = getAuthoringBrief('coverLetter').launch_url || (((APPLY_SESSION || {}).authoring || {}).coverLetter || {}).launchUrl || '';
+  if (!documentWorkspaceUrl) {
+    showToast('Dokumentverktøy er ikke aktivert i settings', true);
+    return;
+  }
+  window.open(documentWorkspaceUrl, '_blank', 'noopener');
+}
+
+async function copyResumeBrief() {
+  const brief = getAuthoringBrief('resume').handoff_brief || (((APPLY_SESSION || {}).authoring || {}).resume || {}).handoffBrief || '';
+  if (!brief) {
+    showToast('Ingen CV-brief tilgjengelig', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(brief);
+    showToast('CV-brief kopiert');
+  } catch (e) {
+    showToast('Kunne ikke kopiere CV-brief', true);
+  }
+}
+
+async function copyCoverLetterBrief() {
+  const brief = getAuthoringBrief('coverLetter').handoff_brief || (((APPLY_SESSION || {}).authoring || {}).coverLetter || {}).handoffBrief || '';
+  if (!brief) {
+    showToast('Ingen søknadsbrief tilgjengelig', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(brief);
+    showToast('Søknadsbrief kopiert');
+  } catch (e) {
+    showToast('Kunne ikke kopiere søknadsbrief', true);
+  }
+}
+
+async function copyScreeningBrief() {
+  const brief = getAuthoringBrief('screeningAnswers').handoff_brief || (((APPLY_SESSION || {}).authoring || {}).screeningAnswers || {}).handoffBrief || '';
+  if (!brief) {
+    showToast('Ingen screening-brief tilgjengelig', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(brief);
+    showToast('Screening-brief kopiert');
+  } catch (e) {
+    showToast('Kunne ikke kopiere screening-brief', true);
+  }
+}
+
+async function saveAuthoringState() {
+  const payload = {
+    resume: {
+      variantRef: document.getElementById('resumeVariantRef').value,
+      variantLabel: document.getElementById('resumeVariantLabel').value,
+      sourceUrl: document.getElementById('resumeSourceUrl').value,
+      exportRef: document.getElementById('resumeExportRef').value,
+      exportLabel: document.getElementById('resumeExportLabel').value,
+      exportUrl: document.getElementById('resumeExportUrl').value,
+      exportFormat: document.getElementById('resumeExportFormat').value,
+      artifactRefs: [],
+    },
+    coverLetter: {
+      documentRef: document.getElementById('coverLetterDocRef').value,
+      sourceUrl: document.getElementById('coverLetterSourceUrl').value,
+      exportRef: document.getElementById('coverLetterExportRef').value,
+      exportLabel: document.getElementById('coverLetterExportLabel').value,
+      exportUrl: document.getElementById('coverLetterExportUrl').value,
+      artifactRefs: [],
+    },
+    screeningAnswers: {
+      documentRef: document.getElementById('screeningDocRef').value,
+      sourceUrl: document.getElementById('screeningSourceUrl').value,
+      exportRef: document.getElementById('screeningExportRef').value,
+      exportLabel: document.getElementById('screeningExportLabel').value,
+      exportUrl: document.getElementById('screeningExportUrl').value,
+      artifactRefs: [],
+    },
+  };
+
+  try {
+    const res = await fetch(`${API}/api/authoring/${encodeURIComponent(JOB_ID)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, true);
+      return;
+    }
+    AUTHORING_STATE = data.authoringState || null;
+    renderAuthoringState(AUTHORING_STATE);
+    document.getElementById('authoringStateSummary').innerHTML = buildAuthoringStateSummary(AUTHORING_STATE);
+    await loadApplySession();
+    showToast('Authoring-refs lagret');
+  } catch (e) {
+    showToast('Kunne ikke lagre authoring-refs', true);
   }
 }
 

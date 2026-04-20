@@ -14,11 +14,14 @@ Decision zones (with pipeline.v1.yaml thresholds):
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from jobpipe.stages.moderate import moderate_stage_factory
 from jobpipe.core.schema import (
     JobContext, RunMeta, TriageOut, ProfileMatchOut, PivotOut
 )
+from jobpipe.stages.triage_features import triage_features_artifact_path
 
 
 # ---------------------------------------------------------------------------
@@ -202,3 +205,15 @@ class TestModeratorOutput:
         ctx_low = run(_make_ctx(fit=30), "/tmp")
         ctx_high = run(_make_ctx(fit=90), "/tmp")
         assert ctx_high.moderator.confidence > ctx_low.moderator.confidence
+
+    def test_moderator_attaches_triage_v3_snapshot(self):
+        _, run = moderate_stage_factory(THRESHOLDS)
+        ctx = run(_make_ctx(fit=70, pivot=80), "/tmp")
+        assert ctx.moderator.triage_decision_v3 is not None
+        assert ctx.moderator.triage_decision_v3.label in {"review", "shortlist", "discard"}
+
+    def test_moderator_persists_triage_features_artifact(self, tmp_path: Path):
+        _, run = moderate_stage_factory(THRESHOLDS)
+        ctx = run(_make_ctx(fit=70, pivot=80), str(tmp_path))
+        assert ctx.triage_features is not None
+        assert triage_features_artifact_path(str(tmp_path)).exists()

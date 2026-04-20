@@ -9,14 +9,56 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.cli.mark_status import load_state as load_application_state
+from jobpipe.cli.mark_status import normalize_shared_status
+from jobpipe.core.automation_state import build_automation_payload
+from jobpipe.core.boundary_objects import (
+    build_application_case_projection,
+    build_artifact_plan,
+    build_case_job_summary,
+    build_decision_brief,
+)
 from jobpipe.core.config import load_raw_config
-from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+from jobpipe.core.experiment_review_state import (
+    build_advantage_signal_calibration_summary,
+    build_advantage_shortlist_quality_summary,
+    build_experiment_calibration_summary,
+    build_experiment_promotion_review_summary,
+    build_experiment_review_summary,
+    build_experiment_variant_review_summary,
+    get_experiment_promotion_review,
+    get_experiment_review,
+    get_experiment_variant_review,
+    load_experiment_review_state,
+)
+from jobpipe.core.experiments import load_latest_shadow_review_queue
+from jobpipe.core.experiments import load_experiment_detail
+from jobpipe.core.experiments import load_recent_shadow_experiment_summaries
+from jobpipe.core.outcome_feedback import (
+    build_outcome_feedback_state,
+    build_outcome_ranking_guidance,
+    build_outcomes_dashboard_payload,
+    persist_outcome_feedback_state,
+)
+from jobpipe.core.paths import JobPipePaths, bootstrap_private_data, get_jobpipe_paths
+from jobpipe.core.profile_layer import build_profile_dashboard_payload
+from jobpipe.core.projection_store import (
+    apply_input_enrichment_projection,
+    apply_detail_projection,
+    build_detail_projection,
+    build_input_enrichment_projection,
+    build_job_projection_bundle,
+    get_job_projection_bundle,
+    load_projection_store,
+    persist_projection_store,
+    set_job_projection_bundle,
+)
+from jobpipe.core.settings_state import build_settings_payload
 
 _PAYLOAD_SCHEMA_VERSION = "jobpipe.dashboard.v2"
 _PAYLOAD_SOFT_BUDGET_BYTES = 16 * 1024 * 1024
@@ -92,8 +134,32 @@ _DATA_PLACEHOLDER = "/*__DASHBOARD_DATA__*/"
 _DEFAULT_PATHS = get_jobpipe_paths()
 
 
+def _find_latest_suffix_artifact(job_dir: Path, suffix: str) -> Optional[Path]:
+    matches = sorted(job_dir.glob(f"*{suffix}"))
+    return matches[-1] if matches else None
+
+
 def _default_paths():
     return get_jobpipe_paths()
+
+
+def _resolve_paths_for_payload(
+    *,
+    state_path: Optional[Path],
+    profile_path: Optional[Path],
+    resume_path: Optional[Path],
+    profile_draft_path: Optional[Path],
+    settings_path: Optional[Path],
+) -> JobPipePaths:
+    repo_root = _DEFAULT_PATHS.repo_root
+    candidates = [settings_path, state_path, profile_draft_path, resume_path]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        return JobPipePaths(repo_root=repo_root, data_root=candidate.parent.parent)
+    if profile_path:
+        return JobPipePaths(repo_root=repo_root, data_root=profile_path.parent)
+    return _default_paths()
 
 
 def _rows_as_dicts(conn: sqlite3.Connection, sql: str) -> List[Dict[str, Any]]:
@@ -174,10 +240,39 @@ def _parse_raw_json(val: Any) -> Dict[str, Any]:
 
 
 def _extract_detail(row: Dict[str, Any]) -> Dict[str, Any]:
+    triage_features = _parse_raw_json(row.get("raw_triage_features_json"))
+    triage_decision_v3 = _parse_raw_json(row.get("raw_triage_decision_v3_json"))
+    triage_ambiguity_v3 = _parse_raw_json(row.get("raw_triage_ambiguity_v3_json"))
+    advantage = _parse_raw_json(row.get("raw_advantage_assessment_v3_json"))
+    narrative = _parse_raw_json(row.get("raw_narrative_strategy_v3_json"))
     match = _parse_raw_json(row.get("raw_match_json"))
     pivot = _parse_raw_json(row.get("raw_pivot_json"))
     mod = _parse_raw_json(row.get("raw_moderator_json"))
-    return {
+    detail = {
+        "triage_v3_label": triage_decision_v3.get("label", ""),
+        "triage_v3_weighted_score": triage_decision_v3.get("weighted_score"),
+        "triage_v3_needs_ambiguity": triage_decision_v3.get("needs_ambiguity_pass", False),
+        "triage_v3_blockers": triage_decision_v3.get("blockers", []),
+        "triage_v3_boosts": triage_decision_v3.get("boosts", []),
+        "triage_ambiguity_label": triage_ambiguity_v3.get("resolved_label", ""),
+        "triage_ambiguity_reason": triage_ambiguity_v3.get("resolution_reason", ""),
+        "advantage_type": advantage.get("advantage_type", ""),
+        "advantage_signals": advantage.get("advantage_signals", []),
+        "objection_signals": advantage.get("objection_signals", []),
+        "neutralizing_evidence": advantage.get("neutralizing_evidence", []),
+        "differentiation_signals": advantage.get("differentiation_signals", []),
+        "advantageous_match_score": advantage.get("advantageous_match_score"),
+        "applicant_pool_hypothesis": advantage.get("applicant_pool_hypothesis", ""),
+        "recruiter_hook": advantage.get("recruiter_hook", ""),
+        "review_priority": advantage.get("review_priority"),
+        "narrative_positioning_angle": narrative.get("positioning_angle", ""),
+        "narrative_brand_frame": narrative.get("brand_frame", ""),
+        "narrative_why_me_now": narrative.get("why_me_now", ""),
+        "narrative_value_props": narrative.get("top_value_props", []),
+        "narrative_objections": narrative.get("objections_to_handle", []),
+        "narrative_cv_focus_order": narrative.get("cv_focus_order", []),
+        "cover_letter_strategy": narrative.get("cover_letter_strategy", ""),
+        "triage_features": triage_features,
         "overlaps": match.get("overlaps", []),
         "gaps": match.get("gaps", []),
         "hard_blockers": match.get("hard_blockers", []),
@@ -188,6 +283,48 @@ def _extract_detail(row: Dict[str, Any]) -> Dict[str, Any]:
         "cv_focus_mod": mod.get("cv_focus", []),
         "feedback_flags_mod": mod.get("feedback_flags", []),
     }
+    detail["decision_brief"] = build_decision_brief(
+        final_decision=row.get("final_decision") or "",
+        triage_v3_label=detail["triage_v3_label"],
+        fit_score=row.get("fit_score"),
+        pivot_score=row.get("pivot_score"),
+        advantage_type=detail["advantage_type"],
+        advantageous_match_score=detail["advantageous_match_score"],
+        review_priority=detail["review_priority"],
+        positioning_angle=detail["narrative_positioning_angle"],
+        brand_frame=detail["narrative_brand_frame"],
+        applicant_pool_hypothesis=detail["applicant_pool_hypothesis"],
+        recruiter_hook=detail["recruiter_hook"],
+        rationale=row.get("recommendation_reason") or row.get("triage_explanation") or "",
+        overlaps=detail["overlaps"],
+        gaps=detail["gaps"],
+        differentiation_signals=detail["differentiation_signals"],
+        top_value_props=detail["narrative_value_props"],
+        cv_focus=detail["cv_focus_mod"],
+        cover_letter_angle=detail["cover_letter_strategy"],
+    )
+    detail["application_case_projection"] = build_application_case_projection(
+        external_source="jobpipe",
+        external_id=str(row.get("job_id") or ""),
+        run_id=str(row.get("run_id") or ""),
+        status=str(row.get("app_status") or ""),
+        updated_at=str(row.get("updated_at") or ""),
+        job_summary=build_case_job_summary(
+            title=str(row.get("title") or ""),
+            company=str(row.get("employer") or ""),
+            location=", ".join(
+                part for part in [str(row.get("work_city") or "").strip(), str(row.get("work_county") or "").strip()] if part
+            ),
+            job_source=str(row.get("job_source") or "jobpipe"),
+            source_url=str(row.get("source_url") or ""),
+            application_url=str(row.get("application_url") or ""),
+            application_due=str(row.get("applicationDue") or ""),
+            description_snippet=str(row.get("description_snip") or ""),
+        ),
+        decision_brief=detail["decision_brief"],
+        artifact_plan=build_artifact_plan(),
+    )
+    return detail
 
 
 def _safe_load_json(path: Path) -> Dict[str, Any]:
@@ -195,13 +332,6 @@ def _safe_load_json(path: Path) -> Dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
-
-
-def _safe_read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except Exception:
-        return ""
 
 
 def _pick(*vals: Any) -> Any:
@@ -268,14 +398,20 @@ def _collect_generated_documents(row: Dict[str, Any], out_dir: Path) -> List[Dic
         return []
 
     docs: List[Dict[str, Any]] = []
-    candidates = [
-        ("application_pack_draft.json", "application_pack_json", "draft"),
-        ("06_application_pack.json", "application_pack_json", "saved"),
-        ("07_cv_highlights.docx", "cv_highlights_docx", "draft"),
-        ("cover_letter_draft.txt", "cover_letter_text", "draft"),
-    ]
-    for filename, kind, status in candidates:
-        path = job_dir / filename
+    candidates = []
+    pack_path = _find_latest_suffix_artifact(job_dir, "_application_pack.json")
+    if pack_path:
+        candidates.append((pack_path, "application_pack_json", "saved"))
+    docx_path = _find_latest_suffix_artifact(job_dir, "_cv_highlights.docx")
+    if docx_path:
+        candidates.append((docx_path, "cv_highlights_docx", "draft"))
+    candidates.extend(
+        [
+            (job_dir / "application_pack_draft.json", "application_pack_json", "draft"),
+            (job_dir / "cover_letter_draft.txt", "cover_letter_text", "draft"),
+        ]
+    )
+    for path, kind, status in candidates:
         if not path.exists():
             continue
         docs.append(
@@ -388,196 +524,665 @@ def _enrich_from_input(row: Dict[str, Any], out_dir: Path) -> None:
 def _load_app_state(state_path: Path) -> Dict[str, Any]:
     """Load application_state.json sidecar. Returns empty dict if missing."""
     try:
-        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data = load_application_state(state_path)
         return data.get("applications", {})
     except Exception:
         return {}
 
 
-def _load_profile_builder_state(path: Path) -> Dict[str, str]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    out: Dict[str, str] = {}
-    for key, value in data.items():
-        if value is None:
-            continue
-        out[str(key)] = str(value)
-    return out
-
-
-def _normalize_heading_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
-
-
-def _parse_markdown_sections(text: str) -> List[Dict[str, Any]]:
-    sections: List[Dict[str, Any]] = []
-    current: Optional[Dict[str, Any]] = None
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        m = re.match(r"^(#{1,6})\s+(.*)$", line)
-        if m:
-            if current:
-                current["content"] = "\n".join(current["lines"]).strip()
-                sections.append(current)
-            current = {
-                "level": len(m.group(1)),
-                "title": m.group(2).strip(),
-                "key": _normalize_heading_key(m.group(2)),
-                "lines": [],
-            }
-            continue
-        if current is not None:
-            current["lines"].append(line)
-    if current:
-        current["content"] = "\n".join(current["lines"]).strip()
-        sections.append(current)
-    return sections
-
-
-def _section_by_title(sections: List[Dict[str, Any]], title_fragment: str) -> Dict[str, Any]:
-    key = _normalize_heading_key(title_fragment)
-    for section in sections:
-        if key and key in section.get("key", ""):
-            return section
-    return {}
-
-
-def _section_bullets(sections: List[Dict[str, Any]], title_fragment: str) -> List[str]:
-    content = str(_section_by_title(sections, title_fragment).get("content") or "")
-    items: List[str] = []
-    for line in content.splitlines():
-        if line.strip().startswith("- "):
-            items.append(line.strip()[2:].strip())
-    return items
-
-
-def _section_paragraphs(sections: List[Dict[str, Any]], title_fragment: str) -> List[str]:
-    content = str(_section_by_title(sections, title_fragment).get("content") or "")
-    parts = [part.strip() for part in re.split(r"\n\s*\n", content) if part.strip()]
-    return [part for part in parts if not part.startswith("- ")]
-
-
-def _extract_profile_basics(profile_text: str, resume: Dict[str, Any]) -> Dict[str, Any]:
-    basics = resume.get("basics", {}) if isinstance(resume.get("basics"), dict) else {}
-    snapshot = {}
-    for line in profile_text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("- "):
-            continue
-        payload = stripped[2:]
-        if ":" not in payload:
-            continue
-        key, value = payload.split(":", 1)
-        snapshot[_normalize_heading_key(key)] = value.strip()
-    return {
-        "name": basics.get("name", ""),
-        "label": basics.get("label", ""),
-        "email": basics.get("email", ""),
-        "phone": basics.get("phone", ""),
-        "url": basics.get("url", ""),
-        "summary": basics.get("summary", ""),
-        "base": snapshot.get("base", ""),
-        "languages": snapshot.get("languages", ""),
-        "level": snapshot.get("level", ""),
-        "positioning": snapshot.get("positioning", ""),
-        "cognitive": snapshot.get("cognitive", ""),
-    }
-
-
 def _build_profile_payload(
+    paths: JobPipePaths,
     profile_path: Path,
     resume_path: Path,
     profile_draft_path: Path,
 ) -> Dict[str, Any]:
-    profile_text = _safe_read_text(profile_path)
-    resume = _safe_load_json(resume_path)
-    builder_state = _load_profile_builder_state(profile_draft_path)
-    sections = _parse_markdown_sections(profile_text)
-    basics = _extract_profile_basics(profile_text, resume)
+    return build_profile_dashboard_payload(
+        profile_path,
+        resume_path,
+        profile_draft_path,
+        projection_path=paths.profile_layer_state_path,
+    )
 
-    target_geography = []
-    for bullet in _section_bullets(sections, "Location (OK if any)"):
-        target_geography.append(bullet)
-    remote_policy = ""
-    for line in str(_section_by_title(sections, "Location (OK if any)").get("content") or "").splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("remote/hybrid:"):
-            remote_policy = stripped.split(":", 1)[1].strip()
-            break
 
-    work_entries = resume.get("work", []) if isinstance(resume.get("work"), list) else []
-    skill_entries = resume.get("skills", []) if isinstance(resume.get("skills"), list) else []
-    education_entries = resume.get("education", []) if isinstance(resume.get("education"), list) else []
+def _extract_experiment_advantage_context(job: Dict[str, Any]) -> Dict[str, Any]:
+    detail = job.get("detail")
+    if not isinstance(detail, dict):
+        detail = {}
+    brief = detail.get("decision_brief")
+    if not isinstance(brief, dict):
+        brief = {}
+    advantageous_match_score = brief.get("advantageous_match_score")
+    try:
+        advantageous_match_score_int = int(advantageous_match_score)
+    except Exception:
+        advantageous_match_score_int = 0
+    review_priority = brief.get("review_priority")
+    try:
+        review_priority_int = int(review_priority)
+    except Exception:
+        review_priority_int = 0
+    recruiter_hook = str(brief.get("recruiter_hook") or "").strip()
+    applicant_pool_hypothesis = str(brief.get("applicant_pool_hypothesis") or "").strip()
+    return {
+        "advantageous_match_score": advantageous_match_score_int,
+        "advantage_review_priority": review_priority_int,
+        "recruiter_hook": recruiter_hook,
+        "applicant_pool_hypothesis": applicant_pool_hypothesis,
+    }
 
-    evidence_highlights: List[Dict[str, str]] = []
-    for entry in work_entries:
-        if not isinstance(entry, dict):
-            continue
-        employer = str(entry.get("name", "")).strip()
-        role = str(entry.get("position", "")).strip()
-        for highlight in entry.get("highlights", []) or []:
-            evidence_highlights.append(
-                {
-                    "employer": employer,
-                    "role": role,
-                    "text": str(highlight).strip(),
-                }
-            )
-            if len(evidence_highlights) >= 10:
-                break
-        if len(evidence_highlights) >= 10:
-            break
 
-    strength_areas: List[Dict[str, Any]] = []
-    for entry in skill_entries:
-        if not isinstance(entry, dict):
-            continue
-        strength_areas.append(
-            {
-                "name": str(entry.get("name", "")).strip(),
-                "keywords": [str(keyword).strip() for keyword in (entry.get("keywords") or []) if str(keyword).strip()],
-            }
+def _enrich_experiment_review_item(
+    item: Dict[str, Any],
+    *,
+    experiment_id: str,
+    review_state: Dict[str, Any],
+    job_index: Dict[tuple[str, str], Dict[str, Any]],
+) -> Dict[str, Any]:
+    enriched = dict(item)
+    enriched["experiment_id"] = experiment_id
+    job = job_index.get((str(item.get("run_id") or ""), str(item.get("job_id") or "")))
+    if job:
+        enriched["title"] = str(job.get("title") or "")
+        enriched["employer"] = str(job.get("employer") or "")
+        enriched["final_decision"] = str(job.get("final_decision") or "")
+        enriched["app_status"] = str(job.get("app_status") or "")
+        enriched["job_source"] = str(job.get("job_source") or "")
+        enriched.update(_extract_experiment_advantage_context(job))
+    enriched["adjudication"] = get_experiment_review(
+        review_state,
+        experiment_id=experiment_id,
+        job_id=str(item.get("job_id") or ""),
+    )
+    return enriched
+
+
+def _sort_experiment_review_queue(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sorted_items = list(items)
+    sorted_items.sort(
+        key=lambda item: (
+            -int(item.get("review_priority") or 0),
+            -int(item.get("advantageous_match_score") or 0),
+            -int(item.get("advantage_review_priority") or 0),
+            -float(item.get("candidate_weighted_score") or 0.0),
+            str(item.get("job_id") or ""),
         )
+    )
+    return sorted_items
 
-    motivation_language = ""
-    for section in sections:
-        content = str(section.get("content") or "")
-        for line in content.splitlines():
-            if "Motivation language core" not in line:
-                continue
-            if ":" in line:
-                motivation_language = line.split(":", 1)[1].strip().strip('"')
-                break
-        if motivation_language:
-            break
+
+def _build_advantage_signal_recommendation(summary: Dict[str, Any]) -> Dict[str, Any]:
+    reviewed = int(summary.get("reviewed") or 0)
+    high_reviewed = int(summary.get("high_advantage_reviewed") or 0)
+    high_rate = float(summary.get("high_advantage_useful_rate") or 0.0)
+    lower_rate = float(summary.get("lower_advantage_useful_rate") or 0.0)
+    delta = round(high_rate - lower_rate, 1)
+
+    if reviewed <= 0:
+        status = "no_signal"
+        confidence = "low"
+        explanation = "No reviewed advantageous-match sample is available yet."
+        recommended_action = "Keep advantageous-match in observation mode."
+    elif high_reviewed < 2:
+        status = "insufficient_signal"
+        confidence = "low"
+        explanation = "Too few high-advantage reviewed items to trust the pattern yet."
+        recommended_action = "Collect more reviewed high-advantage cases before promoting the signal."
+    elif reviewed < 4:
+        status = "watch"
+        confidence = "low"
+        explanation = "The early advantageous-match pattern looks usable, but the reviewed sample is still thin."
+        recommended_action = "Keep using the signal in shadow ordering and continue reviewing items."
+    elif high_rate >= 60.0 and delta >= 15.0:
+        status = "promising"
+        confidence = "high" if reviewed >= 8 and high_reviewed >= 4 else "medium"
+        explanation = "High advantageous-match cases are outperforming lower-score cases in reviewed shadow samples."
+        recommended_action = "Use this signal to guide more shadow ordering and promotion review."
+    elif high_rate >= lower_rate:
+        status = "mixed"
+        confidence = "medium" if reviewed >= 6 else "low"
+        explanation = "The advantageous-match signal is not hurting, but it is not yet clearly separating the best cases."
+        recommended_action = "Keep the signal visible, but do not promote it into live ranking yet."
+    else:
+        status = "weak"
+        confidence = "medium" if reviewed >= 6 else "low"
+        explanation = "High advantageous-match cases are not outperforming lower-score cases in reviewed shadow samples."
+        recommended_action = "Treat this signal as descriptive only until calibration improves."
 
     return {
-        "source_files": [str(profile_path), str(resume_path)],
-        "builder_state_path": str(profile_draft_path),
-        "builder_state": builder_state,
-        "basics": basics,
-        "strategic_direction": "\n\n".join(_section_paragraphs(sections, "Strategic direction")),
-        "target_roles": {
-            "primary": _section_bullets(sections, "Primary targets"),
-            "secondary": _section_bullets(sections, "Secondary targets"),
-            "stepping_stone": _section_bullets(sections, "Stepping-stone roles"),
-        },
-        "target_geography": {
-            "base": basics.get("base", ""),
-            "locations": target_geography,
-            "remote_policy": remote_policy,
-        },
-        "strength_areas": strength_areas,
-        "evidence_highlights": evidence_highlights,
-        "work": work_entries,
-        "education": education_entries,
-        "certificates": resume.get("certificates", []) if isinstance(resume.get("certificates"), list) else [],
-        "volunteer": resume.get("volunteer", []) if isinstance(resume.get("volunteer"), list) else [],
-        "motivation_language": motivation_language,
+        "schema_version": "jobpipe.advantage-signal-recommendation.v1",
+        "status": status,
+        "confidence": confidence,
+        "reviewed": reviewed,
+        "high_advantage_reviewed": high_reviewed,
+        "delta_useful_rate": delta,
+        "summary": explanation,
+        "recommended_action": recommended_action,
+    }
+
+
+def _classify_variant_advantage_fit(
+    item: Dict[str, Any],
+    recommendation: Dict[str, Any],
+) -> Dict[str, str]:
+    avg_score = float(item.get("avg_advantageous_match_score") or 0.0)
+    high_count = int(item.get("high_advantage_count") or 0)
+    reviewed = int(item.get("reviewed") or 0)
+    useful_rate = float(item.get("useful_signal_rate") or 0.0)
+    signal_status = str(recommendation.get("status") or "")
+
+    if avg_score < 55.0:
+        fit = "weak"
+        note = "Little advantageous differentiation in the reviewed shadow sample."
+    elif reviewed > 0 and useful_rate < 50.0:
+        fit = "contested"
+        note = "Strong advantageous framing exists, but reviewed human signal is not supporting it yet."
+    elif avg_score >= 70.0 and high_count > 0 and signal_status in {"promising", "watch", "mixed"}:
+        fit = "strong"
+        note = "This candidate lines up well with the current advantageous-match pattern."
+    elif avg_score >= 55.0 and signal_status in {"promising", "watch", "mixed"}:
+        fit = "adjacent"
+        note = "There is some advantageous edge here, but it is not dominant yet."
+    else:
+        fit = "tentative"
+        note = "The advantageous profile looks interesting, but calibration is still too thin."
+
+    return {
+        "fit": fit,
+        "note": note,
+    }
+
+
+def _build_advantage_promotion_readiness(
+    item: Dict[str, Any],
+    recommendation: Dict[str, Any],
+) -> Dict[str, str]:
+    signal_status = str(recommendation.get("status") or "")
+    fit = str((item.get("advantage_signal_fit") or {}).get("fit") or "")
+    useful_rate = float(item.get("useful_signal_rate") or 0.0)
+    reviewed = int(item.get("reviewed") or 0)
+
+    if fit == "contested":
+        status = "hold_for_human_review"
+        summary = "Human-reviewed signal is still pushing back on this advantageous framing."
+        action = "Keep the candidate in shadow review and inspect why the advantageous case is not landing."
+    elif signal_status == "promising" and fit == "strong" and reviewed > 0 and useful_rate >= 50.0:
+        status = "ready_for_patch_review"
+        summary = "This candidate lines up with the strongest current advantageous-match pattern."
+        action = "Review the proposed patch/config delta manually; still do not auto-apply it."
+    elif signal_status in {"watch", "mixed"} and fit in {"strong", "adjacent"}:
+        status = "needs_more_shadow_review"
+        summary = "The candidate looks directionally good, but the advantageous signal is not mature enough yet."
+        action = "Keep collecting reviewed shadow cases before promoting beyond manual patch review."
+    elif signal_status in {"insufficient_signal", "no_signal"}:
+        status = "waiting_for_signal"
+        summary = "There is not enough advantageous calibration data to trust promotion readiness yet."
+        action = "Accumulate more reviewed advantageous-match cases first."
+    else:
+        status = "hold_weak_advantage_signal"
+        summary = "The current advantageous signal is too weak to support promotion confidence."
+        action = "Treat this as an interesting shadow candidate, not a promotion-ready one."
+
+    return {
+        "schema_version": "jobpipe.advantage-promotion-readiness.v1",
+        "status": status,
+        "summary": summary,
+        "recommended_action": action,
+    }
+
+
+def _classify_variant_outcome_handoff_fit(
+    item: Dict[str, Any],
+    handoff: Dict[str, Any],
+) -> Dict[str, str]:
+    suggested_experiment = str(handoff.get("suggested_experiment") or "")
+    ready_for_shadow = bool(handoff.get("ready_for_shadow"))
+    kind = str(item.get("kind") or "")
+
+    if suggested_experiment == "collect_more_outcomes" or not suggested_experiment:
+        fit = "waiting"
+        note = "The outcome loop is still collecting signal, so no current shadow candidate is outcome-backed yet."
+    elif suggested_experiment == "shadow_threshold_recheck":
+        if kind == "shadow_threshold_eval":
+            fit = "aligned" if ready_for_shadow else "watch"
+            note = (
+                "This threshold candidate matches the current outcome-driven shadow follow-up."
+                if ready_for_shadow
+                else "This threshold candidate matches the likely next outcome-driven shadow direction, but the loop is not ready yet."
+            )
+        else:
+            fit = "indirect"
+            note = "The outcome loop currently points to threshold recheck first, so this candidate is secondary."
+    elif suggested_experiment == "shadow_artifact_capture_review":
+        fit = "indirect"
+        note = "The outcome loop is pointing toward artifact-capture review, not this shadow candidate family."
+    else:
+        fit = "unknown"
+        note = "The outcome loop suggests a different follow-up path than this shadow candidate."
+
+    return {
+        "schema_version": "jobpipe.outcome-shadow-fit.v1",
+        "fit": fit,
+        "note": note,
+    }
+
+
+def _build_promotion_outcome_status(item: Dict[str, Any]) -> Dict[str, str]:
+    outcome_fit = item.get("outcome_shadow_fit") if isinstance(item, dict) else {}
+    if not isinstance(outcome_fit, dict):
+        outcome_fit = {}
+    fit = str(outcome_fit.get("fit") or "")
+
+    if fit == "aligned":
+        status = "outcome_backed"
+        summary = "This promotion candidate is supported by the current outcome-driven shadow direction."
+    elif fit == "waiting":
+        status = "waiting_for_outcomes"
+        summary = "This promotion candidate may still be promising, but the outcome loop has not produced enough signal yet."
+    else:
+        status = "not_outcome_backed_yet"
+        summary = "This promotion candidate is still shadow-valid, but it is not directly backed by the current outcome loop."
+
+    return {
+        "schema_version": "jobpipe.promotion-outcome-status.v1",
+        "status": status,
+        "summary": summary,
+    }
+
+
+def _build_experiments_payload(
+    paths: JobPipePaths,
+    jobs: List[Dict[str, Any]],
+    outcome_shadow_handoff: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload = load_latest_shadow_review_queue(paths.experiment_runs_path, max_items=10)
+    review_state = load_experiment_review_state(paths.experiment_review_state_path)
+    outcome_shadow_handoff = (
+        dict(outcome_shadow_handoff)
+        if isinstance(outcome_shadow_handoff, dict)
+        else {}
+    )
+    experiment_id = str((payload.get("latest_shadow_eval") or {}).get("experiment_id") or "")
+    job_index = {
+        (str(job.get("run_id") or ""), str(job.get("job_id") or "")): job
+        for job in jobs
+        if str(job.get("run_id") or "") and str(job.get("job_id") or "")
+    }
+    enriched_queue: List[Dict[str, Any]] = []
+    for item in payload.get("review_queue", []):
+        if not isinstance(item, dict):
+            continue
+        enriched_queue.append(
+            _enrich_experiment_review_item(
+                item,
+                experiment_id=experiment_id,
+                review_state=review_state,
+                job_index=job_index,
+            )
+        )
+    payload["review_queue"] = _sort_experiment_review_queue(enriched_queue)
+    payload["adjudication_summary"] = build_experiment_review_summary(enriched_queue)
+    payload["calibration_summary"] = build_experiment_calibration_summary(enriched_queue)
+    recent_runs = load_recent_shadow_experiment_summaries(paths.experiment_runs_path, max_runs=5)
+    all_recent_review_items: List[Dict[str, Any]] = []
+    variant_comparison: List[Dict[str, Any]] = []
+    variant_verdict_rank = {
+        "worth_promoting": 2,
+        "needs_more_review": 1,
+        "reject_variant": -1,
+    }
+    for run in recent_runs:
+        experiment_run_id = str(run.get("experiment_id") or "")
+        detail = load_experiment_detail(run.get("detail_path"))
+        review_items = detail.get("review_sample", []) if isinstance(detail, dict) else []
+        if not isinstance(review_items, list):
+            review_items = []
+        enriched_variant_queue: List[Dict[str, Any]] = []
+        for item in review_items:
+            if not isinstance(item, dict):
+                continue
+            enriched_variant_queue.append(
+                _enrich_experiment_review_item(
+                    item,
+                    experiment_id=experiment_run_id,
+                    review_state=review_state,
+                    job_index=job_index,
+                )
+            )
+        enriched_variant_queue = _sort_experiment_review_queue(enriched_variant_queue)
+        all_recent_review_items.extend(enriched_variant_queue)
+        calibration = build_experiment_calibration_summary(enriched_variant_queue)
+        advantage_scores = [
+            int(item.get("advantageous_match_score") or 0)
+            for item in enriched_variant_queue
+            if int(item.get("advantageous_match_score") or 0) > 0
+        ]
+        recruiter_hooks: List[str] = []
+        for item in enriched_variant_queue:
+            hook = str(item.get("recruiter_hook") or "").strip()
+            if hook and hook not in recruiter_hooks:
+                recruiter_hooks.append(hook)
+            if len(recruiter_hooks) >= 2:
+                break
+        candidate = run.get("candidate", {})
+        variant_review = get_experiment_variant_review(
+            review_state,
+            experiment_id=experiment_run_id,
+        )
+        variant_comparison.append(
+            {
+                "experiment_id": experiment_run_id,
+                "kind": str(run.get("kind") or ""),
+                "created_at": str(run.get("created_at") or ""),
+                "baseline": dict(run.get("baseline") or {}),
+                "candidate": dict(run.get("candidate") or {}),
+                "candidate_name": str(candidate.get("name") or ""),
+                "sample_size": int(run.get("sample_size") or 0),
+                "changed_count": int(run.get("changed_count") or 0),
+                "upgrade_count": int(run.get("upgrade_count") or 0),
+                "review_sample_count": int(run.get("review_sample_count") or 0),
+                "reviewed": int(calibration.get("reviewed") or 0),
+                "positive": int(calibration.get("positive") or 0),
+                "rejected": int(calibration.get("rejected") or 0),
+                "useful_signal_rate": float(calibration.get("useful_signal_rate") or 0.0),
+                "avg_advantageous_match_score": round(sum(advantage_scores) / len(advantage_scores), 1)
+                if advantage_scores
+                else 0.0,
+                "high_advantage_count": sum(1 for score in advantage_scores if score >= 70),
+                "top_recruiter_hooks": recruiter_hooks,
+                "top_positive_reasons": calibration.get("top_positive_reasons", []),
+                "top_negative_reasons": calibration.get("top_negative_reasons", []),
+                "summary": str(run.get("summary") or ""),
+                "variant_review": variant_review,
+            }
+        )
+    advantage_calibration_summary = build_advantage_signal_calibration_summary(all_recent_review_items)
+    advantage_signal_recommendation = _build_advantage_signal_recommendation(advantage_calibration_summary)
+
+    for item in variant_comparison:
+        item["advantage_signal_fit"] = _classify_variant_advantage_fit(
+            item,
+            advantage_signal_recommendation,
+        )
+        item["outcome_shadow_fit"] = _classify_variant_outcome_handoff_fit(
+            item,
+            outcome_shadow_handoff,
+        )
+
+    outcome_ranking_guidance = build_outcome_ranking_guidance(variant_comparison)
+    outcome_fit_rank = {
+        "aligned": 3,
+        "watch": 2,
+        "indirect": 1,
+        "waiting": 0,
+        "unknown": -1,
+    }
+
+    variant_comparison.sort(
+        key=lambda item: (
+            -variant_verdict_rank.get(str((item.get("variant_review") or {}).get("verdict") or ""), 0),
+            -outcome_fit_rank.get(str((item.get("outcome_shadow_fit") or {}).get("fit") or ""), 0),
+            -(1 if item.get("reviewed", 0) > 0 else 0),
+            -float(item.get("useful_signal_rate", 0.0)),
+            -float(item.get("avg_advantageous_match_score", 0.0)),
+            -int(item.get("high_advantage_count", 0)),
+            -int(item.get("positive", 0)),
+            -int(item.get("upgrade_count", 0)),
+            str(item.get("created_at") or ""),
+        )
+    )
+    payload["variant_comparison"] = variant_comparison
+    payload["variant_review_summary"] = build_experiment_variant_review_summary(variant_comparison)
+    promotion_candidates: List[Dict[str, Any]] = []
+    promotion_review_rank = {
+        "accepted_for_promotion": 2,
+        "deferred_promotion": 1,
+        "rejected_promotion": -1,
+    }
+    promotion_outcome_rank = {
+        "outcome_backed": 2,
+        "waiting_for_outcomes": 1,
+        "not_outcome_backed_yet": 0,
+    }
+    promotion_readiness_rank = {
+        "ready_for_patch_review": 3,
+        "needs_more_shadow_review": 2,
+        "waiting_for_signal": 1,
+        "hold_for_human_review": 0,
+        "hold_weak_advantage_signal": -1,
+    }
+    for item in variant_comparison:
+        variant_review = item.get("variant_review", {})
+        if str((variant_review or {}).get("verdict") or "") != "worth_promoting":
+            continue
+        baseline = dict(item.get("baseline") or {})
+        candidate = dict(item.get("candidate") or {})
+        feature_delta_rows: List[Dict[str, Any]] = []
+        baseline_weights = baseline.get("feature_weights", {})
+        if not isinstance(baseline_weights, dict):
+            baseline_weights = {}
+        candidate_weights = candidate.get("feature_weights", {})
+        if not isinstance(candidate_weights, dict):
+            candidate_weights = {}
+        for feature_name in sorted(set(baseline_weights) | set(candidate_weights)):
+            baseline_value = float(baseline_weights.get(feature_name) or 0.0)
+            candidate_value = float(candidate_weights.get(feature_name) or 0.0)
+            if round(candidate_value - baseline_value, 6) == 0:
+                continue
+            feature_delta_rows.append(
+                {
+                    "feature": str(feature_name),
+                    "from": baseline_value,
+                    "to": candidate_value,
+                    "delta": round(candidate_value - baseline_value, 3),
+                }
+            )
+        review_from = baseline.get("review_threshold")
+        shortlist_from = baseline.get("shortlist_threshold")
+        review_to = candidate.get("review_threshold")
+        shortlist_to = candidate.get("shortlist_threshold")
+        recommended_config_delta = {
+            "review_threshold": {
+                "from": float(review_from) if review_from is not None else None,
+                "to": float(review_to) if review_to is not None else None,
+                "delta": round(float(review_to) - float(review_from), 3)
+                if review_from is not None and review_to is not None
+                else None,
+            },
+            "shortlist_threshold": {
+                "from": float(shortlist_from) if shortlist_from is not None else None,
+                "to": float(shortlist_to) if shortlist_to is not None else None,
+                "delta": round(float(shortlist_to) - float(shortlist_from), 3)
+                if shortlist_from is not None and shortlist_to is not None
+                else None,
+            },
+            "feature_weights": feature_delta_rows,
+        }
+        threshold_patch_lines = [
+            "thresholds:",
+            "  # Proposed triage_v3 shadow candidate. Not auto-wired into live runtime yet.",
+        ]
+        if review_to is not None:
+            threshold_patch_lines.append(f"  triage_v3_review_threshold: {float(review_to):g}")
+        if shortlist_to is not None:
+            threshold_patch_lines.append(f"  triage_v3_shortlist_threshold: {float(shortlist_to):g}")
+        threshold_patch = "\n".join(threshold_patch_lines)
+
+        feature_weight_patch = ""
+        if feature_delta_rows:
+            merged_weights = {
+                str(name): float(candidate_weights.get(name) or 0.0)
+                for name in sorted(set(baseline_weights) | set(candidate_weights))
+            }
+            ordered_items = ",\n".join(
+                f'    "{name}": {value:g},'
+                for name, value in merged_weights.items()
+            )
+            feature_weight_patch = "TRIAGE_FEATURE_WEIGHTS = {\n" + ordered_items + "\n}"
+
+        patch_recommendation = {
+            "target_config_path": str(paths.default_config_path),
+            "thresholds_overlay_yaml": threshold_patch,
+            "requires_code_change": bool(feature_weight_patch),
+            "target_weights_path": str(paths.repo_root / "jobpipe" / "core" / "triage_v3.py") if feature_weight_patch else "",
+            "feature_weights_python_patch": feature_weight_patch,
+        }
+        promotion_readiness = _build_advantage_promotion_readiness(
+            item,
+            advantage_signal_recommendation,
+        )
+        promotion_candidates.append(
+            {
+                "experiment_id": item.get("experiment_id"),
+                "kind": item.get("kind"),
+                "created_at": item.get("created_at"),
+                "candidate_name": item.get("candidate_name"),
+                "summary": item.get("summary"),
+                "variant_review": variant_review,
+                "useful_signal_rate": item.get("useful_signal_rate", 0.0),
+                "reviewed": item.get("reviewed", 0),
+                "positive": item.get("positive", 0),
+                "rejected": item.get("rejected", 0),
+                "upgrade_count": item.get("upgrade_count", 0),
+                "changed_count": item.get("changed_count", 0),
+                "avg_advantageous_match_score": item.get("avg_advantageous_match_score", 0.0),
+                "high_advantage_count": item.get("high_advantage_count", 0),
+                "top_recruiter_hooks": list(item.get("top_recruiter_hooks") or []),
+                "advantage_signal_fit": dict(item.get("advantage_signal_fit") or {}),
+                "outcome_shadow_fit": dict(item.get("outcome_shadow_fit") or {}),
+                "promotion_outcome_status": _build_promotion_outcome_status(item),
+                "promotion_readiness": promotion_readiness,
+                "recommended_config_delta": recommended_config_delta,
+                "patch_recommendation": patch_recommendation,
+                "promotion_review": get_experiment_promotion_review(
+                    review_state,
+                    experiment_id=str(item.get("experiment_id") or ""),
+                ),
+            }
+        )
+    promotion_candidates.sort(
+        key=lambda item: (
+            -promotion_review_rank.get(str((item.get("promotion_review") or {}).get("verdict") or ""), 0),
+            -promotion_outcome_rank.get(str((item.get("promotion_outcome_status") or {}).get("status") or ""), 0),
+            -promotion_readiness_rank.get(str((item.get("promotion_readiness") or {}).get("status") or ""), 0),
+            -float(item.get("useful_signal_rate", 0.0)),
+            -float(item.get("avg_advantageous_match_score", 0.0)),
+            -int(item.get("high_advantage_count", 0)),
+            -int(item.get("upgrade_count", 0)),
+            str(item.get("created_at") or ""),
+        )
+    )
+    payload["promotion_candidates"] = promotion_candidates
+    payload["promotion_summary"] = {
+        "count": len(promotion_candidates),
+        "has_feature_weight_candidate": any(
+            bool((candidate.get("recommended_config_delta") or {}).get("feature_weights"))
+            for candidate in promotion_candidates
+        ),
+        "outcome_backed_count": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_outcome_status") or {}).get("status") or "") == "outcome_backed"
+        ),
+        "waiting_for_outcomes_count": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_outcome_status") or {}).get("status") or "") == "waiting_for_outcomes"
+        ),
+        "not_outcome_backed_yet_count": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_outcome_status") or {}).get("status") or "") == "not_outcome_backed_yet"
+        ),
+    }
+    payload["promotion_readiness_summary"] = {
+        "ready_for_patch_review": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_readiness") or {}).get("status") or "") == "ready_for_patch_review"
+        ),
+        "needs_more_shadow_review": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_readiness") or {}).get("status") or "") == "needs_more_shadow_review"
+        ),
+        "waiting_for_signal": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_readiness") or {}).get("status") or "") == "waiting_for_signal"
+        ),
+        "hold_for_human_review": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_readiness") or {}).get("status") or "") == "hold_for_human_review"
+        ),
+        "hold_weak_advantage_signal": sum(
+            1
+            for candidate in promotion_candidates
+            if str((candidate.get("promotion_readiness") or {}).get("status") or "") == "hold_weak_advantage_signal"
+        ),
+    }
+    payload["promotion_review_summary"] = build_experiment_promotion_review_summary(promotion_candidates)
+    payload["outcome_shadow_summary"] = {
+        "aligned": sum(
+            1
+            for item in variant_comparison
+            if str((item.get("outcome_shadow_fit") or {}).get("fit") or "") == "aligned"
+        ),
+        "indirect": sum(
+            1
+            for item in variant_comparison
+            if str((item.get("outcome_shadow_fit") or {}).get("fit") or "") == "indirect"
+        ),
+        "waiting": sum(
+            1
+            for item in variant_comparison
+            if str((item.get("outcome_shadow_fit") or {}).get("fit") or "") == "waiting"
+        ),
+        "watch": sum(
+            1
+            for item in variant_comparison
+            if str((item.get("outcome_shadow_fit") or {}).get("fit") or "") == "watch"
+        ),
+    }
+    payload["outcome_ranking_guidance"] = outcome_ranking_guidance
+    payload["advantage_calibration_summary"] = advantage_calibration_summary
+    payload["advantage_shortlist_quality_summary"] = build_advantage_shortlist_quality_summary(variant_comparison)
+    payload["advantage_signal_recommendation"] = advantage_signal_recommendation
+    if variant_comparison:
+        payload["leading_variant"] = variant_comparison[0]
+        if promotion_candidates and payload["leading_variant"].get("experiment_id") == promotion_candidates[0].get("experiment_id"):
+            payload["leading_variant"]["promotion_readiness"] = dict(promotion_candidates[0].get("promotion_readiness") or {})
+            payload["leading_variant"]["promotion_outcome_status"] = dict(promotion_candidates[0].get("promotion_outcome_status") or {})
+    return payload
+
+
+def _build_outcome_shadow_handoff(outcomes: Dict[str, Any]) -> Dict[str, Any]:
+    recommendation = outcomes.get("recommendation") if isinstance(outcomes, dict) else {}
+    shadow_followup = outcomes.get("shadow_followup") if isinstance(outcomes, dict) else {}
+    if not isinstance(recommendation, dict):
+        recommendation = {}
+    if not isinstance(shadow_followup, dict):
+        shadow_followup = {}
+
+    suggested_experiment = str(shadow_followup.get("suggested_experiment") or "")
+    ready_for_shadow = bool(shadow_followup.get("ready_for_shadow"))
+    if ready_for_shadow:
+        status = "ready_for_shadow"
+    elif suggested_experiment == "collect_more_outcomes":
+        status = "collect_more_outcomes"
+    else:
+        status = "hold_for_review"
+
+    return {
+        "schema_version": "jobpipe.outcome-shadow-handoff.v1",
+        "status": status,
+        "suggested_experiment": suggested_experiment,
+        "ready_for_shadow": ready_for_shadow,
+        "confidence": str(shadow_followup.get("confidence") or ""),
+        "rationale": str(shadow_followup.get("rationale") or ""),
+        "recommended_next_action": str(recommendation.get("recommended_next_action") or ""),
+        "decision_signal": str(recommendation.get("decision_signal") or ""),
+        "artifact_signal": str(recommendation.get("artifact_signal") or ""),
     }
 
 
@@ -590,11 +1195,18 @@ def build_payload(
     profile_path: Optional[Path] = None,
     resume_path: Optional[Path] = None,
     profile_draft_path: Optional[Path] = None,
+    settings_path: Optional[Path] = None,
     payload_budget_bytes: int = _PAYLOAD_SOFT_BUDGET_BYTES,
     max_event_rows: int = _PAYLOAD_EVENT_HARD_CAP,
     min_event_rows: int = _PAYLOAD_EVENT_MIN_ROWS,
 ) -> Dict[str, Any]:
-    paths = _default_paths()
+    paths = _resolve_paths_for_payload(
+        state_path=state_path,
+        profile_path=profile_path,
+        resume_path=resume_path,
+        profile_draft_path=profile_draft_path,
+        settings_path=settings_path,
+    )
     app_state = _load_app_state(state_path or paths.application_state_path)
     config_path = config_path or paths.default_config_path
     resume_source = resume_path or paths.resume_json_path
@@ -604,12 +1216,23 @@ def build_payload(
     if not resume_source.exists() and resume_fixed_source.exists():
         resume_source = resume_fixed_source
     profile = _build_profile_payload(
+        paths,
         profile_path or paths.profile_pack_path,
         resume_source,
         profile_draft_path or paths.profile_builder_state_path,
     )
+    settings = build_settings_payload(
+        paths=paths,
+        profile=profile,
+        settings_path=settings_path or paths.settings_state_path,
+    )
+    automations = build_automation_payload(
+        paths,
+        state_path=paths.automation_state_path,
+    )
     thresholds = _load_thresholds(config_path, overlays=config_overlays)
     config_snapshot = _build_config_snapshot(config_path, overlays=config_overlays)
+    projection_store = load_projection_store(paths.projection_store_path)
     conn = sqlite3.connect(str(sqlite_path))
 
     jobs_raw = _rows_as_dicts(conn, """
@@ -620,6 +1243,10 @@ def build_payload(
                triage_decision, triage_confidence, triage_explanation, triage_signals,
                reverse_decision, reverse_confidence, reverse_rationale,
                fit_score, pivot_score,
+               triage_v3_label, triage_v3_weighted_score, triage_v3_confidence,
+               triage_v3_needs_ambiguity, triage_ambiguity_label, triage_ambiguity_reason,
+               advantage_type, advantage_review_priority,
+               narrative_positioning_angle, narrative_brand_frame,
                final_decision, final_confidence, recommendation_reason,
                cv_focus, feedback_flags,
                pack_ready, pack_generated_at, pack_has_cover_letter,
@@ -627,6 +1254,9 @@ def build_payload(
                description_snip,
                skip_reason,
                run_id, run_seen_at, updated_at, closed_at,
+               raw_triage_features_json, raw_triage_decision_v3_json,
+               raw_triage_ambiguity_v3_json, raw_advantage_assessment_v3_json,
+               raw_narrative_strategy_v3_json,
                raw_match_json, raw_pivot_json, raw_moderator_json
         FROM ledger
         ORDER BY
@@ -650,13 +1280,43 @@ def build_payload(
 
         if is_actionable:
             row["detail"] = _extract_detail(row)
+            bundle = get_job_projection_bundle(
+                projection_store,
+                run_id=str(row.get("run_id") or ""),
+                job_id=str(row.get("job_id") or ""),
+            )
+            apply_detail_projection(row["detail"], bundle.get("detail_projection", {}))
+            apply_input_enrichment_projection(row, bundle.get("input_enrichment", {}))
+            row["applicationDue"] = _normalize_due(row.get("applicationDue"))
             _enrich_from_input(row, out_dir)
+            set_job_projection_bundle(
+                projection_store,
+                run_id=str(row.get("run_id") or ""),
+                job_id=str(row.get("job_id") or ""),
+                bundle=build_job_projection_bundle(
+                    input_enrichment=build_input_enrichment_projection(row),
+                    detail_projection=build_detail_projection(
+                        decision_brief=row["detail"].get("decision_brief"),
+                        application_case_projection=row["detail"].get("application_case_projection"),
+                        updated_at=str(row.get("updated_at") or ""),
+                    ),
+                ),
+            )
         else:
             for col in _DETAIL_COLS:
                 row.pop(col, None)
             row["detail"] = None
 
-        for k in ("raw_match_json", "raw_pivot_json", "raw_moderator_json"):
+        for k in (
+            "raw_triage_features_json",
+            "raw_triage_decision_v3_json",
+            "raw_triage_ambiguity_v3_json",
+            "raw_advantage_assessment_v3_json",
+            "raw_narrative_strategy_v3_json",
+            "raw_match_json",
+            "raw_pivot_json",
+            "raw_moderator_json",
+        ):
             row.pop(k, None)
 
         row["suggested_by_platform"] = bool(row.get("suggested_by_platform"))
@@ -670,7 +1330,7 @@ def build_payload(
 
         # Merge application tracking state
         app_entry = app_state.get(row.get("job_id", ""), {})
-        row["app_status"] = app_entry.get("status", "")
+        row["app_status"] = normalize_shared_status(app_entry)
         row["app_stages"] = json.dumps(app_entry.get("stages", []), ensure_ascii=False)
         row["app_outcome"] = app_entry.get("outcome") or ""
         row["app_updated_at"] = app_entry.get("updated_at", "")
@@ -689,12 +1349,27 @@ def build_payload(
     """)
 
     conn.close()
+    persist_projection_store(paths.projection_store_path, projection_store)
+    outcome_feedback_state = build_outcome_feedback_state(jobs)
+    persist_outcome_feedback_state(paths.outcome_feedback_state_path, outcome_feedback_state)
+    outcomes = build_outcomes_dashboard_payload(outcome_feedback_state)
+    outcome_shadow_handoff = _build_outcome_shadow_handoff(outcomes)
+    experiments = _build_experiments_payload(
+        paths,
+        jobs,
+        outcome_shadow_handoff=outcome_shadow_handoff,
+    )
+    experiments["outcome_shadow_handoff"] = outcome_shadow_handoff
 
     payload = {
         "schema_version": _PAYLOAD_SCHEMA_VERSION,
         "jobs": jobs,
         "events": events,
+        "experiments": experiments,
+        "outcomes": outcomes,
         "profile": profile,
+        "settings": settings,
+        "automations": automations,
         "thresholds": thresholds,
         "config_snapshot": config_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -744,6 +1419,7 @@ def build_dashboard_html(
     profile_path: Optional[Path] = None,
     resume_path: Optional[Path] = None,
     profile_draft_path: Optional[Path] = None,
+    settings_path: Optional[Path] = None,
     head_injection: str = "",
 ) -> tuple[str, Dict[str, Any]]:
     payload = build_payload(
@@ -755,6 +1431,7 @@ def build_dashboard_html(
         profile_path=profile_path,
         resume_path=resume_path,
         profile_draft_path=profile_draft_path,
+        settings_path=settings_path,
     )
     html = render_dashboard_html(payload, template_path, head_injection=head_injection)
     return html, payload
@@ -765,7 +1442,8 @@ def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path
            config_overlays: Optional[List[str]] = None,
            profile_path: Optional[Path] = None,
            resume_path: Optional[Path] = None,
-           profile_draft_path: Optional[Path] = None) -> None:
+           profile_draft_path: Optional[Path] = None,
+           settings_path: Optional[Path] = None) -> None:
     html, payload = build_dashboard_html(
         sqlite_path,
         out_dir,
@@ -776,6 +1454,7 @@ def export(sqlite_path: Path, out_dir: Path, template_path: Path, out_path: Path
         profile_path=profile_path,
         resume_path=resume_path,
         profile_draft_path=profile_draft_path,
+        settings_path=settings_path,
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -854,6 +1533,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         profile_path=paths.profile_pack_path,
         resume_path=paths.resume_json_path,
         profile_draft_path=paths.profile_builder_state_path,
+        settings_path=paths.settings_state_path,
     )
 
 

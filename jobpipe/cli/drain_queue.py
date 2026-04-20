@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from jobpipe.core.intake_pipe import prune_connector_records, rebuild_intake_queue
 from jobpipe.core.io import load_env_file, read_jsonl_lines, write_jsonl_lines, stable_job_id
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
@@ -192,6 +193,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     reports_dir = Path(args.reports) if args.reports else paths.reports_dir
     state_path = Path(args.state) if args.state else paths.jobs_state_path
     delta_path = Path(args.delta) if args.delta else paths.jobs_delta_path
+    nav_connector_path = paths.nav_connector_path
+    leads_connector_path = paths.leads_connector_path
 
     load_env_file(env_file)
 
@@ -257,7 +260,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             pull_cmd += ["--csv-url", csv_url]
         else:
             pull_cmd += ["--sheet-url", sheet_url]
-        pull_cmd += ["--out", str(delta_path), "--state", str(state_path)]
+        pull_cmd += ["--out", str(nav_connector_path), "--state", str(state_path)]
         pull_cmd += ["--expired-out", str(expired_path)]
         if not args.no_only_changed:
             pull_cmd += ["--only-changed"]
@@ -267,6 +270,18 @@ def main(argv: Optional[list[str]] = None) -> None:
             pull_cmd += ["--no-skip-expired-deadline"]
 
         run(pull_cmd)
+
+        merge_summary = rebuild_intake_queue(
+            nav_path=nav_connector_path,
+            leads_path=leads_connector_path,
+            out_path=delta_path,
+        )
+        print(
+            "[drain_queue] intake merge: "
+            f"nav={merge_summary['nav_records']} "
+            f"leads={merge_summary['lead_records']} "
+            f"merged={merge_summary['merged_records']}"
+        )
 
         lines = read_jsonl_lines(delta_path)
         if not lines:
@@ -309,8 +324,14 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         # Process the pulled delta fully, even if it contains more than batch-size rows.
         bs = max(1, int(args.batch_size))
+        processed_keys: list[str] = []
         for i in range(0, len(lines), bs):
             batch = lines[i : i + bs]
+            for raw in batch:
+                try:
+                    processed_keys.append(json.loads(raw).get("intake_dedupe_key", ""))
+                except Exception:
+                    continue
             batch_file = tmp_dir / f"jobs_batch_{loops:03d}_{(i//bs)+1:04d}.jsonl"
             write_jsonl_lines(batch_file, batch)
 
@@ -348,6 +369,14 @@ def main(argv: Optional[list[str]] = None) -> None:
                 batch_file.unlink()
             except OSError:
                 pass
+
+        processed_keys = [key for key in processed_keys if key]
+        if processed_keys:
+            pruned_nav = prune_connector_records(nav_connector_path, processed_keys)
+            pruned_leads = prune_connector_records(leads_connector_path, processed_keys)
+            print(
+                f"[drain_queue] pruned connector staging: nav={pruned_nav}, leads={pruned_leads}"
+            )
 
         if args.sleep and args.sleep > 0:
             time.sleep(args.sleep)

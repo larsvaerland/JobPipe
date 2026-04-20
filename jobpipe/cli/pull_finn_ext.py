@@ -16,7 +16,7 @@ Usage:
     python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --dry-run
 
 FINN Chrome Extension output dir default (Windows):
-    C:\\Users\\larsv\\projects\\Tools\\job-hunter-pilot-chrome extension Finn\\output\\jobs.jsonl
+    %USERPROFILE%\\projects\\Tools\\job-hunter-pilot-chrome extension Finn\\output\\jobs.jsonl
 """
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from jobpipe.core.lead_intake import append_leads
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
@@ -38,11 +39,11 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 _DEFAULT_PATHS = get_jobpipe_paths()
 DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
-DEFAULT_OUT_PATH = _DEFAULT_PATHS.jobs_delta_path
+DEFAULT_OUT_PATH = _DEFAULT_PATHS.leads_connector_path
 
-# Default location of FINN Chrome Extension output (Lars's machine)
+# Default location of FINN Chrome Extension output under the current user's home directory.
 DEFAULT_FINN_EXT_JOBS = (
-    r"C:\Users\larsv\projects\Tools\job-hunter-pilot-chrome extension Finn\output\jobs.jsonl"
+    str(Path.home() / "projects" / "Tools" / "job-hunter-pilot-chrome extension Finn" / "output" / "jobs.jsonl")
 )
 
 
@@ -239,7 +240,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = ap.parse_args(argv)
     paths = get_jobpipe_paths(args.data_root or None)
     bootstrap_private_data(paths, include_artifacts=False)
-    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    out_path = Path(args.out) if args.out else paths.leads_connector_path
     ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     jobs_path = Path(args.finn_jobs)
@@ -310,12 +311,18 @@ def main(argv: Optional[List[str]] = None) -> None:
         if len(normalized) > 10:
             print(f"  ... and {len(normalized) - 10} more")
     elif normalized:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if args.append else "w"
-        with open(out_path, mode, encoding="utf-8") as f:
-            for job in normalized:
-                f.write(json.dumps(job, ensure_ascii=False) + "\n")
-        print(f"\n[OK] Wrote {len(normalized)} jobs to {out_path} (mode={mode})")
+        if mode == "w":
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("", encoding="utf-8")
+        appended = append_leads(
+            out_path,
+            normalized,
+            intake_channel="manual_browse_capture",
+            connector_source="finn_chrome_ext",
+            pretriage_policy="full_feed",
+        )
+        print(f"\n[OK] Wrote {len(appended)} jobs to {out_path} (mode={mode})")
     else:
         print("\nNo new jobs to write.")
 

@@ -1,23 +1,56 @@
 # JobPipe — Product Vision
 
 **Owner:** Lars Værland
-**Last updated:** 2026-04-18
+**Last updated:** 2026-04-19
 
 ---
 
 ## North star
 
-> **Finn jobbene der kandidaten er sterkere enn han ser ut på papiret.**
+> **Reduce cognitive noise in job hunting by making job-ad data do the screening work first.**
 
-JobPipe's core purpose is not to match Lars to the most obvious jobs with the most applicants. It is to find the roles where he is an *advantageous match*: jobs in less obvious sectors, with broader scope than the title suggests, where the hiring manager cares more about delivery in complexity and cross-functional alignment than about narrow keyword matching. These are the roles where Lars's actual track record outperforms his CV's first impression.
+JobPipe's core purpose is not to help Lars read more job ads. It is to make the job-ad data pipeline remove as much irrelevant thinking as possible before human effort starts. The system should absorb feed noise, duplicate ads, missing-field chaos, weak matches, and repetitive context gathering so Lars spends his time only on the parts where human judgment matters: review, tailoring, application quality, and follow-up.
+
+The specific strategic edge remains the same:
+
+- find the roles where Lars is an *advantageous match*
+- surface jobs in less obvious sectors or with broader scope than the title suggests
+- prioritize cases where Lars's actual track record is stronger than the first impression his CV gives on paper
 
 This shapes everything: triage calibration, scoring, the shape of application packs, and which jobs get deep attention.
+
+The system should also prefer **selection over invention**:
+
+- AI should choose, rank, reveal, hide, and reorder approved content wherever possible
+- AI should not default to rewriting CV truth from scratch
+- structured composition is preferable to AI fluff if it produces a stronger, more believable application
+
+North-star rule for future planning:
+
+- every major topic must improve how job-ad data is shaped for the next decision
+- upstream layers should hold thicker, noisier truth
+- downstream layers should receive smaller, more precise AI-ready briefs
+- no topic should add workflow or UI complexity unless it clearly improves signal quality, reduces cognitive load, or increases action quality
 
 ---
 
 ## What is JobPipe?
 
-An AI-powered job hunting pipeline that automatically finds, scores, and prepares applications for jobs that match Lars's profile as a product owner / service owner / digital project leader. It replaces the manual process of scanning hundreds of irrelevant job ads daily with a system that surfaces only the 2–5% that are worth acting on — with special emphasis on the *advantageous matches* where Lars is more competitive than he appears at first glance.
+An AI-powered job-ad intelligence pipeline that automatically finds, scores, and prepares applications for jobs that match Lars's profile as a product owner / service owner / digital project leader. It replaces the manual process of scanning hundreds of irrelevant job ads daily with a system that surfaces only the 2–5% that are worth acting on, with special emphasis on the *advantageous matches* where Lars is more competitive than he appears at first glance.
+
+Operationally, JobPipe should become the control plane for the job hunt:
+- source and lead intake
+- profile-pack setup
+- geo / domain / role targeting
+- credentials and mailbox integrations
+- analysis and triage
+- application-packet preparation before a lead is promoted into the active application workspace
+
+In other words:
+
+- `JobPipe` should think hardest where manual thinking adds the least value
+- the system should automate away cognitive noise before the job hunter ever sees it
+- the system should preserve enough evidence and context that the user can still trust and override it
 
 ---
 
@@ -25,13 +58,34 @@ An AI-powered job hunting pipeline that automatically finds, scores, and prepare
 
 **For Lars (the user):**
 - Never miss a strong match — the pipeline runs continuously against NAV's full job feed
-- Never waste time on irrelevant ads — geo filter, title filter, and AI triage eliminate 95%+ before human review
-- Always be prepared — application packs (positioning, evidence map, cover letter angle, interview prep) are pre-generated for top matches
-- Always know where you stand — dashboard shows the full funnel, actionable jobs, and pipeline health
+- Never waste time on irrelevant ads — connector-aware deterministic filters and AI triage eliminate the bulk of noise before human review
+- Spend human effort only where it matters — review, tailoring, and application quality happen only after the system has done the screening work
+- Always be prepared — application packs, authoring briefs, and saveback targets reduce the setup cost for top matches
+- Always know where you stand — control-plane state, workflow state, and artifacts stay traceable across the stack
 
 **If productized (future):**
 - For mid-career professionals actively job hunting: upload your CV, set your preferences, get a daily shortlist with AI-scored matches and ready-made application materials
 - Differentiator: multi-stage triage funnel that's cost-efficient (cheap models for filtering, expensive models only for top matches) + career-pivot scoring that catches non-obvious opportunities
+
+### Structured tailoring thesis
+
+The stronger long-term product is not "AI writes a CV".
+
+It is:
+
+- approved structured professional content
+- AI-driven selection and ordering of that content
+- rendering/export through the best-fit authoring tool
+
+In practice this means the system should support:
+
+- multiple approved variants of the same role narrative
+- project variants by job type and language
+- evidence atoms that can be pulled in without dragging the full history
+- skill ordering by relevance to the ad
+- section visibility and section order rules
+
+The best output is therefore not always more text. It is a better-composed application package.
 
 ---
 
@@ -72,7 +126,151 @@ This boundary is now implemented in the active OSS runtime contract. The remaini
 
 ---
 
+## Intended companion-product model
+
+The planned user workflow is not one monolithic app. It is a companion stack with separate responsibilities:
+
+- **JobPipe** decides what is worth acting on and prepares the handoff
+- **JobSync** becomes the live application-case workspace after promotion
+- **Reactive Resume** is the tailored CV authoring and export surface
+- **Word / Docs-style editing** is the cover-letter and screening-answer iteration surface
+
+The critical seam is: **promote a lead into an application case**.
+
+That means the key JobPipe output is not just a score. It is an application packet containing:
+- job metadata and source identity
+- the job ad snapshot and apply URL
+- match rationale and gap analysis
+- cover-letter angle and screening-answer context
+- CV highlights / tailoring guidance
+- target artifact folder and linkage metadata
+
+From that point on, JobSync should track the active case while external authoring tools produce the actual submission artifacts.
+
+---
+
+## Source-of-truth split
+
+The intended stack is better if ownership is explicit instead of blurred.
+
+### Integration doctrine
+
+The product should be built with a **JobPipe-first, surgically integrated** architecture:
+
+- reshape and modularize `JobPipe` aggressively as needed
+- keep `JobSync` and `Reactive Resume` as external companion systems
+- prefer thin, versioned seams over deep shared internals
+
+The practical rule is:
+
+- if a problem can be solved inside `JobPipe`, solve it inside `JobPipe`
+- only touch sibling repos for the smallest receiver seam that the workflow truly needs
+
+This preserves product agility without turning the rest of the stack into fragile hidden dependencies.
+
+### JobPipe owns
+
+- source connectors and staging
+- dedupe before the main pipe
+- triage, scoring, and explainability
+- application-packet generation
+- apply-session generation
+- raw stage artifacts, pipeline memory, and calibration data
+- control-plane settings for targeting, integrations, and mailbox lead intake
+
+### JobSync owns
+
+- the main operator shell once a lead becomes a live case
+- active application queue
+- notes, tasks, activities, and manual follow-up
+- tracked case state after promotion
+- artifact links and case-facing context
+
+### Reactive Resume owns
+
+- canonical resume structure
+- resume variants
+- tailored CV editing
+- resume export artifacts and references
+
+Reactive Resume should therefore be treated as the preferred structured resume surface, but JobPipe should still own the job-specific tailoring logic that selects which approved content is shown for a given case.
+
+### Shared common ground
+
+These objects should travel cleanly across boundaries instead of each repo inventing its own loose copy:
+
+- `ProfileSnapshot`
+- `ResumeVariantRef`
+- `CanonicalJob`
+- `ApplicationCase`
+- `ApplicationPacket`
+- `ApplySession`
+- `ArtifactRef`
+- `StatusEvent`
+- `OutcomeFeedback`
+
+The resume side of that common ground will eventually need more detail too:
+
+- `ResumeMaster`
+- `RoleRecord`
+- `RoleVariant`
+- `ProjectVariant`
+- `EvidenceAtom`
+- `SkillAtom`
+- `NarrativeProfile`
+- `TailoringPlan`
+
+This is better than one giant shared store. The target is two durable systems plus contracts:
+
+1. `JobPipe` pipeline store for noisy source data, stage outputs, and calibration
+2. `JobSync` operational store for curated cases and human workflow
+3. versioned contracts between them, with Reactive Resume feeding resume truth into the stack
+
+### AI-ready data-shape rule
+
+The stack should not move one giant accumulated dataset from system to system.
+
+Instead:
+
+1. `JobPipe` keeps the thick source and stage truth
+2. each downstream step receives a smaller derived object shaped for that exact decision
+3. exported artifacts and refs record what was actually used at apply time
+
+That means the durable truth is primarily:
+
+- structured job data
+- structured profile/resume-derived context
+- structured decision context
+- artifact references
+- outcome/status events
+
+Generated text itself is important working material, but it is not the main thing to optimize for across boundaries. The system should optimize for the most precise structured context possible right before review, authoring, and apply.
+
+### Triage v3 rule
+
+The next triage model should not be one larger, friendlier prompt.
+
+It should be:
+
+1. hard deterministic gates
+2. schema-bound feature extraction
+3. calibrated first-pass ranking
+4. ambiguity resolution only for borderline cases
+5. narrative strategy only for shortlist-worthy jobs
+
+The six-dimensional model is therefore useful as a feature family, but not as the final truth by itself. The system should prefer:
+
+- features with confidence and evidence spans
+- ranking over raw prompt intuition
+- later narrative strategy over early prose generation
+
+This keeps triage precise, debuggable, and compatible with both small local models and later calibration.
+
+---
+
 ## Success metrics
+
+The system is healthy when it reduces cognitive waste without hiding real opportunity.
 
 ### Primary (weekly review)
 | Metric | Target | Current | Status |
@@ -109,8 +307,13 @@ This boundary is now implemented in the active OSS runtime contract. The remaini
 ### Planned
 - As Lars, I want to filter by occupation code before AI triage so I skip obviously irrelevant categories at zero cost
 - As Lars, I want expiring-soon alerts so I don't miss application deadlines
-- As Lars, I want to mark jobs as "applied" / "rejected" / "interview" and track my application funnel
-- As Lars, I want a profile and CV page in the dashboard so the material that drives the pipeline is visible beside the jobs
+- As Lars, I want a settings dashboard where I can maintain my profile pack, geo rules, domain/role targets, and credentials without digging through files
+- As Lars, I want Gmail-driven lead intake and mailbox-status detection so inbox signals feed the system without becoming manual bookkeeping
+- As Lars, I want recommended jobs from email/Finn to enter JobPipe as separate suggested-lead connectors so they can bypass the broad-feed source filter but still be deduped before triage
+- As Lars, I want shortlisted jobs promoted into JobSync as `new` cases that then follow JobSync's normal workflow
+- As Lars, I want clicking `apply` in the active workspace to open the job ad and application portal while also starting tailored CV and cover-letter drafting workflows
+- As Lars, I want the final CV, cover letter, and screening-answer drafts saved back into the application folder tied to that case
+- As Lars, I want JobPipe to have a real settings/control-plane UI instead of a growing report shell so profile, targeting, secrets, and connectors live in one durable place
 
 ### Future / aspirational
 - As Lars, I want the system to learn from my apply/reject decisions and improve triage over time
@@ -125,12 +328,27 @@ This boundary is now implemented in the active OSS runtime contract. The remaini
 NAV API (pam-stilling-feed)
     ↓ Apps Script (hourly; currently ~50 jobs/run, planned 200)
 Google Sheet (JobFeed)
-    ↓ pull_sheets_csv.py (ACTIVE-only + deadline filtering)
+    ↓ pull_sheets_csv.py
+NAV connector output
+
+Gmail recommendation emails
+    ↓ scan_gmail --scan-suggestions
+suggested_jobs.jsonl
+    ↓ sync_mailbox_leads / pull_suggested
+suggested-lead connector output
+
+NAV connector output + suggested-lead connector output
+    ↓ shared intake merge + dedupe
 <data-root>/jobs_delta.jsonl
     ↓ run_feed.py (staged pipeline)
-    ├─ [FREE] Geo postal filter (0/1/3/4xxx)
-    ├─ [FREE] Hard-no title regex
-    ├─ [FREE] Semantic pre-filter
+    ├─ [NAV] normal deterministic gate stack
+    │   ├─ [FREE] Geo postal filter (0/1/3/4xxx)
+    │   ├─ [FREE] Hard-no title regex
+    │   └─ [FREE] Semantic pre-filter
+    ├─ [SUGGESTED] pre-vetted deterministic gate stack
+    │   ├─ skip geo block
+    │   ├─ [FREE] Hard-no title regex
+    │   └─ skip semantic pre-filter
     ├─ [NANO] AI triage (gpt-4.1-nano)
     ├─ [MINI] Parse (extract structured requirements)
     ├─ [MINI] Profile match (fit score 0-100)
@@ -149,17 +367,39 @@ Google Sheet (JobFeed)
 
 ---
 
+## Target operating flow
+
+1. JobPipe ingests jobs and external leads through separate connectors.
+2. `NAV` remains the pragmatic canonical source when duplicate jobs collide across connectors, unless a suggested-lead variant is the only record with materially missing fields filled in.
+3. JobPipe dedupes connector output before the rest of the pipeline sees the jobs.
+4. Broad-feed `NAV` jobs go through the full deterministic gate stack, while pre-vetted suggested leads bypass `geo` and semantic pre-filter elimination but still honor hard-no title blocking.
+5. JobPipe filters, scores, and explains which leads are worth action.
+6. A promising lead is promoted into an application case with a structured packet.
+7. JobSync receives that case as a `new` tracked job and owns the day-to-day workflow after promotion.
+8. When Lars clicks `apply`, the system should:
+   - open the job ad and the application portal in new tabs
+   - trigger tailored CV work through Reactive Resume or a connected authoring flow
+   - trigger cover-letter / screening-answer drafting in a document-oriented AI workspace
+9. Lars edits the generated artifacts manually.
+10. Final files are saved into the application folder for that job.
+11. Lars submits manually.
+12. Mailbox signals and manual updates continue to drive follow-up and status tracking.
+
+The final submission step remains manual by design. The automation target is preparation, context carry-through, and tracking, not blind auto-apply.
+
+---
+
 
 ---
 
 ## Design principles
 
-1. **Cheap before smart** — free filters (geo, regex) before LLM calls. Always.
+1. **Cheap before smart** — free filters before LLM calls, but the deterministic gate stack can differ by connector when the source has already pre-vetted relevance.
 2. **Never miss a strong match** — safety overrides catch false negatives on keywords even when the LLM says SKIP.
 3. **Every decision is debuggable** — every stage writes a JSON artifact. No hidden logic.
 4. **Incremental, not monolithic** — process deltas, not the full feed. Don't re-process unless input changed.
 5. **Human in the loop** — the system recommends, Lars decides. No auto-apply.
-6. **Lars interacts with the output, not the feed** — NAV, LinkedIn, Finn.no all flow in silently. The inbox is a data pipe. Lars sees only what survived all filters, in the dashboard.
+6. **Lars interacts with the output, not the feed** — NAV, LinkedIn, Finn.no all flow in silently. The inbox is a data pipe. Lars sees only what survived connector merge, dedupe, and triage in the dashboard.
 7. **Noise is a cost** — every irrelevant job that reaches Lars wastes attention. Minimize noise at the earliest, cheapest layer possible.
 8. **Reduce cognitive load, don't add to it** — Lars has high IQ but average working memory and processing speed (Alva Labs profile). The system should externalize memory, pre-generate language, chunk decisions, and surface one clear action at a time. Application packs are not for reading — they are for *acting*. Every output should answer: "what do I do right now?"
 9. **Motivation articulation is a first-class output** — one of the hardest parts of applying is expressing *why* clearly. The application pack must generate ready-to-use motivation language in Norwegian, not generic summaries. The user should be able to copy and adapt, not write from scratch.
@@ -167,9 +407,57 @@ Google Sheet (JobFeed)
 
 ---
 
+## Product management structure
+
+The project should be managed through a small set of explicit artifacts with different jobs:
+
+- `PRODUCT_VISION.md`
+  - north star
+  - product principles
+  - long-term roadmap
+  - Now / Next / Later product priorities
+- `docs/architecture-plan.md`
+  - boundary rules
+  - source-of-truth split
+  - integration seams
+- `docs/mvp-task-plan.md`
+  - ordered short-term execution plan
+  - one active topic at a time
+  - concrete exit criteria and validation
+- `AUDIT.md`
+  - bugs
+  - quality issues
+  - debt
+  - audit history
+- `AGENT_STATUS.md`
+  - current topic state
+  - recent changes
+  - cross-workstream handoffs
+
+Rule:
+
+- put strategy and long-term direction here
+- put ordered implementation work in `docs/mvp-task-plan.md`
+- put defects and debt in `AUDIT.md`
+- put session state and handoffs in `AGENT_STATUS.md`
+- do not create extra planning files unless the user explicitly asks for a new artifact
+
+---
+
 ## Multi-source architecture (planned)
 
-The pipeline is designed to receive jobs from multiple sources through a single contact point. Sources are kept entirely separate from pipeline logic — each source writes to `jobs_leads.jsonl` in a normalized format, and the pipeline treats all sources identically from that point forward.
+The pipeline is designed to receive jobs from multiple sources through separate connectors that merge into one shared pre-triage queue. Sources are not treated identically from the first byte onward:
+
+- `NAV` is the broad canonical feed
+- mailbox-derived suggested leads are already weakly pre-vetted by the platform
+- connector policy therefore differs before triage
+
+The merge rule is:
+
+- separate connectors in
+- dedupe before the main pipe
+- preserve provenance
+- prefer `NAV` as the pragmatic canonical record when duplicates collide
 
 ### Contact point schema
 
@@ -261,6 +549,14 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 - [ ] Fix buildIndex_() performance in Apps Script (raise MAX_ENTRIES_PER_RUN 50→200)
 - [ ] Gmail auto-labeling: route LinkedIn/Finn.no alerts to SOKNADSPILOT, skip inbox
 - [ ] LinkedIn email lead extraction: parse alert emails → jobs_leads.jsonl
+- [x] Add a first-class Settings / Integrations surface in JobPipe for profile pack, geo/domain/role targeting, secret presence, and connector state
+- [x] Treat recommended jobs from mailbox/Finn as first-class leads that enter triage through the same lead connector before shortlist promotion
+- [x] Keep Gmail recommendation intake separate from Gmail-derived status updates so new leads and application tracking do not collapse into one flow
+- [x] Define the application-packet contract used to hand shortlisted leads into JobSync and external authoring flows
+- [x] Keep JobSync changes minimal: import shortlisted leads as `new` and let the existing JobSync workflow own later manual progression
+- [x] Add the minimal apply-time launch contract: JobSync can now open the job ad/application portal and the live JobPipe apply workspace with deterministic saveback targets
+- [x] Replace the legacy JobPipe dashboard shell with a first app-style control-plane shell and automation page inside the current local runtime
+- [ ] Add full external-authoring automation on top of that launch contract for CV and cover-letter workflows
 - [x] Unify dashboard runtime and data contract so static export and local server show the same truth
 - [x] Add a Profile & CV page driven by `<data-root>/profile_pack.md` and `<data-root>/reports/resume.json`
 - [ ] Deadline alert: flag jobs expiring within 7 days in dashboard
@@ -272,6 +568,10 @@ Alert emails that fail the free filters are archived without Lars ever seeing th
 **North star for v2:** JobPipe is systematically better than manual job hunting — not just faster, but smarter about which jobs to prioritize. Lars wins in the rooms where the odds are actually good.
 
 Key capabilities v2 must add:
+- **Structured tailoring over approved content**: the system should produce `TailoringPlan`-style selection outputs that choose role variants, project variants, evidence atoms, skills, and section order instead of relying on broad AI rewriting.
+- **AI-ready profile underlay**: derive compact, structured profile objects from Reactive Resume plus JobPipe settings so filters, triage, and authoring stop consuming incompatible profile shapes.
+- **Derived boundary objects**: replace thick cross-system payloads with smaller purpose-built objects such as `TargetingProfile`, `TriageProfile`, `AuthoringProfile`, and `ApplicationCaseProjection`.
+- **Experimentation toolpack**: make calibration, shadow scoring, threshold comparison, and holdout review part of the product instead of ad hoc manual analysis.
 - **Advantageous match scoring** (not just fit score): quantify how much Lars is likely to stand out *given the likely applicant pool*. Sector novelty, title ambiguity, breadth of scope = higher advantage score.
 - **Applicant pool signal**: use job ad language, sector, and posting channel to estimate competition level. Niche ads in non-obvious sectors → smaller pool of canonical candidates → Lars more likely to be shortlisted.
 - **Feedback loop**: learn from Lars's apply/skip/interview/reject decisions. Surface patterns: which features predict that Lars actually applies AND gets responses?
@@ -300,15 +600,71 @@ Key capabilities v3 would need:
 - [ ] **Application pack — agentic rewrite:** Multi-step agent (o3 / gpt-4.1) for cover letter and CV highlights. Self-critique loop, authentic Norwegian language, output ready to send with minimal editing.
 - [ ] Automated daily run setup (Cowork scheduled task)
 - [ ] Fix Apps Script buildIndex_() performance
+- [ ] Define the first real JobPipe derived-data spine:
+  - `ProfileSnapshot`
+  - `TargetingProfile`
+  - `TriageProfile`
+  - `AuthoringProfile`
+  - `ApplicationCaseProjection`
 
 ### Next (weeks)
+- [ ] Mailbox/Finn lead-intake surface in JobPipe settings
+- [x] Replace the legacy JobPipe dashboard shell with a real app-style local control plane, reusing JobSync UI patterns where they fit
+- [x] Settings / Integrations surface for profile pack, targeting, secret presence, and connector state
+- [x] Minimal JobSync intake for promoted leads as `new`
+- [x] Application-packet contract for downstream JobSync and external authoring
 - [ ] LinkedIn email lead extraction
 - [ ] Advantageous match signal in triage + dashboard
 - [ ] Occupation code pre-filtering (NAV styrk08 codes)
 - [ ] Geo filter for city-name-based sources (LinkedIn leads have city, not postal code)
+- [ ] Replace direct early-stage dependence on `profile_pack.md` narrative text with a derived profile adapter layer fed by Reactive Resume-compatible source data and local targeting settings
+- [ ] Define the structured resume-tailoring model:
+  - `ResumeMaster`
+  - `RoleRecord`
+  - `RoleVariant`
+  - `ProjectVariant`
+  - `EvidenceAtom`
+  - `SkillAtom`
+  - `NarrativeProfile`
+  - `TailoringPlan`
+- [ ] Split the current broad `application_pack` shape into thinner AI-ready decision and authoring briefs
+- [ ] Modularize triage into deterministic gate, feature extraction, semantic scorer, classifier, moderator, and calibration layers
+- [ ] Add a stronger internal JobPipe data store for derived projections, experiments, and low-latency AI/integration reads
+- [ ] Reframe triage as a value-creation layer that determines:
+  - why Lars can win this role
+  - what objections must be neutralized
+  - what the CV should emphasize structurally
+  - what narrative angle should drive the cover letter
+- [ ] Make the external authoring flow operationally complete without overcoupling:
+  - Reactive Resume launch + AI-supported editing handoff
+  - deterministic CV export capture
+  - deterministic cover-letter and screening-answer export storage/registration
 
 ### Later (months)
+- [ ] Full external-authoring automation across JobSync, Reactive Resume, and the cover-letter drafting workspace
+- [ ] Automated artifact saveback and per-case file linking
 - [ ] Feedback loop from application outcomes
 - [ ] Finn.no API investigation
 - [ ] Channel quality metrics
 - [ ] On-demand single job analysis
+- [ ] Make experimentation a first-class toolpack:
+  - shadow scoring
+  - threshold experiments
+  - connector-policy comparison
+  - false-negative review sampling
+  - outcome-linked calibration
+- [ ] Add advantageous-match and applicant-pool scoring on top of the modularized triage features
+- [ ] Use outcome feedback to tune ranking and review order without turning JobSync into a second scoring engine
+
+## Research Backlog
+
+These are important, but should stay as research until the dependency order is clearer.
+
+- **Reactive Resume deep automation**
+  - determine whether narrow automation beyond launch/handoff/export capture is stable enough to own without taking on upstream internals
+- **Document-workspace deep automation**
+  - determine the real editing/storage/export target before committing to browser-driven automation
+- **Applicant-pool signal design**
+  - identify which competition signals are strong enough to drive ranking without hand-wavy heuristics
+- **Structured resume composition seam**
+  - determine how far Reactive Resume can support variant/module-level composition directly versus what must live as a JobPipe-owned overlay model

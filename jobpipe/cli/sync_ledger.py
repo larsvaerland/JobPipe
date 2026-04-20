@@ -11,6 +11,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from jobpipe.core.io import now_iso, clean, pick, to_float, to_int
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+from jobpipe.core.projection_store import (
+    build_projected_job_input,
+    get_job_projection_bundle,
+    load_projection_store,
+    projection_bundle_detail_projection,
+    projection_bundle_input_enrichment,
+    projection_decision_brief,
+    projection_job_summary,
+)
 
 _DEFAULT_PATHS = get_jobpipe_paths()
 
@@ -62,21 +71,59 @@ def _safe_load_json(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _resolve_stage_path(job_dir: Path, *names: str) -> Optional[Path]:
+def _find_latest_suffix_artifact(job_dir: Path, suffix: str) -> Optional[Path]:
     if not job_dir.exists():
         return None
-    for name in names:
-        path = job_dir / name
-        if path.exists():
-            return path
-    return None
+    matches = sorted(job_dir.glob(f"*{suffix}"))
+    return matches[-1] if matches else None
 
 
-def _load_stage_artifact(job_dir: Path, *names: str) -> Tuple[Dict[str, Any], Optional[Path]]:
-    path = _resolve_stage_path(job_dir, *names)
+def _load_stage_artifact(job_dir: Path, stage_name: str) -> Tuple[Dict[str, Any], Optional[Path]]:
+    path = _find_latest_suffix_artifact(job_dir, f"_{stage_name}.json")
     if not path:
         return {}, None
     return _safe_load_json(path), path
+
+
+def _synthetic_v3_projection_from_index(row: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    triage_decision_v3 = {}
+    if clean(row.get("triage_v3_label")):
+        triage_decision_v3 = {
+            "label": clean(row.get("triage_v3_label")),
+            "weighted_score": to_float(row.get("triage_v3_weighted_score")),
+            "confidence": to_int(row.get("triage_v3_confidence")),
+            "needs_ambiguity_pass": bool(row.get("triage_v3_needs_ambiguity")),
+        }
+
+    triage_ambiguity_v3 = {}
+    if clean(row.get("triage_ambiguity_label")):
+        triage_ambiguity_v3 = {
+            "resolved_label": clean(row.get("triage_ambiguity_label")),
+            "resolution_reason": clean(row.get("triage_ambiguity_reason")),
+        }
+        if triage_decision_v3:
+            triage_ambiguity_v3["final_decision"] = dict(triage_decision_v3, label=clean(row.get("triage_ambiguity_label")))
+
+    advantage_assessment_v3 = {}
+    if clean(row.get("advantage_type")):
+        advantage_assessment_v3 = {
+            "advantage_type": clean(row.get("advantage_type")),
+            "review_priority": to_int(row.get("advantage_review_priority")),
+        }
+
+    narrative_strategy_v3 = {}
+    if clean(row.get("narrative_positioning_angle")) or clean(row.get("narrative_brand_frame")):
+        narrative_strategy_v3 = {
+            "positioning_angle": clean(row.get("narrative_positioning_angle")),
+            "brand_frame": clean(row.get("narrative_brand_frame")),
+        }
+
+    return {
+        "triage_decision_v3": triage_decision_v3,
+        "triage_ambiguity_v3": triage_ambiguity_v3,
+        "advantage_assessment_v3": advantage_assessment_v3,
+        "narrative_strategy_v3": narrative_strategy_v3,
+    }
 
 
 def _truthy_flag(value: Any) -> int:
@@ -142,7 +189,9 @@ def _collect_generated_documents(job_dir: Path, pack_path: Optional[Path]) -> Tu
     if pack_path:
         add_doc(pack_path, "application_pack_json", "saved")
     add_doc(job_dir / "application_pack_draft.json", "application_pack_json", "draft")
-    add_doc(job_dir / "07_cv_highlights.docx", "cv_highlights_docx", "saved")
+    docx_path = _find_latest_suffix_artifact(job_dir, "_cv_highlights.docx")
+    if docx_path:
+        add_doc(docx_path, "cv_highlights_docx", "saved")
     add_doc(job_dir / "cover_letter_draft.txt", "cover_letter_text", "draft")
 
     generated_at = ""
@@ -180,19 +229,38 @@ def iter_events(out_dir: Path) -> Iterable[EventRow]:
             yield EventRow(run_id, run_mtime, job_id, row, run_dir / job_id)
 
 
-def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: int) -> Dict[str, Any]:
+def merge_job_details(
+    ev: EventRow,
+    include_description: bool,
+    desc_max_chars: int,
+    *,
+    projection_store: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     row = dict(ev.index_row)
+    projection_store = projection_store or {}
+    bundle = get_job_projection_bundle(projection_store, run_id=ev.run_id, job_id=ev.job_id)
+    input_projection = projection_bundle_input_enrichment(bundle)
+    detail_projection = projection_bundle_detail_projection(bundle)
+    projection_summary = projection_job_summary(detail_projection)
+    projection_brief = projection_decision_brief(detail_projection)
 
     input_j = _safe_load_json(ev.job_dir / "00_input.json") if ev.job_dir.exists() else {}
     triage_j = _safe_load_json(ev.job_dir / "01_triage.json") if ev.job_dir.exists() else {}
     rev_j = _safe_load_json(ev.job_dir / "02_reverse_triage.json") if ev.job_dir.exists() else {}
-    # Stage file numbering shifted when reverse_triage was disabled (2026-04-13).
-    # Try new numbering first (03/04/05/06), fall back to old (04/05/06/07) for
-    # any runs produced before the change.
-    match_j, _ = _load_stage_artifact(ev.job_dir, "03_profile_match.json", "04_profile_match.json")
-    pivot_j, _ = _load_stage_artifact(ev.job_dir, "04_pivot.json", "05_pivot.json")
-    mod_j, _ = _load_stage_artifact(ev.job_dir, "05_moderator.json", "06_moderator.json")
-    pack_j, pack_path = _load_stage_artifact(ev.job_dir, "06_application_pack.json", "07_application_pack.json")
+    match_j, _ = _load_stage_artifact(ev.job_dir, "profile_match")
+    pivot_j, _ = _load_stage_artifact(ev.job_dir, "pivot")
+    triage_features_j, _ = _load_stage_artifact(ev.job_dir, "triage_features")
+    triage_decision_v3_j, _ = _load_stage_artifact(ev.job_dir, "triage_decision_v3")
+    triage_ambiguity_v3_j, _ = _load_stage_artifact(ev.job_dir, "triage_ambiguity_v3")
+    advantage_assessment_v3_j, _ = _load_stage_artifact(ev.job_dir, "advantage_assessment_v3")
+    narrative_strategy_v3_j, _ = _load_stage_artifact(ev.job_dir, "narrative_strategy_v3")
+    mod_j, _ = _load_stage_artifact(ev.job_dir, "moderator")
+    pack_j, pack_path = _load_stage_artifact(ev.job_dir, "application_pack")
+    synthetic_v3 = _synthetic_v3_projection_from_index(row)
+    triage_decision_v3_j = triage_decision_v3_j or synthetic_v3["triage_decision_v3"]
+    triage_ambiguity_v3_j = triage_ambiguity_v3_j or synthetic_v3["triage_ambiguity_v3"]
+    advantage_assessment_v3_j = advantage_assessment_v3_j or synthetic_v3["advantage_assessment_v3"]
+    narrative_strategy_v3_j = narrative_strategy_v3_j or synthetic_v3["narrative_strategy_v3"]
 
     # Resolve job data: prefer nested "job" key, fall back to root of input file,
     # then to index row. This handles both pipeline output formats.
@@ -203,6 +271,27 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         job = input_j          # data at root level (most common case)
     elif isinstance(row.get("job"), dict):
         job = row["job"]
+    elif input_projection or projection_summary:
+        job = build_projected_job_input(
+            job_id=ev.job_id,
+            input_projection=input_projection,
+            detail_projection=detail_projection,
+        )
+
+    if not match_j and projection_brief:
+        match_j = {
+            "fit_score": projection_brief.get("fit_score"),
+            "overlaps": projection_brief.get("overlaps", []),
+            "gaps": projection_brief.get("gaps", []),
+        }
+    if not pivot_j and projection_brief:
+        pivot_j = {"pivot_score": projection_brief.get("pivot_score")}
+    if not mod_j and projection_brief:
+        mod_j = {
+            "final_decision": projection_brief.get("final_decision", ""),
+            "cv_focus": projection_brief.get("cv_focus", []),
+            "recommendation_reason": projection_brief.get("rationale", ""),
+        }
 
     title = pick(job.get("title"), job.get("normalized_title"), row.get("title"))
     employer = pick(
@@ -253,13 +342,41 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
 
     fit_score = to_int(pick(match_j.get("fit_score"), row.get("fit_score")))
     pivot_score = to_int(pick(pivot_j.get("pivot_score"), row.get("pivot_score")))
+    triage_v3_label = pick(triage_decision_v3_j.get("label"), row.get("triage_v3_label"))
+    triage_v3_weighted_score = to_float(pick(triage_decision_v3_j.get("weighted_score"), row.get("triage_v3_weighted_score")))
+    triage_v3_confidence = to_int(pick(triage_decision_v3_j.get("confidence"), row.get("triage_v3_confidence")))
+    triage_v3_needs_ambiguity = _truthy_flag(
+        pick(triage_decision_v3_j.get("needs_ambiguity_pass"), row.get("triage_v3_needs_ambiguity"))
+    )
+    triage_ambiguity_label = pick(triage_ambiguity_v3_j.get("resolved_label"), row.get("triage_ambiguity_label"))
+    triage_ambiguity_reason = pick(triage_ambiguity_v3_j.get("resolution_reason"), row.get("triage_ambiguity_reason"))
+    advantage_type = pick(advantage_assessment_v3_j.get("advantage_type"), row.get("advantage_type"))
+    advantage_review_priority = to_int(
+        pick(advantage_assessment_v3_j.get("review_priority"), row.get("advantage_review_priority"))
+    )
+    narrative_positioning_angle = pick(
+        narrative_strategy_v3_j.get("positioning_angle"),
+        row.get("narrative_positioning_angle"),
+    )
+    narrative_brand_frame = pick(
+        narrative_strategy_v3_j.get("brand_frame"),
+        row.get("narrative_brand_frame"),
+    )
     final_decision = pick(mod_j.get("final_decision"), row.get("final_decision"))
     final_conf = to_float(pick(mod_j.get("confidence"), row.get("confidence")))
     rec_reason = pick(mod_j.get("recommendation_reason"), row.get("recommendation_reason"))
 
     description_snip = ""
     if include_description:
-        description_snip = _truncate(pick(job.get("description_html"), row.get("description_html")), desc_max_chars)
+        description_snip = _truncate(
+            pick(
+                job.get("description_html"),
+                job.get("description"),
+                projection_summary.get("description_snippet"),
+                row.get("description_html"),
+            ),
+            desc_max_chars,
+        )
 
     cv_focus = pack_j.get("cv_focus") or mod_j.get("cv_focus") or []
     if isinstance(cv_focus, str):
@@ -347,6 +464,16 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
 
         "fit_score": fit_score,
         "pivot_score": pivot_score,
+        "triage_v3_label": triage_v3_label,
+        "triage_v3_weighted_score": triage_v3_weighted_score,
+        "triage_v3_confidence": triage_v3_confidence,
+        "triage_v3_needs_ambiguity": triage_v3_needs_ambiguity,
+        "triage_ambiguity_label": triage_ambiguity_label,
+        "triage_ambiguity_reason": triage_ambiguity_reason,
+        "advantage_type": advantage_type,
+        "advantage_review_priority": advantage_review_priority,
+        "narrative_positioning_angle": narrative_positioning_angle,
+        "narrative_brand_frame": narrative_brand_frame,
         "final_decision": final_decision,
         "final_confidence": final_conf,
         "recommendation_reason": rec_reason,
@@ -364,6 +491,11 @@ def merge_job_details(ev: EventRow, include_description: bool, desc_max_chars: i
         "skip_reason": _skip_reason,
 
         "raw_index_json": json.dumps(ev.index_row, ensure_ascii=False, sort_keys=True)[:20000],
+        "raw_triage_features_json": json.dumps(triage_features_j, ensure_ascii=False, sort_keys=True)[:20000],
+        "raw_triage_decision_v3_json": json.dumps(triage_decision_v3_j, ensure_ascii=False, sort_keys=True)[:20000],
+        "raw_triage_ambiguity_v3_json": json.dumps(triage_ambiguity_v3_j, ensure_ascii=False, sort_keys=True)[:20000],
+        "raw_advantage_assessment_v3_json": json.dumps(advantage_assessment_v3_j, ensure_ascii=False, sort_keys=True)[:20000],
+        "raw_narrative_strategy_v3_json": json.dumps(narrative_strategy_v3_j, ensure_ascii=False, sort_keys=True)[:20000],
         "raw_match_json": json.dumps(match_j, ensure_ascii=False, sort_keys=True)[:20000],
         "raw_pivot_json": json.dumps(pivot_j, ensure_ascii=False, sort_keys=True)[:20000],
         "raw_moderator_json": json.dumps(mod_j, ensure_ascii=False, sort_keys=True)[:20000],
@@ -403,6 +535,16 @@ LEDGER_COLUMNS: List[Tuple[str, str]] = [
     ("reverse_rationale", "TEXT"),
     ("fit_score", "INTEGER"),
     ("pivot_score", "INTEGER"),
+    ("triage_v3_label", "TEXT"),
+    ("triage_v3_weighted_score", "REAL"),
+    ("triage_v3_confidence", "INTEGER"),
+    ("triage_v3_needs_ambiguity", "INTEGER"),
+    ("triage_ambiguity_label", "TEXT"),
+    ("triage_ambiguity_reason", "TEXT"),
+    ("advantage_type", "TEXT"),
+    ("advantage_review_priority", "INTEGER"),
+    ("narrative_positioning_angle", "TEXT"),
+    ("narrative_brand_frame", "TEXT"),
     ("final_decision", "TEXT"),
     ("final_confidence", "REAL"),
     ("recommendation_reason", "TEXT"),
@@ -417,6 +559,11 @@ LEDGER_COLUMNS: List[Tuple[str, str]] = [
     ("description_snip", "TEXT"),
     ("skip_reason", "TEXT"),
     ("raw_index_json", "TEXT"),
+    ("raw_triage_features_json", "TEXT"),
+    ("raw_triage_decision_v3_json", "TEXT"),
+    ("raw_triage_ambiguity_v3_json", "TEXT"),
+    ("raw_advantage_assessment_v3_json", "TEXT"),
+    ("raw_narrative_strategy_v3_json", "TEXT"),
     ("raw_match_json", "TEXT"),
     ("raw_pivot_json", "TEXT"),
     ("raw_moderator_json", "TEXT"),
@@ -562,14 +709,21 @@ def main(argv: Optional[List[str]] = None) -> None:
     reports_dir = Path(args.reports) if args.reports else paths.reports_dir
     csv_path = Path(args.csv) if args.csv else paths.ledger_csv_path
     sqlite_path = Path(args.sqlite) if args.sqlite else paths.ledger_sqlite_path
+    projection_store_path = reports_dir / "projection_store.json"
 
     conn = init_db(sqlite_path)
+    projection_store = load_projection_store(projection_store_path)
 
     latest_by_job: Dict[str, Dict[str, Any]] = {}
     events_scanned = 0
 
     for ev in iter_events(out_dir):
-        enriched = merge_job_details(ev, include_description=args.include_description, desc_max_chars=args.desc_max_chars)
+        enriched = merge_job_details(
+            ev,
+            include_description=args.include_description,
+            desc_max_chars=args.desc_max_chars,
+            projection_store=projection_store,
+        )
 
         insert_event(conn, {
             "run_id": enriched.get("run_id"),
@@ -683,7 +837,17 @@ def main(argv: Optional[List[str]] = None) -> None:
             json.dump(detail_rows, f, ensure_ascii=False, indent=2)
 
         # CSV: drop large raw blobs
-        skip_cols = {"raw_index_json", "raw_match_json", "raw_pivot_json", "raw_moderator_json"}
+        skip_cols = {
+            "raw_index_json",
+            "raw_triage_features_json",
+            "raw_triage_decision_v3_json",
+            "raw_triage_ambiguity_v3_json",
+            "raw_advantage_assessment_v3_json",
+            "raw_narrative_strategy_v3_json",
+            "raw_match_json",
+            "raw_pivot_json",
+            "raw_moderator_json",
+        }
         flat = [{k: v for k, v in r.items() if k not in skip_cols} for r in detail_rows]
         if flat:
             cols = list(flat[0].keys())

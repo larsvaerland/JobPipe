@@ -2,7 +2,8 @@
 
 Reads reports/suggested_jobs.jsonl, fetches each job's full content from FINN.no
 (using BeautifulSoup4 to parse JSON-LD structured data), normalizes to pipeline
-JSONL format, and appends to jobs_delta.jsonl with suggested_by_platform=true.
+JSONL format, and appends to the suggested-lead connector staging file with
+suggested_by_platform=true.
 
 The pipeline triage stage treats suggested_by_platform=true as a calibration signal:
   - Semantic filter will not kill platform-suggested jobs (let the LLM decide)
@@ -38,6 +39,7 @@ from typing import Any, Dict, List, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.lead_intake import append_leads
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
@@ -61,7 +63,7 @@ except Exception:
 
 _DEFAULT_PATHS = get_jobpipe_paths()
 DEFAULT_SUGGESTED_PATH = _DEFAULT_PATHS.suggested_jobs_path
-DEFAULT_OUT_PATH = _DEFAULT_PATHS.jobs_delta_path
+DEFAULT_OUT_PATH = _DEFAULT_PATHS.leads_connector_path
 DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
 
 _DAYTIME_START = 9   # 09:00 Oslo — start of allowed window
@@ -322,6 +324,133 @@ def _load_ledger_ids(ledger_path: Path) -> set:
         return set()
 
 
+def process_suggested_queue(
+    *,
+    suggested_path: Path,
+    out_path: Path,
+    ledger_path: Path,
+    max_jobs: int = 20,
+    min_delay: float = 3.0,
+    max_delay: float = 9.0,
+    force_daytime: bool = False,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    if not BS4_AVAILABLE:
+        raise RuntimeError(
+            "beautifulsoup4 not installed. Run: pip install beautifulsoup4 lxml --break-system-packages"
+        )
+
+    if not force_daytime and not dry_run and not _is_daytime():
+        return {
+            "status": "blocked_by_time_guard",
+            "oslo_time": _oslo_time_str(),
+            "fetched": 0,
+            "failed": 0,
+            "remaining": 0,
+        }
+
+    if not suggested_path.exists():
+        return {
+            "status": "missing_queue",
+            "fetched": 0,
+            "failed": 0,
+            "remaining": 0,
+        }
+
+    queue: List[dict] = []
+    for line in suggested_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            try:
+                queue.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+    ledger_ids = _load_ledger_ids(ledger_path)
+    finn_pending = [
+        j for j in queue
+        if j.get("platform") == "finn"
+        and not j.get("fetched_at")
+        and f"finn_{j.get('finnkode', '')}" not in ledger_ids
+        and j.get("finnkode")
+    ]
+    linkedin_pending = [
+        j for j in queue
+        if j.get("platform") == "linkedin"
+        and not j.get("fetched_at")
+    ]
+
+    if not finn_pending:
+        return {
+            "status": "queue_empty",
+            "fetched": 0,
+            "failed": 0,
+            "remaining": 0,
+            "linkedin_pending": len(linkedin_pending),
+        }
+
+    batch = finn_pending[:max_jobs]
+    remaining_after = len(finn_pending) - len(batch)
+
+    if dry_run:
+        return {
+            "status": "dry_run",
+            "fetched": 0,
+            "failed": 0,
+            "remaining": remaining_after,
+            "planned": len(batch),
+            "linkedin_pending": len(linkedin_pending),
+        }
+
+    fetched: List[dict] = []
+    fetched_finnkodes: set = set()
+    failed_finnkodes: set = set()
+
+    for suggestion in batch:
+        finnkode = suggestion["finnkode"]
+        delay = random.uniform(min_delay, max_delay)
+        job = fetch_finn_job(finnkode, delay=delay, verbose=verbose)
+        if job:
+            job["suggested_at"] = suggestion.get("suggested_at", "")
+            job["email_subject"] = suggestion.get("email_subject", "")
+            fetched.append(job)
+            fetched_finnkodes.add(finnkode)
+        else:
+            failed_finnkodes.add(finnkode)
+
+    appended = append_leads(
+        out_path,
+        fetched,
+        intake_channel="gmail_recommendation_email",
+        connector_source="finn_suggested",
+        pretriage_policy="suggested_lead",
+    )
+
+    if fetched_finnkodes:
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        updated_lines: List[str] = []
+        for line in suggested_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("finnkode") in fetched_finnkodes:
+                    entry["fetched_at"] = now_iso
+                updated_lines.append(json.dumps(entry, ensure_ascii=False))
+            except json.JSONDecodeError:
+                updated_lines.append(line)
+        suggested_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "fetched": len(appended),
+        "failed": len(failed_finnkodes),
+        "remaining": remaining_after,
+        "linkedin_pending": len(linkedin_pending),
+    }
+
+
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -386,155 +515,68 @@ def main(argv: Optional[List[str]] = None) -> None:
     paths = get_jobpipe_paths(args.data_root or None)
     bootstrap_private_data(paths, include_artifacts=False)
     suggested_path = Path(args.suggested) if args.suggested else paths.suggested_jobs_path
-    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    out_path = Path(args.out) if args.out else paths.leads_connector_path
     ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
-    if not BS4_AVAILABLE:
-        print(
-            "Error: beautifulsoup4 not installed.\n"
-            "Run: pip install beautifulsoup4 lxml --break-system-packages",
-            file=sys.stderr,
+    try:
+        result = process_suggested_queue(
+            suggested_path=suggested_path,
+            out_path=out_path,
+            ledger_path=ledger_path,
+            max_jobs=args.max,
+            min_delay=args.min_delay,
+            max_delay=args.max_delay,
+            force_daytime=args.force_daytime,
+            dry_run=args.dry_run,
+            verbose=args.verbose,
         )
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # --- Time guard (skip for dry-run: no actual fetching happens) ---
-    if not args.force_daytime and not args.dry_run:
-        if not _is_daytime():
-            print(
-                f"[time-guard] Current Oslo time: {_oslo_time_str()}.\n"
-                f"FINN scraping is only allowed between {_DAYTIME_START:02d}:00 and "
-                f"{_DAYTIME_END:02d}:00 Oslo time to avoid bot-detection flags.\n"
-                f"Run during the day or use --force-daytime to bypass (testing only)."
-            )
-            sys.exit(0)
+    if result["status"] == "blocked_by_time_guard":
+        print(
+            f"[time-guard] Current Oslo time: {result['oslo_time']}.\n"
+            f"FINN scraping is only allowed between {_DAYTIME_START:02d}:00 and "
+            f"{_DAYTIME_END:02d}:00 Oslo time to avoid bot-detection flags.\n"
+            f"Run during the day or use --force-daytime to bypass (testing only)."
+        )
+        sys.exit(0)
 
-    # --- Load queue ---
-    if not suggested_path.exists():
+    if result["status"] == "missing_queue":
         print(
             f"No suggestion queue found at {suggested_path}.\n"
             "Run:  python -m jobpipe.cli.scan_gmail --scan-suggestions"
         )
         sys.exit(0)
 
-    queue: List[dict] = []
-    for line in suggested_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                queue.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-
-    # Filter to FINN jobs that haven't been fetched yet and aren't in ledger
-    ledger_ids = _load_ledger_ids(ledger_path)
-    finn_pending = [
-        j for j in queue
-        if j.get("platform") == "finn"
-        and not j.get("fetched_at")
-        and f"finn_{j.get('finnkode', '')}" not in ledger_ids
-        and j.get("finnkode")
-    ]
-    linkedin_pending = [
-        j for j in queue
-        if j.get("platform") == "linkedin"
-        and not j.get("fetched_at")
-    ]
-
-    print(
-        f"Queue: {len(finn_pending)} FINN pending, "
-        f"{len(linkedin_pending)} LinkedIn pending (manual scraping required), "
-        f"{len([j for j in queue if j.get('fetched_at')])} already fetched."
-    )
-
-    if not finn_pending:
+    if result["status"] == "queue_empty":
         print("No FINN jobs pending. Queue is up to date.")
-        if linkedin_pending:
+        if result.get("linkedin_pending"):
             print(
-                f"\n{len(linkedin_pending)} LinkedIn jobs are queued but require jobspy:\n"
+                f"\n{result['linkedin_pending']} LinkedIn jobs are queued but require jobspy:\n"
                 f"  python -m jobpipe.cli.pull_linkedin  (not yet implemented)\n"
                 "  Or update the jobspy scraper manually and pipe output through pull_finn_ext.py"
             )
         sys.exit(0)
 
-    # Respect --max
-    batch = finn_pending[:args.max]
-    remaining_after = len(finn_pending) - len(batch)
-
-    print(
-        f"\nFetching {len(batch)} FINN jobs "
-        f"(max={args.max}, delay={args.min_delay:.0f}–{args.max_delay:.0f}s, "
-        f"Oslo time: {_oslo_time_str()})..."
-    )
-    if remaining_after > 0:
-        print(f"  {remaining_after} more in queue — run again to continue.")
-
-    if args.dry_run:
-        for j in batch:
-            print(f"  [DRY RUN] Would fetch: finn_{j['finnkode']}  {j.get('job_url', '')}")
-        return
-
-    # --- Fetch ---
-    fetched: List[dict] = []
-    fetched_finnkodes: set = set()
-    failed_finnkodes: set = set()
-
-    for i, suggestion in enumerate(batch):
-        finnkode = suggestion["finnkode"]
-        jid = f"finn_{finnkode}"
-        delay = random.uniform(args.min_delay, args.max_delay)
-
-        print(f"  [{i+1}/{len(batch)}] finn_{finnkode}  (delay={delay:.1f}s)")
-
-        job = fetch_finn_job(finnkode, delay=delay, verbose=args.verbose)
-
-        if job:
-            # Merge calibration metadata from the suggestion
-            job["suggested_at"] = suggestion.get("suggested_at", "")
-            job["email_subject"] = suggestion.get("email_subject", "")
-            fetched.append(job)
-            fetched_finnkodes.add(finnkode)
-            print(
-                f"    [OK] '{job.get('title', '?')[:60]}'  "
-                f"({job.get('employer_name', '?')[:30]})  "
-                f"[{job.get('parse_method', '?')}]"
-            )
-        else:
-            failed_finnkodes.add(finnkode)
-            print(f"    [FAIL] Could not extract content for finn_{finnkode}")
-
-    # --- Write to jobs_delta.jsonl ---
-    if fetched:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "a", encoding="utf-8") as f:
-            for job in fetched:
-                f.write(json.dumps(job, ensure_ascii=False) + "\n")
-        print(f"\n[OK] Appended {len(fetched)} jobs to {out_path}")
-
-    # --- Mark fetched in the queue file (so next run skips them) ---
-    if fetched_finnkodes:
-        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        updated_lines: List[str] = []
-        for line in suggested_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-                if entry.get("finnkode") in fetched_finnkodes:
-                    entry["fetched_at"] = now_iso
-                updated_lines.append(json.dumps(entry, ensure_ascii=False))
-            except json.JSONDecodeError:
-                updated_lines.append(line)
-        suggested_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
-        print(f"Updated {len(fetched_finnkodes)} entries in {suggested_path} (marked fetched_at)")
+    if result["status"] == "dry_run":
+        print(
+            f"[DRY RUN] Mailbox recommendation flow is ready: "
+            f"{result['planned']} FINN leads would enter suggested-lead connector staging, "
+            f"{result['remaining']} would remain queued after this batch."
+        )
+        sys.exit(0)
 
     print(
         f"\nSummary:\n"
-        f"  Fetched:  {len(fetched)}\n"
-        f"  Failed:   {len(failed_finnkodes)}\n"
-        f"  Remaining in queue: {remaining_after}\n"
+        f"  Fetched:  {result['fetched']}\n"
+        f"  Failed:   {result['failed']}\n"
+        f"  Remaining in queue: {result['remaining']}\n"
     )
-    if fetched:
+    if result["fetched"]:
         print(
+            "Leads were appended to connector staging and will merge before filters/triage.\n"
             "Next step: run pipeline to process fetched suggestions:\n"
             "  .\\go.ps1 -DryRun   (test 2 jobs first)\n"
             "  .\\go.ps1           (full run)"

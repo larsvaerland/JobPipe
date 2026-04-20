@@ -33,27 +33,44 @@ def read_stage_json(job_dir: str, stage_name: str) -> dict | None:
 
 from jobpipe.core.io import ensure_dir, iter_jobs, load_env_file, load_profile_pack, stable_job_id, now_iso, write_json
 from jobpipe.core.paths import JOBPIPE_DATA_ROOT_ENV, bootstrap_private_data, get_jobpipe_paths
+from jobpipe.core.profile_layer import build_triage_instruction_profile_summary, load_or_build_profile_layer_for_paths
 
 from jobpipe.core.config import load_config
 from jobpipe.core.schema import (
     JobContext, RunMeta,
     TriageOut, ReverseTriageOut, JobParse, ProfileMatchOut,
-    PivotOut, ModeratorOut, ApplicationPackOut,
+    PivotOut, TriageFeatures, TriageDecisionV3, TriageAmbiguityV3, AdvantageAssessmentV3, NarrativeStrategyV3, ModeratorOut, ApplicationPackOut,
 )
 from jobpipe.core.runner import PipelineRunner, Stage
 
 from jobpipe.stages.application_pack import application_pack_stage_factory
+from jobpipe.stages.advantage_assessment_v3 import advantage_assessment_v3_stage_factory
 from jobpipe.stages.moderate import moderate_stage_factory
+from jobpipe.stages.narrative_strategy_v3 import narrative_strategy_v3_stage_factory
 from jobpipe.stages.parse import parse_stage_factory
 from jobpipe.stages.pivot import pivot_stage_factory
 from jobpipe.stages.profile_match import profile_match_stage_factory
 from jobpipe.stages.reverse_triage import reverse_triage_stage_factory
 from jobpipe.stages.triage import triage_stage_factory
+from jobpipe.stages.triage_ambiguity_v3 import triage_ambiguity_v3_stage_factory
+from jobpipe.stages.triage_decision_v3 import triage_decision_v3_stage_factory
+from jobpipe.stages.triage_features import triage_features_stage_factory
+from jobpipe.stages.advantage_assessment_v3 import advantage_assessment_v3_cache_key
+from jobpipe.stages.narrative_strategy_v3 import narrative_strategy_v3_cache_key
+from jobpipe.stages.triage_ambiguity_v3 import triage_ambiguity_v3_cache_key
+from jobpipe.stages.triage_decision_v3 import triage_decision_v3_cache_key
+from jobpipe.stages.triage_features import triage_features_cache_key
 
 _DEFAULT_PATHS = get_jobpipe_paths()
 
 
-def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
+def build_stages(
+    cfg,
+    profile_pack: str = "",
+    *,
+    triage_profile_summary: str = "",
+    targeting_title_patterns: list[str] | None = None,
+) -> List[Stage]:
     """
     Stage.name must match JobContext attribute names for artifact dumps.
     Accept YAML-friendly aliases:
@@ -74,6 +91,11 @@ def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
         "parsed",
         "profile_match",
         "pivot",
+        "triage_features",
+        "triage_decision_v3",
+        "triage_ambiguity_v3",
+        "advantage_assessment_v3",
+        "narrative_strategy_v3",
         "moderator",
         "application_pack",
     ]
@@ -97,6 +119,8 @@ def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
                 max_ad_text_chars=triage_max_chars,
                 safety_rules=cfg.safety_rules,
                 profile_pack=profile_pack,
+                triage_profile_summary=triage_profile_summary,
+                targeting_title_patterns=targeting_title_patterns,
                 semantic_threshold=float(cfg.thresholds.get("semantic_filter_threshold", 0.0)),
                 semantic_model=str(cfg.thresholds.get("semantic_filter_model", "BAAI/bge-small-en-v1.5")),
             )
@@ -129,6 +153,66 @@ def build_stages(cfg, profile_pack: str = "") -> List[Stage]:
                 model=cfg.models.get("pivot", "gpt-4.1-mini"),
             )
             stages.append(Stage(name="pivot", run=run_pv, should_run=should_pv, ctx_model=PivotOut))
+
+        elif s == "triage_features":
+            should_tf, run_tf = triage_features_stage_factory()
+            stages.append(
+                Stage(
+                    name="triage_features",
+                    run=run_tf,
+                    should_run=should_tf,
+                    ctx_model=TriageFeatures,
+                    cache_key_fn=triage_features_cache_key,
+                )
+            )
+
+        elif s == "triage_decision_v3":
+            should_td, run_td = triage_decision_v3_stage_factory()
+            stages.append(
+                Stage(
+                    name="triage_decision_v3",
+                    run=run_td,
+                    should_run=should_td,
+                    ctx_model=TriageDecisionV3,
+                    cache_key_fn=triage_decision_v3_cache_key,
+                )
+            )
+
+        elif s == "triage_ambiguity_v3":
+            should_ta, run_ta = triage_ambiguity_v3_stage_factory()
+            stages.append(
+                Stage(
+                    name="triage_ambiguity_v3",
+                    run=run_ta,
+                    should_run=should_ta,
+                    ctx_model=TriageAmbiguityV3,
+                    cache_key_fn=triage_ambiguity_v3_cache_key,
+                )
+            )
+
+        elif s == "advantage_assessment_v3":
+            should_aa, run_aa = advantage_assessment_v3_stage_factory()
+            stages.append(
+                Stage(
+                    name="advantage_assessment_v3",
+                    run=run_aa,
+                    should_run=should_aa,
+                    ctx_model=AdvantageAssessmentV3,
+                    cache_key_fn=advantage_assessment_v3_cache_key,
+                )
+            )
+
+        elif s == "narrative_strategy_v3":
+            should_ns, run_ns = narrative_strategy_v3_stage_factory()
+            stages.append(
+                Stage(
+                    name="narrative_strategy_v3",
+                    run=run_ns,
+                    should_run=should_ns,
+                    ctx_model=NarrativeStrategyV3,
+                    cache_key_fn=narrative_strategy_v3_cache_key,
+                )
+            )
 
         elif s == "moderator":
             should_mod, run_mod = moderate_stage_factory(cfg.thresholds)
@@ -187,12 +271,20 @@ def main() -> None:
     load_env_file(env_file)
     cfg = load_config(config_path, overlays=args.config_overlay)
     profile_pack = load_profile_pack(profile_path)
+    profile_layer = load_or_build_profile_layer_for_paths(paths)
 
     run_id = f"{cfg.pipeline_name}_{uuid.uuid4().hex[:8]}"
     run_dir = os.path.join(out_path, run_id)
     ensure_dir(run_dir)
 
-    runner = PipelineRunner(build_stages(cfg, profile_pack=profile_pack))
+    runner = PipelineRunner(
+        build_stages(
+            cfg,
+            profile_pack=profile_pack,
+            triage_profile_summary=build_triage_instruction_profile_summary(profile_layer),
+            targeting_title_patterns=list(profile_layer.targeting_profile.target_title_patterns),
+        )
+    )
     meta = RunMeta(run_id=run_id, pipeline_name=cfg.pipeline_name, created_at=now_iso())
 
     count = 0
@@ -251,7 +343,16 @@ def main() -> None:
                 triage = read_stage_json(entry.path, "triage") or {}
                 profile = read_stage_json(entry.path, "profile_match") or {}
                 pivot = read_stage_json(entry.path, "pivot") or {}
+                triage_decision_v3 = read_stage_json(entry.path, "triage_decision_v3") or {}
+                triage_ambiguity_v3 = read_stage_json(entry.path, "triage_ambiguity_v3") or {}
+                advantage_assessment_v3 = read_stage_json(entry.path, "advantage_assessment_v3") or {}
+                narrative_strategy_v3 = read_stage_json(entry.path, "narrative_strategy_v3") or {}
                 mod = read_stage_json(entry.path, "moderator") or {}
+                effective_triage_v3 = (
+                    triage_ambiguity_v3.get("final_decision")
+                    if isinstance(triage_ambiguity_v3.get("final_decision"), dict)
+                    else triage_decision_v3
+                )
                 rec = {
                     "job_id": jid,
                     "title": inp.get("title", ""),
@@ -259,6 +360,15 @@ def main() -> None:
                     "triage_decision": triage.get("triage_decision", triage.get("decision", "")),
                     "triage_confidence": triage.get("confidence"),
                     "triage_signals": triage.get("signals", []),
+                    "triage_v3_label": effective_triage_v3.get("label"),
+                    "triage_v3_weighted_score": effective_triage_v3.get("weighted_score"),
+                    "triage_v3_confidence": effective_triage_v3.get("confidence"),
+                    "triage_v3_needs_ambiguity": effective_triage_v3.get("needs_ambiguity_pass"),
+                    "triage_ambiguity_label": triage_ambiguity_v3.get("resolved_label"),
+                    "advantage_type": advantage_assessment_v3.get("advantage_type"),
+                    "advantage_review_priority": advantage_assessment_v3.get("review_priority"),
+                    "narrative_positioning_angle": narrative_strategy_v3.get("positioning_angle"),
+                    "narrative_brand_frame": narrative_strategy_v3.get("brand_frame"),
                     "final_decision": mod.get("final_decision", ""),
                     "fit_score": profile.get("fit_score"),
                     "pivot_score": pivot.get("pivot_score"),

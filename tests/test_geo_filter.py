@@ -66,6 +66,26 @@ def _run_triage(job: dict) -> JobContext:
         return result
 
 
+def _run_triage_with_llm(job: dict) -> JobContext:
+    with patch("jobpipe.stages.triage.build_triage_agent"), \
+         patch("jobpipe.stages.triage.run_agent") as mock_run:
+        from jobpipe.core.schema import TriageOut
+        mock_out = MagicMock()
+        mock_out.final_output_as.return_value = TriageOut(
+            triage_decision="REVIEW", confidence=0.7, explanation="LLM reached", signals=[]
+        )
+        mock_run.return_value = mock_out
+
+        should_run, run = triage_stage_factory(
+            model="gpt-4.1-nano",
+            max_ad_text_chars=2200,
+            safety_rules=SAFETY_RULES,
+            profile_pack="",
+            semantic_threshold=0.0,
+        )
+        return run(_make_ctx(job), job_dir="/tmp/test_job")
+
+
 # ---------------------------------------------------------------------------
 # _norm_postal
 # ---------------------------------------------------------------------------
@@ -263,3 +283,64 @@ class TestCountyFallback:
             ctx = run(_make_ctx({"title": "Produkteier"}), "/tmp")
             assert ctx.triage.triage_decision == "REVIEW", \
                 "No location info should not hard-block — pass to LLM"
+
+
+class TestSuggestedLeadPolicy:
+    def test_suggested_lead_bypasses_geo_block(self):
+        ctx = _run_triage_with_llm({
+            "title": "Produktleder",
+            "work_postalCode": "8910",
+            "intake_pretriage_policy": "suggested_lead",
+            "suggested_by_platform": True,
+        })
+        assert ctx.triage is not None
+        assert ctx.triage.triage_decision == "REVIEW"
+        assert "platform_suggested" in (ctx.triage.signals or [])
+
+    def test_suggested_lead_still_honors_hard_no_title(self):
+        safety_rules = dict(SAFETY_RULES)
+        safety_rules["hard_no_title_regex"] = r"(?i)\bsykepleier\b"
+        should_run, run = triage_stage_factory(
+            model="gpt-4.1-nano",
+            max_ad_text_chars=2200,
+            safety_rules=safety_rules,
+            profile_pack="",
+            semantic_threshold=0.0,
+        )
+        ctx = run(_make_ctx({
+            "title": "Sykepleier",
+            "work_postalCode": "8910",
+            "intake_pretriage_policy": "suggested_lead",
+            "suggested_by_platform": True,
+        }), "/tmp")
+        assert ctx.triage is not None
+        assert ctx.triage.triage_decision == "SKIP"
+        assert "hard_no_title" in (ctx.triage.signals or [])
+
+
+class TestTargetingProfileTitlePatterns:
+    def test_targeting_title_patterns_override_hard_no_title(self):
+        safety_rules = dict(SAFETY_RULES)
+        safety_rules["hard_no_title_regex"] = r"(?i)\bleder\b"
+        with patch("jobpipe.stages.triage.build_triage_agent"), \
+             patch("jobpipe.stages.triage.run_agent") as mock_run:
+            from jobpipe.core.schema import TriageOut
+            mock_out = MagicMock()
+            mock_out.final_output_as.return_value = TriageOut(
+                triage_decision="REVIEW", confidence=0.8, explanation="targeted role", signals=[]
+            )
+            mock_run.return_value = mock_out
+
+            should_run, run = triage_stage_factory(
+                model="gpt-4.1-nano",
+                max_ad_text_chars=2200,
+                safety_rules=safety_rules,
+                profile_pack="",
+                triage_profile_summary="Primary targets: Produktleder",
+                targeting_title_patterns=["Produktleder"],
+                semantic_threshold=0.0,
+            )
+            ctx = run(_make_ctx({"title": "Senior Produktleder", "work_postalCode": "0150"}), "/tmp")
+
+            assert ctx.triage is not None
+            assert ctx.triage.triage_decision == "REVIEW"

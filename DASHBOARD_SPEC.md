@@ -11,6 +11,28 @@ The dashboard must answer two questions quickly:
 
 Everything else is secondary.
 
+## Role In The Companion Stack
+
+The JobPipe dashboard is the local control-plane and debug surface for the pipeline.
+
+It is not the intended long-term owner of:
+- active application workflow
+- notes/tasks follow-up
+- final operator shell responsibilities
+
+Those belong in `JobSync` once a lead has been promoted into an application case.
+
+It is also not the canonical resume editor:
+- `Reactive Resume` should remain the resume-structure and CV-variant surface
+- JobPipe should consume resume/profile signal and expose authoring links, manifests, and saveback targets
+
+That means this dashboard should optimize for:
+- source and connector truth
+- triage/debuggability
+- control-plane settings
+- application-packet visibility
+- local apply-session and saveback contract visibility
+
 ## Current Runtime Modes
 
 ### 1. Static export
@@ -89,7 +111,7 @@ Rules:
 ## Current Gaps
 
 1. some actionable rows still have no fixed deadline because the source data itself does not expose one.
-2. queue dedupe/grouping is currently a UI concern; the raw payload and pipeline metrics still keep source-level duplicates for traceability.
+2. queue dedupe/grouping now happens before the main pipe at the connector merge boundary; the remaining dashboard work is to expose canonical-vs-alternate provenance clearly in list/detail and debug surfaces instead of reconstructing that logic in the UI.
 3. the local CV builder now persists to `<data-root>/reports/profile_builder_state.json`; that solves the repo-boundary issue, but the draft still intentionally does not write back into tracked source files.
 4. the application workspace now has a first-class dashboard entry page, but deep drafting still opens the dedicated `/apply/<job_id>` surface.
 
@@ -105,6 +127,8 @@ The dashboard should receive one canonical payload from `build_payload()`, and b
   "thresholds": {},
   "config_snapshot": {},
   "profile": {},
+  "settings": {},
+  "automations": {},
   "jobs": [],
   "events": []
 }
@@ -119,6 +143,8 @@ Every job record should carry these groups of fields.
 - `job_id`
 - `run_id`
 - `job_source`
+- `lead_intake_channel`
+- `lead_connector_source`
 - `job_status`
 - `suggested_by_platform`
 - `title`
@@ -152,6 +178,15 @@ Every job record should carry these groups of fields.
 - `cat_name`
 - `cat_score`
 - `sector`
+
+### Intake provenance
+
+- connector family should be distinguishable in the payload and debug surfaces
+- `NAV` and mailbox/platform-suggested leads should remain traceable even after dedupe
+- when duplicate jobs collide, the payload should be able to show:
+  - pragmatic canonical source (`NAV` when available)
+  - alternate sources preserved for traceability
+  - whether the row followed broad-feed or pre-vetted suggested-lead policy before triage
 
 ### Decision pipeline
 
@@ -243,6 +278,63 @@ It should expose:
 - current education / modules
 
 This is the data source for the live Profile & CV builder/preview page.
+
+## Settings Payload Requirements
+
+The dashboard also needs a first-class settings/control-plane object backed by local persisted state under the active data root.
+
+It should expose:
+- `schema_version`
+- `state_path`
+- `updated_at`
+- targeting state:
+  - primary roles text
+  - secondary roles text
+  - stepping-stone roles text
+  - geography text
+  - domain-focus text
+- tracked profile defaults for comparison
+- integration state for:
+  - JobSync
+  - Reactive Resume
+  - Gmail
+- Gmail-specific flow disclosure:
+  - lead target path
+  - status target path
+  - lead flow label
+  - status flow label
+- secret presence indicators only, never raw secret values
+- local-first paths for:
+  - data root
+  - env file
+  - profile pack
+  - resume JSON
+  - Gmail auth files
+
+This is the data source for the Settings / Integrations control-plane page.
+
+Rule:
+- Gmail lead intake must point at lead-connector staging that merges into the same pre-triage queue as the rest of the pipeline.
+- Gmail status detection must point at application tracking state, not at lead intake.
+
+## Automation Payload Requirements
+
+The dashboard now also exposes a versioned `automations` object for the local app shell.
+
+It must carry:
+- schema version
+- automation state path
+- connector staging counts
+- merged queue count
+- action definitions for operator-facing runs
+- recent run history with status, timestamps, summary, and log excerpt
+
+This is the data source for the `Automations` page and the local app-shell control plane.
+
+Rule:
+- connector/control-plane actions must be runnable one by one
+- the automation surface must not redefine intake policy that belongs to Topic 15
+- JobSync automation UI may inform the pattern, but JobPipe keeps its own runtime actions and state
 
 ## Event Payload Requirements
 
@@ -392,18 +484,96 @@ Must show:
 - current study modules
 - target roles and signals from `<data-root>/profile_pack.md`
 
-### 4. Application Workspace
+### 4. Settings / Integrations
+
+Purpose:
+- keep operator-facing control-plane state inside the product
+- expose the current local-first connector truth without manual file hunting
+
+Must show:
+- targeting and domain/geo configuration
+- JobSync connection state
+- Reactive Resume connection target
+- Gmail connector state
+- secret presence indicators only
+- local-first path disclosure for active settings/profile/env/auth files
+
+### 5. Automations
+
+Purpose:
+- operate connector and control-plane actions from the local shell
+- expose run history and current staging truth without dropping to ad hoc scripts
+
+Must show:
+- current connector counts
+- merged queue count
+- recent run status
+- local automation state path
+- one-by-one actions for:
+  - NAV connector refresh
+  - mailbox lead intake dry run
+  - merged queue rebuild
+  - dashboard export rebuild
+
+### 6. Application Workspace
 
 Purpose:
 - write, refine, and export job-specific application material
 
 Current implementation:
 - `reports/apply_template.html`
+- local server endpoint: `/api/apply_session/<job_id>`
+- local saveback registration endpoint: `POST /api/authoring/<job_id>`
+- per-job local manifest: `apply_session.json`
+- per-job local authoring registry: `authoring_state.json`
+
+Current verified behavior:
+- the workspace can show both the job ad link and the application portal link when source data provides them
+- one user click can open the available launch URLs from the local workspace
+- the workspace exposes deterministic saveback targets for:
+  - tailored CV PDF
+  - tailored CV JSON/source export
+  - cover-letter TXT draft
+  - cover-letter DOCX
+  - screening-answer DOCX
+- the apply-session manifest carries JobPipe analysis/drafting context for external authoring tools without forcing those tools into the dashboard runtime
+- the apply-session manifest now also carries:
+  - `authoringState` as the local registry for external CV/document references
+  - `saveback.registrationEndpoint` so the workspace can persist external authoring refs back into the case
+  - `authoring.resume.launchUrl` when Reactive Resume is enabled in settings
+  - `authoring.resume.handoffBrief` as a copyable authoring brief for the external CV tool
+  - `authoring.coverLetter.launchUrl` and `authoring.screeningAnswers.launchUrl` when the document workspace is enabled in settings
+  - `authoring.coverLetter.handoffBrief` and `authoring.screeningAnswers.handoffBrief` as copyable document-authoring briefs
+- imported JobSync cases can now launch that same live apply-session contract from the sibling operator workspace when `externalData` includes the JobPipe workspace/apply-session URLs
+- the local workspace can now register:
+  - `ResumeVariantRef`-style resume variant metadata from Reactive Resume
+  - the actual exported resume artifact used for the case
+  - external cover-letter document refs
+  - external screening-answer document refs
+- the local workspace can now also register the actual exported cover-letter and screening-answer artifacts used for the case, so saveback preserves final document outputs instead of only the source-doc links
+- the local workspace can now:
+  - open Reactive Resume directly from the apply session when configured
+  - copy a resume-authoring brief derived from the same packet context
+  - open the configured document workspace directly from the apply session
+  - copy cover-letter and screening-answer briefs derived from the same packet context
+- successful local saveback registration now also triggers best-effort authoring-ref sync into JobSync through the narrow `/api/integrations/jobpipe/authoring` connector
+- JobSync mirrors those refs inside `externalData` for the matching imported case, so the operator workspace can show resume / cover-letter / screening-answer linkage without changing JobSync workflow tables
+
+Authoring boundary:
+- Reactive Resume should be treated as the structured CV system and source of resume-variant references
+- document-style cover-letter tooling should remain external to the dashboard runtime
+- the dashboard should hand those tools a stable apply-session manifest, deterministic saveback targets, and a local saveback-registration seam instead of absorbing their internal editing models
+- when available, saveback metadata should preserve `ResumeVariantRef` and `ArtifactRef` style linkage rather than anonymous file-only handoffs
+- the resume saveback contract should preserve both the selected variant and the actual exported artifact used for the case
+- the document saveback contract should preserve both the source document refs and the actual exported cover-letter / screening-answer artifacts used for the case
 
 Future requirement:
-- keep the dedicated drafting route, but persist its local state more intentionally and tie it more closely to queue grouping/dedupe.
+- keep the dedicated drafting route, but tie it more tightly to JobSync apply launches and external authoring once those integrations exist
+- keep final submission manual
+- avoid hard-coding Reactive Resume or document-workspace internals into the dashboard server
+- avoid treating JobSync writeback as file hosting; the current cross-repo seam mirrors refs and provenance only
 
-### 5. Debug / Data
+### 7. Debug / Data
 
 Purpose:
 - inspect completeness and failures quickly

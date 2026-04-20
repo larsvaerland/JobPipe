@@ -1105,8 +1105,8 @@ def scan_suggestions(
     if new_queued and not dry_run:
         print(
             f"  Written to: {suggested_path}\n"
-            f"  Next step:  python -m jobpipe.cli.pull_suggested\n"
-            f"              (runs 09:00-19:00 Oslo time, max 20 jobs/run)"
+            f"  Next step:  python -m jobpipe.cli.sync_mailbox_leads\n"
+            f"              (routes fetched mailbox leads into jobs_delta before triage)"
         )
     elif new_queued and dry_run:
         print(f"  Would write to: {suggested_path} (dry run)")

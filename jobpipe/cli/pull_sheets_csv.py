@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
+from jobpipe.core.intake_pipe import CONNECTOR_NAV, POLICY_FULL_FEED, prepare_connector_record
 from jobpipe.core.io import now_iso, stable_job_id
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
@@ -114,7 +115,7 @@ def main():
         default="",
         help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
     )
-    ap.add_argument("--out", default="", help=f"Output JSONL path (default: {_DEFAULT_PATHS.jobs_delta_path})")
+    ap.add_argument("--out", default="", help=f"Output JSONL path (default: {_DEFAULT_PATHS.nav_connector_path})")
     ap.add_argument("--state", default="", help=f"State path for incremental updates (default: {_DEFAULT_PATHS.jobs_state_path})")
     ap.add_argument("--only-changed", action="store_true", help="Write only changed/new rows")
     ap.add_argument("--no-dedupe", action="store_true", help="Disable dedupe by uuid/job_id")
@@ -148,7 +149,7 @@ def main():
     args = ap.parse_args()
     paths = get_jobpipe_paths(args.data_root or None)
     bootstrap_private_data(paths, include_artifacts=False)
-    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    out_path = Path(args.out) if args.out else paths.nav_connector_path
     state_path = Path(args.state) if args.state else paths.jobs_state_path
     expired_out_path = None if args.expired_out == "" else (Path(args.expired_out) if args.expired_out else paths.jobs_expired_path)
 
@@ -324,7 +325,14 @@ def main():
         if args.only_changed and old_h == h:
             continue
 
-        out_lines.append(json.dumps(job, ensure_ascii=False))
+        connector_job = prepare_connector_record(
+            job,
+            connector_name=CONNECTOR_NAV,
+            connector_source="nav",
+            intake_channel="sheet",
+            pretriage_policy=POLICY_FULL_FEED,
+        )
+        out_lines.append(json.dumps(connector_job, ensure_ascii=False))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:

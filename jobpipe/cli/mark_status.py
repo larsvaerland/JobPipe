@@ -75,6 +75,17 @@ STATUS_ICON = {
     "dismissed":        "⚫",
 }
 
+SHARED_STATUS_MAP = {
+    "shortlisted": "draft",
+    "called": "draft",
+    "applied": "applied",
+    "interview": "interview",
+    "second_interview": "interview",
+    "accepted": "offer",
+    "rejected": "rejected",
+    "dismissed": "dismissed",
+}
+
 _DEFAULT_PATHS = get_jobpipe_paths()
 DEFAULT_STATE_PATH = _DEFAULT_PATHS.application_state_path
 
@@ -133,6 +144,37 @@ def _effective_status(entry: Dict[str, Any]) -> str:
         if s in stages:
             return s
     return stages[-1]
+
+
+def normalize_shared_status(entry: Dict[str, Any]) -> str:
+    """Map internal JobPipe state to the shared workflow status vocabulary."""
+    direct_outcome = str(entry.get("outcome") or "").strip()
+    if direct_outcome:
+        return SHARED_STATUS_MAP.get(direct_outcome, "")
+
+    direct_stages = entry.get("stages", [])
+    if isinstance(direct_stages, list):
+        for stage in reversed(VALID_STAGES):
+            if stage in direct_stages:
+                return SHARED_STATUS_MAP.get(stage, "")
+
+    migrated = _migrate_entry(entry)
+
+    outcome = str(migrated.get("outcome") or "").strip()
+    if outcome:
+        return SHARED_STATUS_MAP.get(outcome, "")
+
+    stages = migrated.get("stages", [])
+    if isinstance(stages, list):
+        for stage in reversed(VALID_STAGES):
+            if stage in stages:
+                return SHARED_STATUS_MAP.get(stage, "")
+
+    raw_status = str(migrated.get("status") or "").strip()
+    if raw_status:
+        return SHARED_STATUS_MAP.get(raw_status, "")
+
+    return ""
 
 
 # ---------------------------------------------------------------------------

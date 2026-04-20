@@ -30,14 +30,69 @@ Only keep specialized docs when they support a specific subsystem with ongoing o
 
 ## What this repo is
 
-An AI-powered job hunting pipeline that pulls jobs from a Google Sheet (sourced from NAV's pam-stilling-feed API), runs a staged agentic triage + scoring pipeline (OpenAI Agents SDK), writes per-job JSON artifacts, and produces a self-contained HTML dashboard.
+An AI-powered job hunting pipeline that pulls jobs from a Google Sheet (sourced from NAV's pam-stilling-feed API), runs a staged agentic triage + scoring pipeline (OpenAI Agents SDK), writes per-job JSON artifacts, and produces a shared dashboard/control-plane surface for both static export and local server mode.
 
 **Design principles (from PRODUCT_VISION.md):**
-1. **Cheap before smart** — free filters (geo, regex) before any LLM call. Always.
+1. **Cheap before smart** — free filters before any LLM call, but the deterministic gate stack can differ by connector when the source has already pre-vetted relevance.
 2. **Never miss a strong match** — safety overrides catch false negatives even when the LLM says SKIP.
 3. **Every decision is debuggable** — every stage writes a JSON artifact. No hidden logic.
 4. **Incremental, not monolithic** — process deltas, not the full feed.
 5. **Human in the loop** — the system recommends, Lars decides. No auto-apply.
+
+Product thesis:
+- the actual value is the job-ad data and what the system can infer from it
+- the system should remove cognitive noise before the user spends effort
+- the user should spend time on review, tailoring, applying, and follow-up, not on feed scanning
+
+Planning split:
+- `PRODUCT_VISION.md` = north star and long-term roadmap
+- `docs/architecture-plan.md` = ownership and boundaries
+- `docs/mvp-task-plan.md` = ordered short-term execution
+- `AUDIT.md` = defects / quality / debt
+- `AGENT_STATUS.md` = current state and handoffs
+
+---
+
+## Companion system target
+
+This repo is not the whole product surface.
+
+The intended stack is:
+
+1. `JobPipe`
+   - intake engine
+   - triage and scoring
+   - application-packet and apply-session generation
+   - pipeline memory, artifacts, and calibration
+2. `JobSync`
+   - long-term operator shell
+   - active application queue
+   - notes, tasks, follow-up, and manual workflow
+3. `Reactive Resume`
+   - structured resume system
+   - CV variants and exports
+
+Boundary rule:
+- reuse `JobSync` patterns and underpinnings where they improve shell, routing, CRUD, and automation UX
+- do not move JobPipe connector, scoring, or stage-storage internals into JobSync
+- do not turn JobPipe's current local dashboard shell into the long-term day-to-day operator workspace
+- treat the current JobPipe shell as a control-plane and debug surface that can remain local-first even if the main operator shell moves elsewhere
+
+Common-ground objects should be explicit and versioned:
+- `ProfileSnapshot`
+- `ResumeVariantRef`
+- `CanonicalJob`
+- `ApplicationCase`
+- `ApplicationPacket`
+- `ApplySession`
+- `ArtifactRef`
+- `StatusEvent`
+- `OutcomeFeedback`
+
+Source-of-truth rule:
+- JobPipe owns pipeline/runtime truth
+- JobSync owns active application-workflow truth
+- Reactive Resume owns resume-structure truth
 
 ---
 
@@ -47,18 +102,29 @@ An AI-powered job hunting pipeline that pulls jobs from a Google Sheet (sourced 
 NAV API (pam-stilling-feed)
     ↓ Apps Script (trigger-based, ~hourly, 50 jobs/run)
 Google Sheet (JobFeed tab, ~35,850 rows × 59 cols)
-    ↓ pull_sheets_csv.py (pulls delta, writes <data-root>/jobs_delta.jsonl)
+    ↓ pull_sheets_csv.py
+NAV connector output
+
+Gmail recommendation emails
+    ↓ scan_gmail --scan-suggestions
+suggested_jobs.jsonl
+    ↓ sync_mailbox_leads / pull_suggested
+suggested-lead connector output
+
+NAV connector output + suggested-lead connector output
+    ↓ shared intake merge + dedupe
 <data-root>/jobs_delta.jsonl
     ↓ run_feed.py / drain_queue.py
-    ├─ [FREE]  Geo postal filter    → SKIP if outside 0xxx/1xxx/3xxx/4xxx
-    ├─ [FREE]  Hard-no title regex  → SKIP on irrelevant titles
-    ├─ [FREE]  Semantic pre-filter  → cosine similarity vs profile (multilingual-MiniLM, threshold 0.45)
-    ├─ [NANO]  Triage               → SKIP / REVIEW / APPLY signal + noise_level score
-    ├─ [MINI]  Parse                → structured job requirements
-    ├─ [MINI]  Profile match        → fit_score 0-100 (4 dimensions: role/domain/seniority/skills)
-    ├─ [MINI]  Pivot                → pivot_score 0-100
-    ├─ [FREE]  Moderate             → final_decision (deterministic thresholds)
-    └─ [DEEP]  Application pack     → deepagents + FilesystemBackend, only for APPLY / APPLY_STRONGLY
+    ├─ [NAV]        Geo postal filter    → SKIP if outside 0xxx/1xxx/3xxx/4xxx
+    ├─ [NAV]        Hard-no title regex  → SKIP on irrelevant titles
+    ├─ [NAV]        Semantic pre-filter  → cosine similarity vs profile (multilingual-MiniLM)
+    ├─ [SUGGESTED]  Hard-no title regex  → still applies to pre-vetted leads
+    ├─ [NANO]       Triage               → SKIP / REVIEW / APPLY signal + noise_level score
+    ├─ [MINI]       Parse                → structured job requirements
+    ├─ [MINI]       Profile match        → fit_score 0-100 (4 dimensions: role/domain/seniority/skills)
+    ├─ [MINI]       Pivot                → pivot_score 0-100
+    ├─ [FREE]       Moderate             → final_decision (deterministic thresholds)
+    └─ [DEEP]       Application pack     → deepagents + FilesystemBackend, only for APPLY / APPLY_STRONGLY
     # Reverse triage disabled — redundant given current triage accuracy. Re-enable in YAML if needed.
     ↓
 <data-root>/out_runs/<run_id>/<job_id>/         per-job JSON artifacts
@@ -75,7 +141,7 @@ Google Sheet (JobFeed tab, ~35,850 rows × 59 cols)
 | Workstream | Owns |
 |---|---|
 | Pipeline chat | `jobpipe/stages/`, `jobpipe/core/`, `configs/`, `<data-root>/profile_pack.md` |
-| Dashboard chat | `reports/dashboard_template.html`, `<data-root>/exports/dashboard.html`, `jobpipe/cli/export_dashboard.py` |
+| Dashboard chat | `reports/dashboard_template.html`, `<data-root>/exports/dashboard.html`, `jobpipe/cli/export_dashboard.py`, `jobpipe/core/automation_state.py`, `jobpipe/cli/dashboard_server.py` |
 | API import chat | Apps Script code, `jobpipe/cli/pull_sheets_csv.py` |
 | Shared (all) | `jobpipe/cli/sync_ledger.py`, `AGENT_STATUS.md`, `AUDIT.md`, `PRODUCT_VISION.md`, `DASHBOARD_SPEC.md` |
 
@@ -133,6 +199,12 @@ Final decisions: `SKIP`, `REVIEW_LOW`, `REVIEW_HIGH`, `APPLY`, `APPLY_STRONGLY`
 ### 1. No LLM calls before hard filters
 Geo and title filtering happen in `triage.py` **before** any LLM call. This is the primary cost control. Do not move these checks or add LLM calls before them.
 
+Connector exception:
+- mailbox/platform-suggested leads are already weakly pre-vetted by the source platform
+- they may bypass `geo` and semantic pre-filter elimination
+- they must still honor `hard_no_title_regex`
+- this exception must be implemented explicitly by connector policy, not by silently weakening the broad `NAV` feed rules
+
 ### 2. Geo SKIPs must not enter reverse triage
 In `reverse_triage.should_run()`, return `False` if `triage_signals` contains `geo_postal_skip` or `geo_skip`. Geo blocks are hard and personal — not subject to reconsideration.
 
@@ -142,16 +214,23 @@ Regex: `^([0134])(00[1-9]|0[1-9]\d|[1-9](0[1-9]|[1-9]\d))$`
 Remote/hybrid override: `(?i)(remote|fjern|hjemmekontor|hybrid)` — checked against specific work-arrangement fields + first 300 chars of description ONLY. Not the full description (causes false passes from "hybrid culture" mentions).
 If no postal code AND no county/municipal fallback matches → SKIP.
 
-### 4. Moderate stage is deterministic — no LLM
+### 4. Connector merge happens before the main pipe
+`NAV` feed intake and mailbox suggested-lead intake are separate connectors. They must merge and dedupe before the rest of the pipeline sees the jobs.
+
+Canonical preference:
+- treat `NAV` as the pragmatic canonical source when duplicate jobs collide across connectors
+- keep alternate-source provenance for debugging and later UI use
+- only prefer the suggested-lead variant over `NAV` when it is the only record with materially missing fields filled in
+### 5. Moderate stage is deterministic — no LLM
 `moderate.py` applies only the YAML thresholds. No OpenAI calls here. Final decisions must be reproducible from the moderator input alone.
 
-### 5. Every stage writes a JSON artifact
+### 6. Every stage writes a JSON artifact
 Even for skipped stages, the decision must be traceable. If a stage errors, write an error payload rather than silently failing — or ensure the pipeline continues with that job marked as failed.
 
-### 6. Output schema is additive
+### 7. Output schema is additive
 When modifying a stage, preserve existing output fields. Add new fields freely. Do not rename or remove fields without also updating `sync_ledger.py`, `export_dashboard.py`, and `DASHBOARD_SPEC.md`.
 
-### 7. YAML has no duplicate keys
+### 8. YAML has no duplicate keys
 `configs/pipeline.v1.yaml` must not have duplicate top-level keys (Python's yaml loader silently drops them). Keep all regex patterns quoted. Keep the `stages:` list stable unless explicitly changing the pipeline.
 
 ---
@@ -224,6 +303,15 @@ Gmail credentials: `<data-root>/reports/gmail_credentials.json` (download from G
 Gmail token: `<data-root>/reports/gmail_token.json` (auto-created after --setup)
 Never overwrites manual entries. Only upgrades status (applied → interview → rejected).
 
+### Intake Gmail recommendation leads (separate from status updates)
+```powershell
+python -m jobpipe.cli.sync_mailbox_leads --dry-run
+python -m jobpipe.cli.sync_mailbox_leads
+```
+Rule:
+- mailbox recommendation leads must stage as lead-connector input, then merge into the shared pre-triage `jobs_delta.jsonl` queue before filters and triage
+- Gmail-derived status updates stay in `application_state.json` and do not create new leads
+
 ### Compile check (run before every commit)
 ```powershell
 .venv\Scripts\python.exe compile_check.py
@@ -274,7 +362,9 @@ Pipeline runs are currently manual. After each run:
 |---|---|
 | `configs/pipeline.v1.yaml` | Pipeline config — models, stages, thresholds, regex |
 | `<data-root>/profile_pack.md` | Candidate profile — truth source for triage and matching |
-| `<data-root>/jobs_delta.jsonl` | Input to pipeline — pulled from Google Sheet |
+| `<data-root>/reports/nav_connector.jsonl` | Staged broad-feed intake from the NAV Sheet/API connector |
+| `<data-root>/reports/leads_connector.jsonl` | Staged lead-style intake from mailbox suggestions, search, and manual capture connectors |
+| `<data-root>/jobs_delta.jsonl` | Shared merged pre-triage queue rebuilt from connector staging before pipeline processing |
 | `<data-root>/jobs_state.json` | Change tracking state for delta pull |
 | `<data-root>/reports/ledger.sqlite` | Deduplicated job ledger (tables: `ledger`, `events`) |
 | `<data-root>/reports/ledger_latest.csv` | CSV export of ledger for quick inspection |

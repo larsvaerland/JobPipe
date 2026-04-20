@@ -43,6 +43,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 from jobpipe.core.config import load_raw_config
+from jobpipe.core.lead_intake import append_leads
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
 # Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
@@ -64,7 +65,7 @@ except Exception:
     _OSLO_TZ = timezone(timedelta(hours=1))
 
 _DEFAULT_PATHS = get_jobpipe_paths()
-DEFAULT_OUT_PATH       = _DEFAULT_PATHS.jobs_delta_path
+DEFAULT_OUT_PATH       = _DEFAULT_PATHS.leads_connector_path
 DEFAULT_LEDGER_PATH    = _DEFAULT_PATHS.ledger_sqlite_path
 DEFAULT_CONFIG_PATH    = _DEFAULT_PATHS.default_config_path
 
@@ -234,7 +235,7 @@ def _normalize_ld(ld: dict, finnkode: str, url: str) -> dict:
         "work_postalCode": postal,
         "sourceurl": ld.get("url") or url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "json_ld",
     }
 
@@ -263,7 +264,7 @@ def _normalize_next_data(ad: dict, finnkode: str, url: str) -> dict:
         "work_postalCode": postal,
         "sourceurl": url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "next_data",
     }
 
@@ -287,7 +288,7 @@ def _normalize_html_fallback(soup: "BeautifulSoup", finnkode: str, url: str) -> 
         "description_html": f"<p>{description}</p>" if description else "",
         "sourceurl": url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "html_fallback",
     }
 
@@ -400,7 +401,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     paths = get_jobpipe_paths(args.data_root or None)
     bootstrap_private_data(paths, include_artifacts=False)
     config_path = Path(args.config) if args.config else paths.default_config_path
-    out_path = Path(args.out) if args.out else paths.jobs_delta_path
+    out_path = Path(args.out) if args.out else paths.leads_connector_path
     ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     if not BS4_AVAILABLE:
@@ -508,11 +509,14 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # --- Write ---
     if fetched:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "a", encoding="utf-8") as f:
-            for job in fetched:
-                f.write(json.dumps(job, ensure_ascii=False) + "\n")
-        print(f"\n[OK] Appended {len(fetched)} jobs to {out_path}")
+        appended = append_leads(
+            out_path,
+            fetched,
+            intake_channel="scrape_search",
+            connector_source="finn_search",
+            pretriage_policy="full_feed",
+        )
+        print(f"\n[OK] Appended {len(appended)} jobs to {out_path}")
 
     print(
         f"\nSummary:\n"

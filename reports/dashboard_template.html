@@ -78,50 +78,112 @@ body {
 }
 
 .container {
-  max-width: 1480px;
+  max-width: 1540px;
   margin: 0 auto;
   padding: 32px 24px 40px;
 }
 
+.app-shell {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.shell-sidebar {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 18px;
+  padding: 24px 20px;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 98%, transparent), color-mix(in srgb, var(--surface-alt) 62%, transparent));
+  box-shadow: var(--shadow);
+}
+
+.shell-brand {
+  display: grid;
+  gap: 8px;
+}
+
+.shell-brand h1 {
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.shell-brand h1 span { color: var(--green); }
+
+.shell-brand p,
+.shell-note {
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.shell-main {
+  display: grid;
+  gap: 20px;
+}
+
 .page-header {
-  margin-bottom: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
 }
 
-.brand-block h1 {
-  font-size: clamp(30px, 3.6vw, 42px);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-  margin-bottom: 0;
+.page-header h2 {
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
 }
 
-.brand-block h1 span { color: var(--green); }
+.page-header p {
+  font-size: 14px;
+  color: var(--text-soft);
+  max-width: 720px;
+}
 
 .tabs {
-  display: inline-flex;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  margin-bottom: 22px;
+  display: grid;
+  gap: 8px;
 }
 
 .tab {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   color: var(--text-soft);
   font-size: 14px;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
 
-.tab:hover { color: var(--text); }
-.tab.active {
-  background: var(--surface);
+.tab::after {
+  content: "→";
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.tab:hover {
   color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.tab.active {
+  background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
 }
 
@@ -1109,8 +1171,85 @@ code {
   color: var(--text);
 }
 
+.automation-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.automation-action-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.automation-action-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.automation-action-card h4 {
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.automation-run-list {
+  display: grid;
+  gap: 12px;
+}
+
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gray);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--surface-alt) 70%, transparent);
+}
+
+.status-dot.running::before { background: var(--amber); }
+.status-dot.succeeded::before { background: var(--green); }
+.status-dot.failed::before { background: var(--red); }
+
+.card-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pill-connector { background: var(--blue-bg); color: var(--blue); border-color: color-mix(in srgb, var(--blue) 30%, transparent); }
+.pill-pipeline { background: var(--amber-bg); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 30%, transparent); }
+.pill-control_plane { background: var(--green-bg); color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, transparent); }
+
 @media (max-width: 1180px) {
-  .workspace-layout { grid-template-columns: 1fr; }
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .shell-sidebar {
+    position: static;
+  }
+
+  .tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workspace-layout,
+  .automation-actions-grid { grid-template-columns: 1fr; }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-pane { position: static; }
   .jobs-filter-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1119,10 +1258,11 @@ code {
 
 @media (max-width: 820px) {
   .container { padding: 24px 16px 32px; }
+  .page-header { display: grid; }
   .grid-2,
   .grid-3,
   .detail-grid { grid-template-columns: 1fr; }
-  .tabs { display: flex; width: 100%; overflow-x: auto; }
+  .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filter-panel input { width: 100%; }
   .queue-controls { width: 100%; }
   .queue-controls input,
@@ -1138,21 +1278,35 @@ code {
 </head>
 <body>
 <div class="container">
-  <header class="page-header">
-    <div class="brand-block">
-      <h1>Job<span>Pipe</span></h1>
-    </div>
-  </header>
+  <div class="app-shell">
+    <aside class="shell-sidebar">
+      <div class="shell-brand">
+        <h1>Job<span>Pipe</span></h1>
+        <p>Local-first intake, triage, and sync control plane for the application workflow.</p>
+      </div>
+      <div class="tabs" id="tabBar">
+        <button class="tab active" data-tab="jobs">Jobs</button>
+        <button class="tab" data-tab="pipeline">Pipeline</button>
+        <button class="tab" data-tab="profile">Profile &amp; CV</button>
+        <button class="tab" data-tab="settings">Settings / Integrations</button>
+        <button class="tab" data-tab="automations">Automations</button>
+        <button class="tab" data-tab="workspace">Application Workspace</button>
+        <button class="tab" data-tab="debug">Debug / Data</button>
+      </div>
+      <div class="shell-note">
+        Topic 16 uses this shell as a transition away from the legacy report-style dashboard while keeping the current local runtime intact.
+      </div>
+    </aside>
 
-  <div class="tabs" id="tabBar">
-    <button class="tab active" data-tab="jobs">Jobs</button>
-    <button class="tab" data-tab="pipeline">Pipeline</button>
-    <button class="tab" data-tab="profile">Profile &amp; CV</button>
-    <button class="tab" data-tab="workspace">Application Workspace</button>
-    <button class="tab" data-tab="debug">Debug / Data</button>
-  </div>
+    <main class="shell-main">
+      <header class="page-header">
+        <div>
+          <h2>Control Plane</h2>
+          <p>Operate connectors one by one, inspect the merged queue, and keep intake and application work attached to the same local system state.</p>
+        </div>
+      </header>
 
-  <div class="tab-content active" id="tab-jobs">
+      <div class="tab-content active" id="tab-jobs">
     <div class="jobs-filter-row" id="jobsQuickFilters"></div>
     <div class="workspace-layout queue-layout">
       <section class="card card-emphasis">
@@ -1247,6 +1401,17 @@ code {
           <div class="donut-legend" id="donutLegend"></div>
         </div>
       </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Shadow triage review</h3>
+            <p>The latest safe shadow run, plus the highest-priority roles the baseline may be underrating.</p>
+          </div>
+        </div>
+        <div class="grid grid-2" id="experimentStats" style="margin-bottom:16px;"></div>
+        <div class="item-list" id="experimentReviewQueue"></div>
+      </section>
     </div>
 
     <section class="card">
@@ -1275,6 +1440,41 @@ code {
       <section class="card" id="profileEvidence"></section>
       <section class="card" id="profileSource"></section>
     </div>
+  </div>
+
+  <div class="tab-content" id="tab-settings">
+    <div class="grid grid-3" id="settingsStats" style="margin-bottom:20px;"></div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <section class="card" id="settingsControl"></section>
+      <section class="card" id="settingsIntegrations"></section>
+    </div>
+
+    <div class="grid grid-2">
+      <section class="card" id="settingsSecrets"></section>
+      <section class="card" id="settingsPaths"></section>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-automations">
+    <div class="grid grid-3" id="automationStats" style="margin-bottom:20px;"></div>
+
+    <div class="grid grid-2" style="margin-bottom:20px;">
+      <section class="card" id="automationOverview"></section>
+      <section class="card" id="automationPaths"></section>
+    </div>
+
+    <section class="card" style="margin-bottom:20px;">
+      <div class="section-head">
+        <div>
+          <h3>Run actions one by one</h3>
+          <p>Connector and control-plane actions should be runnable independently instead of hiding behind one massive pull.</p>
+        </div>
+      </div>
+      <div class="automation-actions-grid" id="automationActions"></div>
+    </section>
+
+    <section class="card" id="automationRuns"></section>
   </div>
 
   <div class="tab-content" id="tab-workspace">
@@ -1316,6 +1516,8 @@ code {
       <section class="card" id="debugContract"></section>
     </div>
   </div>
+    </main>
+  </div>
 </div>
 
 <script>
@@ -1335,6 +1537,7 @@ const PROFILE_DRAFT_KEY = "jobpipe_profile_draft_v1";
 let LOCAL_NOTES = loadStoredNotes();
 let PROFILE_DRAFT = loadProfileDraft();
 let PROFILE_SAVE_TIMER = null;
+let AUTOMATION_POLL_TIMER = null;
 
 const ACTIONABLE = ["APPLY_STRONGLY", "APPLY", "REVIEW_HIGH", "REVIEW_LOW"];
 const DECISION_ORDER = { APPLY_STRONGLY: 0, APPLY: 1, REVIEW_HIGH: 2, REVIEW_LOW: 3, SKIP: 4 };
@@ -1370,7 +1573,10 @@ function render() {
   renderPipelineHealth();
   renderFunnel();
   renderDistribution();
+  renderExperiments();
   renderProfile();
+  renderSettings();
+  renderAutomations();
   renderWorkspace();
   renderDebug();
   if (document.getElementById("tab-pipeline").classList.contains("active")) {
@@ -1427,6 +1633,31 @@ function apiUrl(path) {
   return SERVER_MODE ? (API_BASE + path) : path;
 }
 
+function checkedAttr(value) {
+  return value ? " checked" : "";
+}
+
+function statusTone(status) {
+  const key = String(status || "").trim().toLowerCase();
+  if (key === "ready") return "good";
+  if (key === "partial") return "watch";
+  if (key === "disabled") return "";
+  return "risk";
+}
+
+function settingsStatusPill(status) {
+  const key = String(status || "").trim().toLowerCase() || "unknown";
+  const tone = statusTone(key);
+  return '<span class="mini-chip ' + esc(tone) + '">' + esc(humanizeToken(key)) + '</span>';
+}
+
+function setSettingsStatus(message, isError) {
+  const el = document.getElementById("settingsSaveState");
+  if (!el) return;
+  el.textContent = message || "";
+  el.style.color = isError ? cssVar("--red") : cssVar("--text-soft");
+}
+
 function flashDetailToast(message, isError) {
   const toast = document.getElementById("copyToast");
   if (!toast) return;
@@ -1453,6 +1684,55 @@ async function refreshServerData(preferredJobId, silent) {
   } catch (e) {
     if (!silent) flashDetailToast("Refresh failed", true);
     return false;
+  }
+}
+
+function getAutomationData() {
+  return DATA && typeof DATA.automations === "object" ? DATA.automations : {
+    actions: [],
+    connector_counts: {},
+    recent_runs: [],
+    summary: {},
+    state_path: "",
+    updated_at: "",
+  };
+}
+
+function scheduleAutomationPoll() {
+  const automations = getAutomationData();
+  const running = Number((automations.summary || {}).running || 0);
+  if (AUTOMATION_POLL_TIMER) {
+    clearTimeout(AUTOMATION_POLL_TIMER);
+    AUTOMATION_POLL_TIMER = null;
+  }
+  if (!SERVER_MODE || running <= 0) return;
+  AUTOMATION_POLL_TIMER = setTimeout(() => refreshServerData("", true), 2500);
+}
+
+async function runAutomationAction(actionKey) {
+  if (!SERVER_MODE) {
+    flashDetailToast("Automation actions require server mode.", true);
+    return;
+  }
+  try {
+    const res = await fetch(apiUrl("/api/automation/run"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action_key: actionKey }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) {
+      flashDetailToast(payload.error || "Automation run failed.", true);
+      return;
+    }
+    if (payload.automations) {
+      DATA.automations = payload.automations;
+      renderAutomations();
+    }
+    flashDetailToast("Automation run started.", false);
+    scheduleAutomationPoll();
+  } catch (e) {
+    flashDetailToast("Automation run failed.", true);
   }
 }
 
@@ -1797,12 +2077,24 @@ function appStatusMeta(j) {
   };
 }
 
+function highestAppStage(stages) {
+  const seen = Array.isArray(stages) ? stages : [];
+  for (let i = APP_STAGES.length - 1; i >= 0; i -= 1) {
+    if (seen.includes(APP_STAGES[i].key)) return APP_STAGES[i].key;
+  }
+  return "";
+}
+
 function getBaseState(j) {
+  const stages = parseJson(j.app_stages);
+  const outcome = String(j.app_outcome || "");
+  const inferredStatus = highestAppStage(stages);
   return {
-    status: String(j.app_status || ""),
-    outcome: String(j.app_outcome || ""),
-    stages: parseJson(j.app_stages),
+    status: inferredStatus || String(j.app_status || ""),
+    outcome,
+    stages,
     source: String(j.app_source || ""),
+    shared_status: String(j.app_status || ""),
   };
 }
 
@@ -1963,11 +2255,27 @@ function getStoredNote(jobId, fallback) {
   return String(fallback || "");
 }
 
+function getDecisionBrief(j) {
+  return (j && j.detail && j.detail.decision_brief && typeof j.detail.decision_brief === "object")
+    ? j.detail.decision_brief
+    : {};
+}
+
+function getRecommendationNarrative(j) {
+  const brief = getDecisionBrief(j);
+  const rationale = String(brief.rationale || j.recommendation_reason || j.triage_explanation || "No recommendation narrative stored.");
+  const recruiterHook = String(brief.recruiter_hook || "");
+  return recruiterHook ? (rationale + " Hook: " + recruiterHook) : rationale;
+}
+
 function getEvidenceItems(j) {
   if (!j.detail) return [];
   const items = [];
-  (j.detail.overlaps || []).slice(0, 3).forEach(x => items.push(x));
+  const brief = getDecisionBrief(j);
+  (brief.overlaps || j.detail.overlaps || []).slice(0, 3).forEach(x => items.push(x));
+  (brief.differentiation_signals || []).slice(0, 2).forEach(x => items.push(x));
   (j.detail.pivot_why || []).slice(0, 2).forEach(x => items.push(x));
+  (brief.cv_focus || []).slice(0, 2).forEach(x => items.push(x));
   if (j.cv_focus) items.push(j.cv_focus);
   return items.filter(Boolean).slice(0, 4);
 }
@@ -1976,8 +2284,9 @@ function getRiskItems(j) {
   const items = [];
   if (j.no_score_reason_label) items.push("Not scored: " + j.no_score_reason_label);
   if (!j.detail) return items.filter(Boolean).slice(0, 5);
+  const brief = getDecisionBrief(j);
   (j.detail.hard_blockers || []).slice(0, 3).forEach(x => items.push(x));
-  (j.detail.gaps || []).slice(0, 3).forEach(x => items.push(x));
+  (brief.gaps || j.detail.gaps || []).slice(0, 3).forEach(x => items.push(x));
   if (j.detail.pivot_risk) items.push("Pivot risk: " + j.detail.pivot_risk);
   if (j.feedback_flags) items.push("Feedback flags: " + j.feedback_flags);
   return items.filter(Boolean).slice(0, 5);
@@ -2312,7 +2621,7 @@ function buildAgentPrompt(kind, j) {
     "Application URL: " + String(j.application_url || ""),
     "",
     "Why this role is in the queue:",
-    String(j.recommendation_reason || j.triage_explanation || "No recommendation narrative stored."),
+    getRecommendationNarrative(j),
     "",
     "Evidence:",
     ...(evidence.length ? evidence.map(x => "- " + x) : ["- No strong evidence was extracted yet."]),
@@ -2464,6 +2773,7 @@ function renderDetailPane(j) {
   const risks = getRiskItems(j);
   const monitoring = getMonitoringItems(j);
   const dataGaps = getJobDataGaps(j);
+  const brief = getDecisionBrief(j);
   const listingUrl = j.source_url || "";
   const applicationUrl = j.application_url || listingUrl;
   const noteText = getStoredNote(j.job_id, j.app_notes);
@@ -2507,7 +2817,13 @@ function renderDetailPane(j) {
     '<div class="detail-grid">' +
       '<div class="detail-card">' +
         '<h5>Why</h5>' +
-        '<p>' + esc(j.recommendation_reason || j.triage_explanation || "No recommendation narrative is stored for this role yet.") + '</p>' +
+        '<p>' + esc(getRecommendationNarrative(j)) + '</p>' +
+        (brief.applicant_pool_hypothesis
+          ? '<p class="detail-note">Applicant pool hypothesis: ' + esc(String(brief.applicant_pool_hypothesis || "")) + '</p>'
+          : '') +
+        (brief.advantageous_match_score != null
+          ? '<p class="detail-note">Advantageous-match score: ' + esc(String(brief.advantageous_match_score || "")) + '/100</p>'
+          : '') +
         (evidence.length ? '<ul>' + evidence.map(x => "<li>" + esc(x) + "</li>").join("") + '</ul>' : '<p class="detail-note">No strong supporting evidence was extracted yet.</p>') +
       '</div>' +
       '<div class="detail-card">' +
@@ -2749,6 +3065,249 @@ function renderProfile() {
     '</div>';
 }
 
+async function saveSettings() {
+  if (!SERVER_MODE) {
+    setSettingsStatus("Settings are read-only in static export mode.", true);
+    return;
+  }
+  const payload = {
+    targeting: {
+      primary_roles_text: document.getElementById("settingsPrimaryRoles")?.value || "",
+      secondary_roles_text: document.getElementById("settingsSecondaryRoles")?.value || "",
+      stepping_stone_roles_text: document.getElementById("settingsSteppingRoles")?.value || "",
+      geography_text: document.getElementById("settingsGeography")?.value || "",
+      domain_focus_text: document.getElementById("settingsDomains")?.value || "",
+    },
+    integrations: {
+      jobsync: {
+        enabled: !!document.getElementById("settingsJobsyncEnabled")?.checked,
+        base_url: document.getElementById("settingsJobsyncUrl")?.value || "",
+      },
+      reactive_resume: {
+        enabled: !!document.getElementById("settingsReactiveEnabled")?.checked,
+        base_url: document.getElementById("settingsReactiveUrl")?.value || "",
+      },
+      gmail: {
+        status_detection_enabled: !!document.getElementById("settingsGmailStatus")?.checked,
+        lead_intake_enabled: !!document.getElementById("settingsGmailLeads")?.checked,
+      },
+    },
+  };
+  try {
+    const res = await fetch(apiUrl("/api/settings"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: payload }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      setSettingsStatus("Settings save failed.", true);
+      return;
+    }
+    await refreshServerData("", true);
+    setSettingsStatus("Settings saved to local control-plane state.", false);
+  } catch (e) {
+    setSettingsStatus("Settings save failed.", true);
+  }
+}
+
+function renderSettings() {
+  const settings = DATA.settings || {};
+  const targeting = settings.targeting || {};
+  const defaults = targeting.profile_defaults || {};
+  const integrations = settings.integrations || {};
+  const jobsync = integrations.jobsync || {};
+  const reactive = integrations.reactive_resume || {};
+  const gmail = integrations.gmail || {};
+  const secrets = settings.secrets || {};
+  const paths = settings.paths || {};
+
+  const readyCount = [jobsync, reactive, gmail].filter(entry => String(entry.status || "") === "ready").length;
+  const enabledCount = [jobsync, reactive, gmail].filter(entry =>
+    !!entry.enabled || !!entry.status_detection_enabled || !!entry.lead_intake_enabled
+  ).length;
+  const secretCount = Object.values(secrets).filter(Boolean).length;
+
+  renderSummaryCards("settingsStats", [
+    {
+      label: "Control-plane state",
+      value: settings.updated_at ? String(settings.updated_at).slice(0, 10) : "Not saved",
+      sub: "Persisted local settings file for JobPipe runtime and connectors.",
+      color: "var(--blue)",
+    },
+    {
+      label: "Enabled integrations",
+      value: enabledCount,
+      sub: readyCount + " connectors currently look ready from local state.",
+      color: readyCount ? "var(--green)" : "var(--amber)",
+    },
+    {
+      label: "Secret presence",
+      value: secretCount,
+      sub: "Only presence is shown here. Secret values stay outside the payload.",
+      color: secretCount ? "var(--green)" : "var(--amber)",
+    },
+  ]);
+
+  document.getElementById("settingsControl").innerHTML =
+    '<div class="section-head"><div><h3>Settings control plane</h3><p>Keep targeting, profile direction, and local operator defaults in one place instead of scattered files and notes.</p></div></div>' +
+    '<div class="builder-form">' +
+      '<div class="builder-section">' +
+        '<h4>Targeting</h4>' +
+        '<div class="builder-field"><label>Primary roles</label><textarea id="settingsPrimaryRoles"' + (SERVER_MODE ? '' : ' readonly') + '>' + esc(targeting.primary_roles_text || "") + '</textarea></div>' +
+        '<div class="builder-field"><label>Secondary roles</label><textarea id="settingsSecondaryRoles"' + (SERVER_MODE ? '' : ' readonly') + '>' + esc(targeting.secondary_roles_text || "") + '</textarea></div>' +
+        '<div class="builder-field"><label>Stepping-stone roles</label><textarea id="settingsSteppingRoles"' + (SERVER_MODE ? '' : ' readonly') + '>' + esc(targeting.stepping_stone_roles_text || "") + '</textarea></div>' +
+        '<div class="builder-field"><label>Target geography</label><textarea id="settingsGeography"' + (SERVER_MODE ? '' : ' readonly') + '>' + esc(targeting.geography_text || "") + '</textarea></div>' +
+        '<div class="builder-field"><label>Domain focus</label><textarea id="settingsDomains"' + (SERVER_MODE ? '' : ' readonly') + '>' + esc(targeting.domain_focus_text || "") + '</textarea></div>' +
+      '</div>' +
+      '<div class="builder-section">' +
+        '<h4>Profile defaults</h4>' +
+        '<div class="kv-list">' +
+          '<div class="kv-row"><span class="kv-label">Primary</span><div>' + esc((defaults.primary_roles || []).join(", ") || "No tracked defaults") + '</div></div>' +
+          '<div class="kv-row"><span class="kv-label">Secondary</span><div>' + esc((defaults.secondary_roles || []).join(", ") || "No tracked defaults") + '</div></div>' +
+          '<div class="kv-row"><span class="kv-label">Stepping-stone</span><div>' + esc((defaults.stepping_stone_roles || []).join(", ") || "No tracked defaults") + '</div></div>' +
+          '<div class="kv-row"><span class="kv-label">Geography</span><div>' + esc((defaults.geography || []).join(", ") || "No tracked defaults") + '</div></div>' +
+          '<div class="kv-row"><span class="kv-label">Remote policy</span><div>' + esc(defaults.remote_policy || "No tracked remote policy") + '</div></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="note-actions">' +
+      (SERVER_MODE ? '<button class="action-btn primary" onclick="saveSettings()">Save settings</button>' : '<span class="action-btn primary disabled">Static export</span>') +
+      '<span class="detail-note" id="settingsSaveState">' + esc(SERVER_MODE ? "Changes save to local settings_state.json." : "This export shows the last embedded settings snapshot.") + '</span>' +
+    '</div>';
+
+  document.getElementById("settingsIntegrations").innerHTML =
+    '<div class="section-head"><div><h3>Integrations</h3><p>Connector state belongs here. Mailbox ingestion and authoring automation will build on this control plane in later topics.</p></div></div>' +
+    '<div class="builder-form">' +
+      '<div class="builder-section">' +
+        '<h4>JobSync</h4>' +
+        '<div class="builder-field"><label><input type="checkbox" id="settingsJobsyncEnabled"' + checkedAttr(!!jobsync.enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable JobSync connection</label></div>' +
+        '<div class="builder-field"><label>Base URL</label><input type="text" id="settingsJobsyncUrl" value="' + esc(jobsync.base_url || "") + '"' + (SERVER_MODE ? '' : ' readonly') + '></div>' +
+        '<div class="detail-note">Status: ' + settingsStatusPill(jobsync.status) + ' | sync token ' + esc(jobsync.token_present ? "present" : "missing") + '</div>' +
+      '</div>' +
+      '<div class="builder-section">' +
+        '<h4>Reactive Resume</h4>' +
+        '<div class="builder-field"><label><input type="checkbox" id="settingsReactiveEnabled"' + checkedAttr(!!reactive.enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable Reactive Resume launch target</label></div>' +
+        '<div class="builder-field"><label>Base URL</label><input type="text" id="settingsReactiveUrl" value="' + esc(reactive.base_url || "") + '"' + (SERVER_MODE ? '' : ' readonly') + '></div>' +
+        '<div class="detail-note">Status: ' + settingsStatusPill(reactive.status) + '</div>' +
+      '</div>' +
+      '<div class="builder-section">' +
+        '<h4>Gmail connector</h4>' +
+        '<div class="builder-field"><label><input type="checkbox" id="settingsGmailStatus"' + checkedAttr(!!gmail.status_detection_enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable Gmail status detection</label></div>' +
+        '<div class="builder-field"><label><input type="checkbox" id="settingsGmailLeads"' + checkedAttr(!!gmail.lead_intake_enabled) + (SERVER_MODE ? '' : ' disabled') + '> Enable mailbox lead intake</label></div>' +
+        '<div class="detail-note">Status: ' + settingsStatusPill(gmail.status) + ' | credentials ' + esc(gmail.credentials_present ? "present" : "missing") + ' | token ' + esc(gmail.token_present ? "present" : "missing") + '</div>' +
+        '<div class="detail-note">Lead intake target: ' + esc(gmail.lead_target_path || "Not set") + ' | flow: ' + esc(gmail.lead_flow || "unknown") + '</div>' +
+        '<div class="detail-note">Status update target: ' + esc(gmail.status_target_path || "Not set") + ' | flow: ' + esc(gmail.status_flow || "unknown") + '</div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById("settingsSecrets").innerHTML =
+    '<div class="section-head"><div><h3>Secrets and connector health</h3><p>This page only exposes whether the required secrets and local auth files are present. Values stay outside the dashboard payload.</p></div></div>' +
+    '<div class="kv-list">' +
+      '<div class="kv-row"><span class="kv-label">OpenAI API key</span><div>' + esc(secrets.openai_api_key_present ? "present" : "missing") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">JobSync sync token</span><div>' + esc(secrets.jobsync_sync_token_present ? "present" : "missing") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Gmail credentials file</span><div>' + esc(gmail.credentials_present ? "present" : "missing") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Gmail token file</span><div>' + esc(gmail.token_present ? "present" : "missing") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Current mode</span><div>' + esc(SERVER_MODE ? "local interactive mode" : "static export mode") + '</div></div>' +
+    '</div>';
+
+  document.getElementById("settingsPaths").innerHTML =
+    '<div class="section-head"><div><h3>Local-first paths</h3><p>The control plane should make the active local data boundary visible instead of forcing file-system guesswork.</p></div></div>' +
+    '<div class="kv-list">' +
+      '<div class="kv-row"><span class="kv-label">Settings state</span><div>' + esc(settings.state_path || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Data root</span><div>' + esc(paths.data_root || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Profile pack</span><div>' + esc(paths.profile_pack || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Resume JSON</span><div>' + esc(paths.resume_json || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Env file</span><div>' + esc(paths.env_file || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Gmail auth files</span><div>' + esc((paths.gmail_credentials || "missing") + " | " + (paths.gmail_token || "missing")) + '</div></div>' +
+    '</div>';
+}
+
+function renderAutomations() {
+  const automations = getAutomationData();
+  const summary = automations.summary || {};
+  const counts = automations.connector_counts || {};
+  const actions = Array.isArray(automations.actions) ? automations.actions : [];
+  const runs = Array.isArray(automations.recent_runs) ? automations.recent_runs : [];
+
+  renderSummaryCards("automationStats", [
+    {
+      label: "Running now",
+      value: Number(summary.running || 0),
+      sub: "Background connector or control-plane runs currently in flight.",
+      color: Number(summary.running || 0) ? "var(--amber)" : "var(--text-soft)",
+    },
+    {
+      label: "Connector staging",
+      value: String(Number(counts.nav_connector_rows || 0) + Number(counts.lead_connector_rows || 0)),
+      sub: "NAV and suggested-lead rows currently staged ahead of the merged queue.",
+      color: "var(--blue)",
+    },
+    {
+      label: "Recent failures",
+      value: Number(summary.failed || 0),
+      sub: (summary.last_run_at ? "Last run " + String(summary.last_run_at).slice(0, 19).replace("T", " ") : "No recorded run yet."),
+      color: Number(summary.failed || 0) ? "var(--red)" : "var(--green)",
+    },
+  ]);
+
+  document.getElementById("automationOverview").innerHTML =
+    '<div class="section-head"><div><h3>Automation control plane</h3><p>Use these actions as operator-grade triggers. They run one connector or rebuild step at a time and leave a local run trail behind.</p></div></div>' +
+    '<div class="kv-list">' +
+      '<div class="kv-row"><span class="kv-label">NAV connector staging</span><div>' + esc(String(counts.nav_connector_rows || 0) + " rows") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Lead connector staging</span><div>' + esc(String(counts.lead_connector_rows || 0) + " rows") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Merged pre-triage queue</span><div>' + esc(String(counts.merged_queue_rows || 0) + " rows") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Recent run count</span><div>' + esc(String(summary.recent_runs || 0)) + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">State updated</span><div>' + esc(automations.updated_at || "No run state written yet") + '</div></div>' +
+    '</div>';
+
+  document.getElementById("automationPaths").innerHTML =
+    '<div class="section-head"><div><h3>Local run state</h3><p>The shell should surface where automation-facing state actually lives instead of hiding it in ad hoc scripts.</p></div></div>' +
+    '<div class="kv-list">' +
+      '<div class="kv-row"><span class="kv-label">Automation state file</span><div>' + esc(automations.state_path || "Not set") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Server mode</span><div>' + esc(SERVER_MODE ? "interactive local server" : "static export") + '</div></div>' +
+      '<div class="kv-row"><span class="kv-label">Action model</span><div>' + esc("Connector actions are intentionally runnable one by one.") + '</div></div>' +
+    '</div>';
+
+  document.getElementById("automationActions").innerHTML = actions.length
+    ? actions.map(action =>
+        '<div class="automation-action-card">' +
+          '<div class="automation-action-head">' +
+            '<div>' +
+              '<h4>' + esc(action.label || action.key || "Untitled action") + '</h4>' +
+              '<div class="item-meta">' + esc(action.description || "") + '</div>' +
+            '</div>' +
+            '<span class="decision-pill pill-' + esc(String(action.category || "").replace(/[^a-z_]/g, "")) + '">' + esc(humanizeToken(action.category || "action")) + '</span>' +
+          '</div>' +
+          '<div class="item-detail">' + esc(action.impact || "") + '</div>' +
+          '<div class="detail-actions">' +
+            (SERVER_MODE
+              ? '<button class="action-btn primary" onclick="runAutomationAction(' + jsArg(action.key || "") + ')">Run now</button>'
+              : '<span class="action-btn primary disabled">Server mode required</span>') +
+          '</div>' +
+        '</div>'
+      ).join("")
+    : '<div class="empty-block">No automation actions are registered in the payload yet.</div>';
+
+  document.getElementById("automationRuns").innerHTML =
+    '<div class="card-toolbar">' +
+      '<div class="section-head" style="margin-bottom:0"><div><h3>Recent runs</h3><p>Short-lived operator history for connector and control-plane actions.</p></div></div>' +
+      (SERVER_MODE ? '<button class="action-btn" onclick="refreshServerData(\'\', false)">Refresh</button>' : '') +
+    '</div>' +
+    (runs.length
+      ? '<div class="automation-run-list">' + runs.map(run =>
+          '<div class="item-row ' + esc(run.status === "failed" ? "risk" : run.status === "running" ? "watch" : "good") + '">' +
+            '<div class="item-title"><span class="status-dot ' + esc(run.status || "") + '">' + esc(run.label || run.action_key || "Run") + '</span></div>' +
+            '<div class="item-meta">' + esc([humanizeToken(run.category || ""), run.started_at || "", run.finished_at ? "finished " + run.finished_at : ""].filter(Boolean).join(" | ")) + '</div>' +
+            '<div class="item-detail">' + esc(run.summary || "") + '</div>' +
+            (run.log_excerpt ? '<div class="mono-block">' + esc(run.log_excerpt) + '</div>' : '') +
+          '</div>'
+        ).join("") + '</div>'
+      : '<div class="empty-block">No automation runs have been recorded yet.</div>');
+
+  scheduleAutomationPoll();
+}
+
 function renderWorkspaceRows(rows, emptyText) {
   if (!rows.length) return '<div class="empty-block">' + esc(emptyText) + "</div>";
   return rows.map(j => {
@@ -2916,6 +3475,745 @@ function renderItemRows(items, emptyText) {
       (item.href ? '<a class="item-link" href="' + esc(item.href) + '" target="_blank">Open listing →</a>' : "") +
     "</div>"
   ).join("");
+}
+
+function getExperimentData() {
+  return DATA && typeof DATA.experiments === "object" ? DATA.experiments : {
+    latest_shadow_eval: {},
+    review_queue: [],
+    adjudication_summary: {},
+    calibration_summary: {},
+    advantage_calibration_summary: {},
+    variant_review_summary: {},
+    promotion_summary: {},
+    promotion_readiness_summary: {},
+    promotion_review_summary: {},
+    promotion_candidates: [],
+    variant_comparison: [],
+    leading_variant: {},
+    advantage_signal_recommendation: {},
+    outcome_shadow_summary: {},
+    outcome_shadow_handoff: {},
+  };
+}
+
+function getOutcomeData() {
+  return DATA && typeof DATA.outcomes === "object" ? DATA.outcomes : {
+    summary: {},
+    audit_summary: {},
+    calibration_summary: {},
+    recommendation: {},
+    shadow_followup: {},
+    recent_feedback: [],
+  };
+}
+
+async function submitExperimentReview(experimentId, jobId, verdict, runId, reviewReason, reviewPriority) {
+  if (!SERVER_MODE) {
+    flashDetailToast("Experiment review actions require server mode.", true);
+    return;
+  }
+  try {
+    const res = await fetch(apiUrl("/api/experiment_review"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        experiment_id: String(experimentId || ""),
+        job_id: String(jobId || ""),
+        verdict: String(verdict || ""),
+        run_id: String(runId || ""),
+        review_reason: String(reviewReason || ""),
+        review_priority: Number(reviewPriority || 0),
+      }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) {
+      flashDetailToast(payload.error || "Experiment review save failed.", true);
+      return;
+    }
+    await refreshServerData(selectedJobId || jobId || "", true);
+    flashDetailToast(verdict ? "Experiment review saved." : "Experiment review cleared.", false);
+  } catch (e) {
+    flashDetailToast("Experiment review save failed.", true);
+  }
+}
+
+async function submitExperimentVariantReview(experimentId, verdict, candidateName, kind) {
+  if (!SERVER_MODE) {
+    flashDetailToast("Variant review actions require server mode.", true);
+    return;
+  }
+  try {
+    const res = await fetch(apiUrl("/api/experiment_variant_review"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        experiment_id: String(experimentId || ""),
+        verdict: String(verdict || ""),
+        candidate_name: String(candidateName || ""),
+        kind: String(kind || ""),
+      }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) {
+      flashDetailToast(payload.error || "Variant review save failed.", true);
+      return;
+    }
+    await refreshServerData(selectedJobId || "", true);
+    flashDetailToast(verdict ? "Variant review saved." : "Variant review cleared.", false);
+  } catch (e) {
+    flashDetailToast("Variant review save failed.", true);
+  }
+}
+
+async function submitExperimentPromotionReview(experimentId, verdict, candidateName, kind) {
+  if (!SERVER_MODE) {
+    flashDetailToast("Promotion review actions require server mode.", true);
+    return;
+  }
+  try {
+    const res = await fetch(apiUrl("/api/experiment_promotion_review"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        experiment_id: String(experimentId || ""),
+        verdict: String(verdict || ""),
+        candidate_name: String(candidateName || ""),
+        kind: String(kind || ""),
+      }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) {
+      flashDetailToast(payload.error || "Promotion review save failed.", true);
+      return;
+    }
+    await refreshServerData(selectedJobId || "", true);
+    flashDetailToast(verdict ? "Promotion review saved." : "Promotion review cleared.", false);
+  } catch (e) {
+    flashDetailToast("Promotion review save failed.", true);
+  }
+}
+
+function openJobFromExperiment(jobId) {
+  if (!jobId) return;
+  selectedJobId = String(jobId || "");
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+  const jobsTab = document.querySelector('.tab[data-tab="jobs"]');
+  const jobsContent = document.getElementById("tab-jobs");
+  if (jobsTab) jobsTab.classList.add("active");
+  if (jobsContent) jobsContent.classList.add("active");
+  renderActionTable();
+}
+
+function renderExperimentQueueRows(items, emptyText) {
+  if (!items.length) return '<div class="empty-block">' + esc(emptyText) + "</div>";
+  return items.map(item => {
+    const adjudication = item.adjudication || {};
+    const title = item.title || item.job_id || "(unresolved role)";
+    const meta = [
+      item.employer || "",
+      item.job_source ? formatSourceLabel(item.job_source) : "",
+      item.baseline_label ? ("baseline " + humanizeToken(item.baseline_label)) : "",
+      item.candidate_label ? ("shadow " + humanizeToken(item.candidate_label)) : "",
+    ].filter(Boolean).join(" · ");
+    const detail = [
+      humanizeToken(item.review_reason || ""),
+      item.review_priority != null ? ("priority " + item.review_priority) : "",
+      item.advantageous_match_score ? ("advantage " + item.advantageous_match_score + "/100") : "",
+      item.final_decision ? ("current " + humanizeToken(item.final_decision)) : "",
+      item.app_status ? ("status " + item.app_status) : "",
+    ].filter(Boolean).join(" · ");
+    const advantageNote = [
+      item.recruiter_hook ? ("Recruiter hook: " + item.recruiter_hook) : "",
+      item.applicant_pool_hypothesis ? ("Pool view: " + item.applicant_pool_hypothesis) : "",
+    ].filter(Boolean).join(" · ");
+    const adjudicationText = adjudication.verdict
+      ? ('<div class="item-detail"><strong>Reviewed:</strong> ' + esc(humanizeToken(adjudication.verdict)) + (adjudication.updated_at ? ' · ' + esc(String(adjudication.updated_at).slice(0, 10)) : '') + '</div>')
+      : '<div class="item-detail">Pending human adjudication.</div>';
+    const actionButtons = SERVER_MODE
+      ? (
+        '<div class="detail-actions">' +
+          '<button class="action-btn" onclick=\'submitExperimentReview(' + jsArg(item.experiment_id || "") + ',' + jsArg(item.job_id || "") + ',' + jsArg("correct_miss") + ',' + jsArg(item.run_id || "") + ',' + jsArg(item.review_reason || "") + ',' + jsArg(item.review_priority || 0) + ')\'>Correct miss</button>' +
+          '<button class="action-btn" onclick=\'submitExperimentReview(' + jsArg(item.experiment_id || "") + ',' + jsArg(item.job_id || "") + ',' + jsArg("promote_rule_candidate") + ',' + jsArg(item.run_id || "") + ',' + jsArg(item.review_reason || "") + ',' + jsArg(item.review_priority || 0) + ')\'>Promote rule</button>' +
+          '<button class="action-btn" onclick=\'submitExperimentReview(' + jsArg(item.experiment_id || "") + ',' + jsArg(item.job_id || "") + ',' + jsArg("interesting_but_no") + ',' + jsArg(item.run_id || "") + ',' + jsArg(item.review_reason || "") + ',' + jsArg(item.review_priority || 0) + ')\'>Interesting no</button>' +
+          '<button class="action-btn" onclick=\'submitExperimentReview(' + jsArg(item.experiment_id || "") + ',' + jsArg(item.job_id || "") + ',' + jsArg("not_useful") + ',' + jsArg(item.run_id || "") + ',' + jsArg(item.review_reason || "") + ',' + jsArg(item.review_priority || 0) + ')\'>Not useful</button>' +
+          '<button class="action-btn" onclick=\'submitExperimentReview(' + jsArg(item.experiment_id || "") + ',' + jsArg(item.job_id || "") + ',' + jsArg("") + ',' + jsArg(item.run_id || "") + ',' + jsArg(item.review_reason || "") + ',' + jsArg(item.review_priority || 0) + ')\'>Clear</button>' +
+        '</div>'
+      )
+      : '<div class="detail-note">Open server mode to persist adjudication actions.</div>';
+    return (
+      '<div class="item-row watch">' +
+        '<div class="item-title">' + esc(title) + '</div>' +
+        '<div class="item-meta">' + esc(meta) + '</div>' +
+        '<div class="item-detail">' + esc(detail || "No review metadata is stored for this item yet.") + '</div>' +
+        (advantageNote ? ('<div class="item-detail">' + esc(advantageNote) + '</div>') : '') +
+        adjudicationText +
+        '<div class="detail-actions">' +
+          (item.job_id ? '<button class="action-btn" onclick=\'openJobFromExperiment(' + jsArg(item.job_id || "") + ')\'>Inspect role</button>' : "") +
+        '</div>' +
+        actionButtons +
+      '</div>'
+    );
+  }).join("");
+}
+
+function renderExperiments() {
+  const experiments = getExperimentData();
+  const outcomes = getOutcomeData();
+  const latest = experiments.latest_shadow_eval || {};
+  const reviewQueue = Array.isArray(experiments.review_queue) ? experiments.review_queue : [];
+  const adjudicationSummary = experiments.adjudication_summary || {};
+  const calibrationSummary = experiments.calibration_summary || {};
+  const advantageCalibration = experiments.advantage_calibration_summary || {};
+  const advantageRecommendation = experiments.advantage_signal_recommendation || {};
+  const advantageShortlistQuality = experiments.advantage_shortlist_quality_summary || {};
+  const variantReviewSummary = experiments.variant_review_summary || {};
+  const promotionSummary = experiments.promotion_summary || {};
+  const promotionReadinessSummary = experiments.promotion_readiness_summary || {};
+  const promotionReviewSummary = experiments.promotion_review_summary || {};
+  const promotionCandidates = Array.isArray(experiments.promotion_candidates) ? experiments.promotion_candidates : [];
+  const variantComparison = Array.isArray(experiments.variant_comparison) ? experiments.variant_comparison : [];
+  const leadingVariant = experiments.leading_variant || {};
+  const outcomeShadowSummary = experiments.outcome_shadow_summary || {};
+  const outcomeShadowHandoff = experiments.outcome_shadow_handoff || {};
+  const outcomeRankingGuidance = experiments.outcome_ranking_guidance || {};
+  const outcomeSummary = outcomes.summary || {};
+  const outcomeAudit = outcomes.audit_summary || {};
+  const outcomeCalibration = outcomes.calibration_summary || {};
+  const outcomeRecommendation = outcomes.recommendation || {};
+  const recentOutcomeFeedback = Array.isArray(outcomes.recent_feedback) ? outcomes.recent_feedback : [];
+  const positiveReasons = Array.isArray(calibrationSummary.top_positive_reasons) ? calibrationSummary.top_positive_reasons : [];
+  const negativeReasons = Array.isArray(calibrationSummary.top_negative_reasons) ? calibrationSummary.top_negative_reasons : [];
+  renderSummaryCards("experimentStats", [
+    {
+      label: "Latest shadow run",
+      value: latest.experiment_id ? String(latest.sample_size || 0) : "—",
+      sub: latest.experiment_id
+        ? (String(latest.changed_count || 0) + " changes | " + String(latest.upgrade_count || 0) + " upgrades")
+        : "No completed shadow-threshold run is embedded in this payload.",
+      color: latest.experiment_id ? "var(--blue)" : "var(--text-soft)",
+    },
+    {
+      label: "Review queue",
+      value: String(latest.review_sample_count || reviewQueue.length || 0),
+      sub: latest.experiment_id
+        ? "Prioritized likely false negatives from the latest safe shadow run."
+        : "Review items appear here when a shadow run has been recorded.",
+      color: reviewQueue.length ? "var(--amber)" : "var(--text-soft)",
+    },
+    {
+      label: "Reviewed",
+      value: String(adjudicationSummary.reviewed || 0),
+      sub: String(adjudicationSummary.pending || 0) + " items still pending human adjudication.",
+      color: (adjudicationSummary.reviewed || 0) ? "var(--green)" : "var(--text-soft)",
+    },
+    {
+      label: "Rule candidates",
+      value: String(adjudicationSummary.promote_rule_candidate || 0),
+      sub: "Items marked as strong candidates for future rule or calibration work.",
+      color: (adjudicationSummary.promote_rule_candidate || 0) ? "var(--violet)" : "var(--text-soft)",
+    },
+    {
+      label: "Useful signal",
+      value: (calibrationSummary.reviewed || 0) ? (String(calibrationSummary.useful_signal_rate || 0) + "%") : "—",
+      sub: (calibrationSummary.reviewed || 0)
+        ? (String(calibrationSummary.positive || 0) + " positive vs " + String(calibrationSummary.rejected || 0) + " rejected from reviewed items.")
+        : "Appears after the first human adjudications are recorded.",
+      color: (calibrationSummary.useful_signal_rate || 0) >= 60 ? "var(--green)" : ((calibrationSummary.reviewed || 0) ? "var(--amber)" : "var(--text-soft)"),
+    },
+    {
+      label: "Advantage signal",
+      value: (advantageCalibration.reviewed || 0)
+        ? (String(advantageCalibration.high_advantage_useful_rate || 0) + "%")
+        : "—",
+      sub: (advantageCalibration.reviewed || 0)
+        ? ("high-score useful rate vs " + String(advantageCalibration.lower_advantage_useful_rate || 0) + "% on lower-score reviewed items")
+        : "Appears when reviewed shadow items also carry advantageous-match context.",
+      color: (advantageCalibration.high_advantage_useful_rate || 0) >= (advantageCalibration.lower_advantage_useful_rate || 0)
+        ? ((advantageCalibration.reviewed || 0) ? "var(--green)" : "var(--text-soft)")
+        : "var(--amber)",
+    },
+      {
+        label: "Advantage verdict",
+        value: advantageRecommendation.status
+          ? humanizeToken(String(advantageRecommendation.status || ""))
+          : "—",
+      sub: advantageRecommendation.summary
+        ? String(advantageRecommendation.summary || "")
+        : "Appears when advantageous calibration can produce a bounded recommendation.",
+      color: (advantageRecommendation.status === "promising")
+        ? "var(--green)"
+        : (advantageRecommendation.status === "weak")
+          ? "var(--red)"
+            : ((advantageRecommendation.status && advantageRecommendation.status !== "no_signal")
+              ? "var(--amber)"
+              : "var(--text-soft)"),
+      },
+      {
+        label: "Shortlist quality",
+        value: advantageShortlistQuality.status
+          ? humanizeToken(String(advantageShortlistQuality.status || ""))
+          : "—",
+        sub: advantageShortlistQuality.summary
+          ? String(advantageShortlistQuality.summary || "")
+          : "Appears when reviewed shadow variants can be compared by advantageous strength.",
+        color: (advantageShortlistQuality.status === "improving")
+          ? "var(--green)"
+          : ((advantageShortlistQuality.status === "not_improving")
+            ? "var(--red)"
+            : ((advantageShortlistQuality.status && advantageShortlistQuality.status !== "no_signal")
+              ? "var(--amber)"
+              : "var(--text-soft)")),
+      },
+      {
+        label: "Outcome loop",
+        value: String(outcomeSummary.total || 0),
+      sub: outcomeRecommendation.decision_note
+        ? String(outcomeRecommendation.decision_note || "")
+        : "Tracked cases linked back to decision context and artifact usage.",
+      color: (outcomeSummary.total || 0) ? "var(--blue)" : "var(--text-soft)",
+    },
+    {
+      label: "Outcome ranking",
+      value: outcomeRankingGuidance.status
+        ? humanizeToken(String(outcomeRankingGuidance.status || ""))
+        : "—",
+      sub: outcomeRankingGuidance.summary
+        ? String(outcomeRankingGuidance.summary || "")
+        : "Appears when reviewed shadow variants can be checked against outcome support.",
+      color: (outcomeRankingGuidance.status === "supports_ranking_review")
+        ? "var(--green)"
+        : ((outcomeRankingGuidance.status === "not_supported_yet")
+          ? "var(--red)"
+          : ((outcomeRankingGuidance.status && outcomeRankingGuidance.status !== "no_signal")
+            ? "var(--amber)"
+            : "var(--text-soft)")),
+    },
+    {
+      label: "Outcome verdict",
+      value: outcomeRecommendation.decision_signal
+        ? humanizeToken(String(outcomeRecommendation.decision_signal || ""))
+        : "—",
+      sub: outcomeRecommendation.artifact_note
+        ? String(outcomeRecommendation.artifact_note || "")
+        : "Appears when enough outcome signal exists to suggest a safe next step.",
+      color: (outcomeRecommendation.decision_signal === "reinforce_apply_bias")
+        ? "var(--green)"
+        : (outcomeRecommendation.decision_signal === "review_apply_thresholds")
+          ? "var(--amber)"
+          : ((outcomeRecommendation.decision_signal && outcomeRecommendation.decision_signal !== "insufficient_signal")
+            ? "var(--violet)"
+            : "var(--text-soft)"),
+    },
+    {
+      label: "Leading variant",
+      value: leadingVariant.candidate_name ? humanizeToken(String(leadingVariant.candidate_name || "").replace(/^triage_v3_/, "")) : "—",
+      sub: leadingVariant.experiment_id
+        ? (
+          ((leadingVariant.variant_review && leadingVariant.variant_review.verdict)
+            ? humanizeToken(leadingVariant.variant_review.verdict)
+            : (leadingVariant.reviewed ? (String(leadingVariant.useful_signal_rate || 0) + "% useful signal") : "No reviewed adjudications yet")) +
+          " | " +
+          String(leadingVariant.upgrade_count || 0) + " upgrades" +
+          ((leadingVariant.avg_advantageous_match_score || 0) > 0 ? (" | adv. " + String(leadingVariant.avg_advantageous_match_score || 0) + "/100") : "") +
+          ((leadingVariant.advantage_signal_fit && leadingVariant.advantage_signal_fit.fit)
+            ? (" | " + humanizeToken(String(leadingVariant.advantage_signal_fit.fit || "")) + " adv. fit")
+            : "") +
+          ((leadingVariant.promotion_readiness && leadingVariant.promotion_readiness.status)
+            ? (" | " + humanizeToken(String(leadingVariant.promotion_readiness.status || "")))
+            : "") +
+          ((leadingVariant.outcome_shadow_fit && leadingVariant.outcome_shadow_fit.fit)
+            ? (" | " + humanizeToken(String(leadingVariant.outcome_shadow_fit.fit || "")) + " outcome fit")
+            : "")
+          +
+          ((leadingVariant.promotion_outcome_status && leadingVariant.promotion_outcome_status.status)
+            ? (" | " + humanizeToken(String(leadingVariant.promotion_outcome_status.status || "")))
+            : "")
+        )
+        : "Appears once more than one shadow candidate is available.",
+      color: (leadingVariant.variant_review && leadingVariant.variant_review.verdict === "worth_promoting")
+        ? "var(--green)"
+        : (leadingVariant.variant_review && leadingVariant.variant_review.verdict === "reject_variant")
+          ? "var(--red)"
+          : (leadingVariant.reviewed ? ((leadingVariant.useful_signal_rate || 0) >= 60 ? "var(--green)" : "var(--amber)") : (leadingVariant.experiment_id ? "var(--blue)" : "var(--text-soft)")),
+    },
+    {
+      label: "Variant decisions",
+      value: String(variantReviewSummary.reviewed || 0),
+      sub: String(variantReviewSummary.worth_promoting || 0) + " promote | " + String(variantReviewSummary.needs_more_review || 0) + " hold | " + String(variantReviewSummary.reject_variant || 0) + " reject",
+      color: (variantReviewSummary.reviewed || 0) ? "var(--violet)" : "var(--text-soft)",
+    },
+    {
+      label: "Outcome-backed",
+      value: String(outcomeShadowSummary.aligned || 0),
+      sub: (variantComparison.length || promotionCandidates.length)
+        ? (String(outcomeShadowSummary.waiting || 0) + " waiting | " + String(outcomeShadowSummary.indirect || 0) + " indirect")
+        : "Appears when shadow candidates are compared against the outcome-loop handoff.",
+      color: (outcomeShadowSummary.aligned || 0) ? "var(--green)" : "var(--text-soft)",
+    },
+    {
+      label: "Promotion queue",
+      value: String(promotionSummary.count || 0),
+      sub: (promotionSummary.count || 0)
+        ? ((promotionSummary.has_feature_weight_candidate ? "Includes feature-weight candidates" : "Threshold-only so far") + " | " + String(promotionSummary.outcome_backed_count || 0) + " outcome-backed | " + String(promotionSummary.waiting_for_outcomes_count || 0) + " waiting")
+        : "Worth-promoting variants appear here as explicit config candidates.",
+      color: (promotionSummary.count || 0) ? "var(--green)" : "var(--text-soft)",
+    },
+    {
+      label: "Patch-ready",
+      value: String(promotionReadinessSummary.ready_for_patch_review || 0),
+      sub: (promotionSummary.count || 0)
+        ? (String(promotionReadinessSummary.needs_more_shadow_review || 0) + " need more shadow review | " + String(promotionReadinessSummary.hold_for_human_review || 0) + " contested")
+        : "Appears when promotion candidates receive bounded readiness status.",
+      color: (promotionReadinessSummary.ready_for_patch_review || 0) ? "var(--green)" : "var(--text-soft)",
+    },
+    {
+      label: "Promotion reviews",
+      value: String(promotionReviewSummary.reviewed || 0),
+      sub: String(promotionReviewSummary.accepted_for_promotion || 0) + " accepted | " + String(promotionReviewSummary.deferred_promotion || 0) + " deferred | " + String(promotionReviewSummary.rejected_promotion || 0) + " rejected",
+      color: (promotionReviewSummary.reviewed || 0) ? "var(--blue)" : "var(--text-soft)",
+    },
+  ]);
+  const promotionHtml = promotionCandidates.length
+    ? (
+      '<div class="item-row good">' +
+        '<div class="item-title">Promotion queue</div>' +
+        '<div class="item-meta">Variants explicitly marked worth promoting. These are recommendation candidates only and do not change live triage automatically.</div>' +
+        promotionCandidates.map(item => {
+          const delta = item.recommended_config_delta || {};
+          const patchRecommendation = item.patch_recommendation || {};
+          const promotionReview = item.promotion_review || {};
+          const advantageFit = item.advantage_signal_fit || {};
+          const promotionReadiness = item.promotion_readiness || {};
+          const reviewThreshold = delta.review_threshold || {};
+          const shortlistThreshold = delta.shortlist_threshold || {};
+          const featureWeights = Array.isArray(delta.feature_weights) ? delta.feature_weights : [];
+          const thresholdText = [
+            reviewThreshold.to != null ? ('review ' + reviewThreshold.from + ' → ' + reviewThreshold.to) : '',
+            shortlistThreshold.to != null ? ('shortlist ' + shortlistThreshold.from + ' → ' + shortlistThreshold.to) : '',
+          ].filter(Boolean).join(' | ');
+          const weightText = featureWeights.length
+            ? ('weights: ' + featureWeights.map(entry => humanizeToken(entry.feature || '') + ' ' + entry.from + ' → ' + entry.to).join(', '))
+            : 'No feature-weight delta in this candidate.';
+          const thresholdPatch = String(patchRecommendation.thresholds_overlay_yaml || '').trim();
+          const featurePatch = String(patchRecommendation.feature_weights_python_patch || '').trim();
+          const candidateLabel = item.candidate_name
+            ? humanizeToken(String(item.candidate_name || '').replace(/^triage_v3_/, ''))
+            : humanizeToken(item.kind || 'shadow');
+          const reviewStatus = promotionReview.verdict
+            ? ('Promotion review: ' + humanizeToken(promotionReview.verdict) + (promotionReview.updated_at ? ' · ' + String(promotionReview.updated_at).slice(0, 10) : ''))
+            : 'Promotion review pending.';
+          const recruiterHooks = Array.isArray(item.top_recruiter_hooks) && item.top_recruiter_hooks.length
+            ? ('Hooks: ' + item.top_recruiter_hooks.join(' | '))
+            : 'No recruiter hook pattern recorded yet.';
+          const advantageFitText = advantageFit.fit
+            ? ('Advantage fit: ' + humanizeToken(String(advantageFit.fit || '')) + ' — ' + String(advantageFit.note || ''))
+            : 'Advantage fit recommendation has not been derived yet.';
+          const outcomeFit = item.outcome_shadow_fit || {};
+          const outcomeFitText = outcomeFit.fit
+            ? ('Outcome handoff fit: ' + humanizeToken(String(outcomeFit.fit || '')) + ' — ' + String(outcomeFit.note || ''))
+            : 'Outcome handoff fit has not been derived yet.';
+          const promotionOutcomeStatus = item.promotion_outcome_status || {};
+          const promotionOutcomeText = promotionOutcomeStatus.status
+            ? ('Promotion outcome status: ' + humanizeToken(String(promotionOutcomeStatus.status || '')) + ' — ' + String(promotionOutcomeStatus.summary || ''))
+            : 'Promotion outcome status has not been derived yet.';
+          const promotionReadinessText = promotionReadiness.status
+            ? ('Promotion readiness: ' + humanizeToken(String(promotionReadiness.status || '')) + ' — ' + String(promotionReadiness.summary || ''))
+            : 'Promotion readiness has not been derived yet.';
+          const reviewActions = SERVER_MODE
+            ? (
+              '<div class="detail-actions" style="margin-top:8px;">' +
+                '<button class="action-btn" onclick=\'submitExperimentPromotionReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("accepted_for_promotion") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Accept</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentPromotionReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("deferred_promotion") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Defer</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentPromotionReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("rejected_promotion") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Reject</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentPromotionReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Clear</button>' +
+              '</div>'
+            )
+            : '<div class="detail-note">Open server mode to persist promotion decisions.</div>';
+          return (
+            '<div class="item-detail" style="margin-top:10px;">' +
+              '<strong>' + esc(candidateLabel) + '</strong> · ' +
+              esc(String(item.useful_signal_rate || 0) + '% useful signal') +
+              ((item.avg_advantageous_match_score || 0) > 0 ? (' · adv. ' + esc(String(item.avg_advantageous_match_score || 0)) + '/100') : '') +
+              ' · ' + esc(String(item.upgrade_count || 0) + ' upgrades') +
+              '<br>' + esc(reviewStatus) +
+              '<br>' + esc(thresholdText || 'No threshold delta recorded.') +
+              '<br>' + esc(weightText) +
+              '<br>' + esc(recruiterHooks) +
+              '<br>' + esc(advantageFitText) +
+              '<br>' + esc(outcomeFitText) +
+              '<br>' + esc(promotionOutcomeText) +
+              '<br>' + esc(promotionReadinessText) +
+              (thresholdPatch
+                ? ('<br><strong>Suggested overlay</strong> · ' + esc(String(patchRecommendation.target_config_path || "")) +
+                   '<pre style="margin-top:6px; white-space:pre-wrap; font-size:11px; line-height:1.4;">' + esc(thresholdPatch) + '</pre>')
+                : '') +
+              (featurePatch
+                ? ('<strong>Suggested code patch</strong> · ' + esc(String(patchRecommendation.target_weights_path || "")) +
+                   '<pre style="margin-top:6px; white-space:pre-wrap; font-size:11px; line-height:1.4;">' + esc(featurePatch) + '</pre>')
+                : '') +
+              reviewActions +
+            '</div>'
+          );
+        }).join('') +
+      '</div>'
+    )
+    : '';
+  const comparisonHtml = variantComparison.length
+    ? (
+      '<div class="item-row">' +
+        '<div class="item-title">Variant comparison</div>' +
+        '<div class="item-meta">Recent safe shadow candidates ranked by human-reviewed signal first, then by useful-signal rate and upgrade strength.</div>' +
+        variantComparison.map(item => {
+          const topPositive = Array.isArray(item.top_positive_reasons) && item.top_positive_reasons.length
+            ? ('Top positive: ' + item.top_positive_reasons.map(reason => humanizeToken(reason.reason || "") + ' (' + reason.count + ')').join(', '))
+            : 'No positive pattern recorded yet.';
+          const topNegative = Array.isArray(item.top_negative_reasons) && item.top_negative_reasons.length
+            ? ('Top rejected: ' + item.top_negative_reasons.map(reason => humanizeToken(reason.reason || "") + ' (' + reason.count + ')').join(', '))
+            : 'No rejected pattern recorded yet.';
+          const variantReview = item.variant_review || {};
+          const variantReviewText = variantReview.verdict
+            ? ('Variant verdict: ' + humanizeToken(variantReview.verdict) + (variantReview.updated_at ? ' · ' + String(variantReview.updated_at).slice(0, 10) : ''))
+            : 'Variant verdict pending.';
+          const recruiterHooks = Array.isArray(item.top_recruiter_hooks) && item.top_recruiter_hooks.length
+            ? ('Hooks: ' + item.top_recruiter_hooks.join(' | '))
+            : 'No recruiter hook pattern recorded yet.';
+          const advantageFit = item.advantage_signal_fit || {};
+          const advantageFitText = advantageFit.fit
+            ? ('Advantage fit: ' + humanizeToken(String(advantageFit.fit || '')) + ' — ' + String(advantageFit.note || ''))
+            : 'Advantage fit recommendation has not been derived yet.';
+          const outcomeFit = item.outcome_shadow_fit || {};
+          const outcomeFitText = outcomeFit.fit
+            ? ('Outcome handoff fit: ' + humanizeToken(String(outcomeFit.fit || '')) + ' — ' + String(outcomeFit.note || ''))
+            : 'Outcome handoff fit has not been derived yet.';
+          const candidateLabel = item.candidate_name
+            ? humanizeToken(String(item.candidate_name || "").replace(/^triage_v3_/, ""))
+            : humanizeToken(item.kind || "shadow");
+          const actionButtons = SERVER_MODE
+            ? (
+              '<div class="detail-actions" style="margin-top:8px;">' +
+                '<button class="action-btn" onclick=\'submitExperimentVariantReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("worth_promoting") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Worth promoting</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentVariantReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("needs_more_review") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Needs review</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentVariantReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("reject_variant") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Reject variant</button>' +
+                '<button class="action-btn" onclick=\'submitExperimentVariantReview(' + jsArg(item.experiment_id || "") + ',' + jsArg("") + ',' + jsArg(item.candidate_name || "") + ',' + jsArg(item.kind || "") + ')\'>Clear</button>' +
+              '</div>'
+            )
+            : '<div class="detail-note">Open server mode to persist variant decisions.</div>';
+          return (
+            '<div class="item-detail" style="margin-top:10px;">' +
+              '<strong>' + esc(candidateLabel) + '</strong> · ' +
+              esc(String(item.reviewed || 0) ? (String(item.useful_signal_rate || 0) + '% useful signal') : 'unreviewed') +
+              ((item.avg_advantageous_match_score || 0) > 0 ? (' · adv. ' + esc(String(item.avg_advantageous_match_score || 0)) + '/100') : '') +
+              ' · ' + esc(String(item.upgrade_count || 0) + ' upgrades') +
+              ' · ' + esc(String(item.changed_count || 0) + ' changed') +
+              ' · ' + esc(String(item.sample_size || 0) + ' sampled') +
+              '<br>' + esc(topPositive) +
+              '<br>' + esc(topNegative) +
+              '<br>' + esc(recruiterHooks) +
+              '<br>' + esc(advantageFitText) +
+              '<br>' + esc(outcomeFitText) +
+              '<br>' + esc(variantReviewText) +
+              actionButtons +
+            '</div>'
+          );
+        }).join('') +
+      '</div>'
+    )
+    : '';
+  const calibrationHtml =
+    '<div class="item-row ' + esc((calibrationSummary.reviewed || 0) ? "good" : "") + '">' +
+      '<div class="item-title">Calibration readout</div>' +
+      '<div class="item-meta">' +
+        esc(
+          (calibrationSummary.reviewed || 0)
+            ? (String(calibrationSummary.reviewed || 0) + " reviewed | " + String(calibrationSummary.positive || 0) + " positive | " + String(calibrationSummary.rejected || 0) + " rejected | " + String(calibrationSummary.interesting_but_no || 0) + " interesting-no")
+            : "No adjudicated experiment reviews yet."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          positiveReasons.length
+            ? ("Top positive reasons: " + positiveReasons.map(item => humanizeToken(item.reason || "") + " (" + item.count + ")").join(", "))
+            : "Top positive reasons will appear after adjudications are recorded."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          negativeReasons.length
+            ? ("Top rejected reasons: " + negativeReasons.map(item => humanizeToken(item.reason || "") + " (" + item.count + ")").join(", "))
+            : "No rejected reason pattern has been established yet."
+        ) +
+      '</div>' +
+    '</div>';
+  const outcomeHtml =
+    '<div class="item-row ' + esc((outcomeSummary.total || 0) ? "watch" : "") + '">' +
+      '<div class="item-title">Outcome loop</div>' +
+      '<div class="item-meta">' +
+        esc(
+          (outcomeSummary.total || 0)
+            ? ("Tracked cases: " + String(outcomeSummary.total || 0) + " | apply-like progression " + String(outcomeCalibration.apply_like_progression_rate || 0) + "% | artifact-linked progression " + String(outcomeCalibration.artifact_linked_progression_rate || 0) + "%")
+            : "No tracked outcomes are available yet."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(String(outcomeRecommendation.decision_note || "Decision guidance will appear once tracked outcomes accumulate.")) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(String(outcomeRecommendation.artifact_note || "Artifact guidance will appear once enough tracked cases exist.")) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          "Next action: " + humanizeToken(String(outcomeRecommendation.recommended_next_action || "collect_more_outcomes")) +
+          " | confidence " + humanizeToken(String(outcomeRecommendation.confidence || "low"))
+        ) +
+      '</div>' +
+      (
+        (outcomeAudit.apply_path_summary && typeof outcomeAudit.apply_path_summary === "object")
+          ? (
+            '<div class="item-detail">' +
+              esc(
+                "Apply-like cases: " + String(outcomeAudit.apply_path_summary.apply_like_total || 0) +
+                " | progressed " + String(outcomeAudit.apply_path_summary.progressed_count || 0) +
+                " | closed " + String(outcomeAudit.apply_path_summary.closed_count || 0)
+              ) +
+            '</div>'
+          )
+          : ''
+      ) +
+      (
+        recentOutcomeFeedback.length
+          ? (
+            '<div class="item-detail">' +
+              esc(
+                "Latest tracked outcome: " +
+                String((((recentOutcomeFeedback[0] || {}).application_case_projection || {}).job_summary || {}).title || ((recentOutcomeFeedback[0] || {}).external_id || "")) +
+                " | " + humanizeToken(String((recentOutcomeFeedback[0] || {}).shared_status || "")) +
+                " | decision " + humanizeToken(String((((recentOutcomeFeedback[0] || {}).decision_brief || {}).final_decision || "")))
+              ) +
+            '</div>'
+          )
+          : ''
+      ) +
+    '</div>';
+  const outcomeShadowHandoffHtml =
+    '<div class="item-row ' + esc((outcomeShadowHandoff.ready_for_shadow ? "good" : "watch")) + '">' +
+      '<div class="item-title">Outcome-to-shadow handoff</div>' +
+      '<div class="item-meta">' +
+        esc(
+          outcomeShadowHandoff.suggested_experiment
+            ? ("Suggested experiment: " + humanizeToken(String(outcomeShadowHandoff.suggested_experiment || "")))
+            : "No bounded outcome-driven shadow handoff is available yet."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          outcomeShadowHandoff.rationale
+            ? String(outcomeShadowHandoff.rationale || "")
+            : "This stays review-only until the outcome loop has enough signal for a safe shadow follow-up."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          "Status: " + humanizeToken(String(outcomeShadowHandoff.status || "hold_for_review")) +
+          " | confidence " + humanizeToken(String(outcomeShadowHandoff.confidence || "low"))
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          "Decision signal: " + humanizeToken(String(outcomeShadowHandoff.decision_signal || "insufficient_signal")) +
+          " | artifact signal: " + humanizeToken(String(outcomeShadowHandoff.artifact_signal || "insufficient_signal"))
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          "Supported useful rate: " + String(outcomeRankingGuidance.supported_avg_useful_rate || 0) + "%" +
+          " | non-supported " + String(outcomeRankingGuidance.non_supported_avg_useful_rate || 0) + "%"
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          "Worth promoting: supported " + String(outcomeRankingGuidance.supported_worth_promoting_rate || 0) + "%" +
+          " | non-supported " + String(outcomeRankingGuidance.non_supported_worth_promoting_rate || 0) + "%"
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          outcomeRankingGuidance.recommended_action
+            ? ("Recommended action: " + humanizeToken(String(outcomeRankingGuidance.recommended_action || "")))
+            : "Recommended action will appear once reviewed variants can be compared against outcome support."
+        ) +
+      '</div>' +
+    '</div>';
+  const positiveHooks = Array.isArray(advantageCalibration.top_positive_hooks) ? advantageCalibration.top_positive_hooks : [];
+  const negativeHooks = Array.isArray(advantageCalibration.top_negative_hooks) ? advantageCalibration.top_negative_hooks : [];
+  const advantageCalibrationHtml =
+    '<div class="item-row ' + esc((advantageCalibration.reviewed || 0) ? "watch" : "") + '">' +
+      '<div class="item-title">Advantage signal readout</div>' +
+      '<div class="item-meta">' +
+        esc(
+          (advantageCalibration.reviewed || 0)
+            ? ("High-score reviewed: " + String(advantageCalibration.high_advantage_reviewed || 0) + " | useful rate " + String(advantageCalibration.high_advantage_useful_rate || 0) + "% | lower-score useful rate " + String(advantageCalibration.lower_advantage_useful_rate || 0) + "%")
+            : "No reviewed advantageous-match sample is available yet."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          positiveHooks.length
+            ? ("Top positive hooks: " + positiveHooks.map(item => item.hook + " (" + item.count + ")").join(" | "))
+            : "Positive recruiter-hook patterns will appear after more adjudicated shadow items are available."
+        ) +
+      '</div>' +
+      '<div class="item-detail">' +
+        esc(
+          negativeHooks.length
+            ? ("Top rejected hooks: " + negativeHooks.map(item => item.hook + " (" + item.count + ")").join(" | "))
+            : "No rejected recruiter-hook pattern has been established yet."
+        ) +
+      '</div>' +
+        '<div class="item-detail">' +
+          esc(
+            advantageRecommendation.summary
+              ? ("Recommendation: " + String(advantageRecommendation.summary || "") + " | " + String(advantageRecommendation.recommended_action || ""))
+              : "No bounded advantageous-signal recommendation has been derived yet."
+          ) +
+        '</div>' +
+        '<div class="item-detail">' +
+          esc(
+            advantageShortlistQuality.status
+              ? (
+                "Shortlist quality: " + humanizeToken(String(advantageShortlistQuality.status || "")) +
+                " | confidence " + humanizeToken(String(advantageShortlistQuality.confidence || "low")) +
+                " | high-advantage useful rate " + String(advantageShortlistQuality.high_advantage_avg_useful_rate || 0) + "%" +
+                " vs lower-advantage " + String(advantageShortlistQuality.lower_advantage_avg_useful_rate || 0) + "%"
+              )
+              : "Shortlist-quality comparison will appear once reviewed shadow variants exist on both sides of the advantageous split."
+          ) +
+        '</div>' +
+        '<div class="item-detail">' +
+          esc(
+            advantageShortlistQuality.status
+              ? (
+                "Worth promoting: high-advantage " + String(advantageShortlistQuality.high_advantage_worth_promoting_rate || 0) + "%" +
+                " vs lower-advantage " + String(advantageShortlistQuality.lower_advantage_worth_promoting_rate || 0) + "%" +
+                " | " + String(advantageShortlistQuality.recommended_action || "")
+              )
+              : "Promotion-quality comparison will appear once the shortlist-quality sample is large enough."
+          ) +
+        '</div>' +
+        '<div class="item-detail">' +
+          esc(
+            (promotionSummary.count || 0)
+            ? ("Promotion readiness: " + String(promotionReadinessSummary.ready_for_patch_review || 0) + " patch-ready | " + String(promotionReadinessSummary.needs_more_shadow_review || 0) + " need more review | " + String(promotionReadinessSummary.hold_for_human_review || 0) + " contested")
+            : "Promotion readiness appears once worth-promoting variants exist."
+        ) +
+      '</div>' +
+    '</div>';
+  document.getElementById("experimentReviewQueue").innerHTML =
+    promotionHtml + comparisonHtml + calibrationHtml + outcomeHtml + outcomeShadowHandoffHtml + advantageCalibrationHtml + renderExperimentQueueRows(
+      reviewQueue,
+      "No shadow review items are currently embedded in this payload."
+    );
 }
 
 function renderPipelineHealth() {

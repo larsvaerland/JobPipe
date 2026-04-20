@@ -2,6 +2,12 @@
 
 AI-assisted job hunting pipeline for Lars Værland. It ingests listings from NAV and FINN-related sources, runs a staged filter and scoring pipeline, writes per-job JSON artifacts, syncs the latest state into SQLite, and exports a dashboard for daily decision-making.
 
+Core thesis:
+
+- the product value is the job-ad data pipeline
+- the system should remove cognitive noise before the user starts spending effort
+- the user should spend time on review, tailoring, applying, and follow-up, not on feed scanning and repetitive context gathering
+
 ```powershell
 .\go.ps1
 ```
@@ -9,15 +15,26 @@ AI-assisted job hunting pipeline for Lars Værland. It ingests listings from NAV
 ## What Is Running Today
 
 ```text
-NAV pam-stilling-feed + FINN leads
-    ↓ Apps Script / pull scripts
-Google Sheet / JSONL delta
+NAV pam-stilling-feed
+    ↓ Apps Script / Sheet bridge
+Google Sheet
     ↓ pull_sheets_csv.py
+NAV connector output
+
+Gmail recommendation emails
+    ↓ scan_gmail --scan-suggestions
+suggested_jobs.jsonl
+    ↓ sync_mailbox_leads / pull_suggested
+suggested-lead connector output
+
+NAV connector output + suggested-lead connector output
+    ↓ shared intake merge + dedupe
 <data-root>/jobs_delta.jsonl
     ↓ run_feed.py
-    [FREE] Geo filter
-    [FREE] Hard-no title regex
-    [FREE] Semantic pre-filter
+    [NAV] Geo filter
+    [NAV] Hard-no title regex
+    [NAV] Semantic pre-filter
+    [SUGGESTED] Hard-no title regex only
     [NANO] Triage
     [MINI] Parse
     [MINI] Profile match
@@ -33,6 +50,13 @@ Google Sheet / JSONL delta
 ```
 
 The core rule is unchanged throughout the repo: cheap filters run before any LLM call.
+
+Connector policy:
+- `NAV` is the broad canonical feed and goes through the normal deterministic gate stack
+- mailbox/platform-suggested leads are separate connectors until the shared intake merge point
+- dedupe happens before the rest of the pipeline sees the merged jobs
+- `NAV` is the pragmatic canonical source when duplicates collide unless the suggested-lead variant is the only record with materially missing fields filled in
+- mailbox/platform-suggested leads bypass `geo` and semantic pre-filter elimination, but hard-no title blocking still applies
 
 ## Local Data Root
 
@@ -66,6 +90,7 @@ Useful direct commands:
 ```powershell
 .venv\Scripts\python.exe compile_check.py
 .venv\Scripts\python.exe -m pytest tests -q
+.venv\Scripts\python.exe -m jobpipe.cli.sync_mailbox_leads --dry-run
 .venv\Scripts\python.exe -m jobpipe.cli.sync_ledger
 .venv\Scripts\python.exe -m jobpipe.cli.export_dashboard
 start $HOME\JobpipeData\exports\dashboard.html
@@ -78,7 +103,7 @@ Two supported dashboard modes exist, but they now share one payload contract and
 1. `<data-root>/exports/dashboard.html`
    Static self-contained export from SQLite. Read-only.
 2. `python -m jobpipe.cli.dashboard_server`
-   Local interactive mode for direct status updates, notes, CV-builder draft persistence, and application-workspace flows.
+   Local interactive mode for direct status updates, notes, CV-builder draft persistence, a sidebar app shell, automation actions, and application-workspace flows.
 
 Both modes now render from the canonical `build_payload()` output in `jobpipe/cli/export_dashboard.py`.
 
@@ -87,9 +112,16 @@ Both modes now render from the canonical `build_payload()` output in `jobpipe/cl
 The current target stack is:
 
 - `JobPipe` as control plane for setup, profile source data, ingestion, triage review, and sync health
-- `JobSync` as the operator workspace for active applications, notes, tasks, and day-to-day status work
-- `Reactive Resume` as an external CV authoring/layout tool, linked back to jobs rather than merged into the JobPipe UI
+- `JobSync` as the long-term operator workspace for active applications, notes, tasks, and day-to-day status work
+- `Reactive Resume` as the structured resume system and tailored CV authoring/export surface, linked back to jobs rather than merged into the JobPipe UI
 - a separate `NAV Google Apps Script` project as the feed bridge between NAV/Google Sheets and JobPipe
+
+Source-of-truth split:
+- `JobPipe` owns intake, scoring, packet generation, artifacts, and calibration history
+- `JobSync` owns active application-case workflow after promotion
+- `Reactive Resume` owns resume structure and CV variant/export truth
+
+The current JobPipe local shell is therefore a control-plane surface, not the intended final day-to-day operator shell.
 
 This split is documented in:
 
@@ -113,7 +145,7 @@ This is the normal developer setup for multi-project local stacks: separate repo
 Recommended local layout:
 
 ```text
-C:\Users\larsv\work\
+<workspace-root>\
   agentic_jobpilot\
   jobsync\
   reactive-resume\
@@ -158,7 +190,7 @@ The integration seam between repos should be files, payload contracts, and HTTP 
 Install and validate the stack one project at a time:
 
 1. `JobPipe`
-   - keep this repo at `C:\Users\larsv\agentic_jobpilot` or move it under a common workspace root later
+   - keep this repo under your normal workspace root, for example `<workspace-root>\agentic_jobpilot`
    - validate the current local runtime first:
      - `.\go.ps1`
      - `python -m jobpipe.cli.dashboard_server`
@@ -314,11 +346,14 @@ Manual checks:
 
 - [CLAUDE.md](./CLAUDE.md)
 - [PRODUCT_VISION.md](./PRODUCT_VISION.md)
-- [AGENT_STATUS.md](./AGENT_STATUS.md)
-- [AUDIT.md](./AUDIT.md)
 - [docs/architecture-plan.md](./docs/architecture-plan.md)
 - [docs/mvp-task-plan.md](./docs/mvp-task-plan.md)
 - [DASHBOARD_SPEC.md](./DASHBOARD_SPEC.md)
+
+Local operational docs, intentionally kept out of git for privacy:
+
+- `AGENT_STATUS.md`
+- `AUDIT.md`
 
 ## Documentation Discipline
 
@@ -328,14 +363,41 @@ Use these files instead:
 
 - `README.md`: repo entrypoint and operator quickstart
 - `CLAUDE.md`: operating rules and workflow guardrails
-- `AGENT_STATUS.md`: current state, handoffs, cross-agent requests
-- `AUDIT.md`: bugs, quality issues, and audit history
 - `PRODUCT_VISION.md`: product goals and roadmap
 - `docs/architecture-plan.md`: architecture and red-line contract
 - `docs/mvp-task-plan.md`: one ordered execution plan
 - `DASHBOARD_SPEC.md`: dashboard and payload contract
 
+Local-only operational docs:
+
+- `AGENT_STATUS.md`: current state, handoffs, cross-agent requests
+- `AUDIT.md`: bugs, quality issues, and audit history
+
+Those two files are intentionally gitignored because they may contain private operational notes and local-environment details.
+
 Specialized docs are allowed only when they map to a concrete subsystem with durable operational value, for example `APPS_SCRIPT_CHANGES.md` or `docs/gmail_filter_spec.md`.
+
+### Planning structure
+
+The project works best when the docs are treated as different layers instead of one blended planning blob:
+
+- `PRODUCT_VISION.md`
+  - product north star
+  - design principles
+  - long-term roadmap
+- `docs/architecture-plan.md`
+  - boundaries
+  - ownership
+  - integration rules
+- `docs/mvp-task-plan.md`
+  - ordered short-term execution topics
+  - one active topic at a time
+- `AUDIT.md`
+  - local operational defect/debt log
+- `AGENT_STATUS.md`
+  - local operational state and handoffs
+
+This split is the preferred product-management structure for the repo. It keeps strategy, execution, and defect tracking separate enough that work does not drift.
 
 ## Current Focus
 

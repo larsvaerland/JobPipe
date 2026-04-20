@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 
 from jobpipe.core.io import ensure_dir, write_json, append_jsonl
 from jobpipe.core.schema import JobContext
+from jobpipe.core.stage_cache import read_artifact_cache_key, write_artifact_cache_key
 
 StageFn = Callable[[JobContext, str], JobContext]
 
@@ -16,6 +17,7 @@ class Stage:
     run: Any
     should_run: Callable = lambda ctx: True  # default: always run
     ctx_model: Optional[Type] = None  # Pydantic model used to reload cached artifact into ctx
+    cache_key_fn: Optional[Callable[[JobContext], str]] = None
 
     def __post_init__(self):
         # Allow factories to return (should_run, run)
@@ -39,18 +41,37 @@ class PipelineRunner:
                 continue
 
             artifact_path = os.path.join(job_dir, f"{idx:02d}_{stage.name}.json")
+            cache_key = stage.cache_key_fn(ctx) if stage.cache_key_fn is not None else None
             if (not overwrite) and os.path.exists(artifact_path):
+                if cache_key is not None:
+                    cached_key = read_artifact_cache_key(artifact_path)
+                    if cached_key != cache_key:
+                        pass
+                    else:
+                        # Reload cached artifact into ctx so downstream stages can read from it.
+                        # Without this, a partial run (some stages cached, some not) would see None
+                        # for the skipped stage's output, causing downstream should_run() checks to fail.
+                        if stage.ctx_model is not None and hasattr(ctx, stage.name):
+                            try:
+                                with open(artifact_path, encoding="utf-8") as f:
+                                    data = json.load(f)
+                                setattr(ctx, stage.name, stage.ctx_model(**data))
+                            except Exception:
+                                pass  # best-effort; if reload fails downstream sees None (same as before)
+                        continue
+
                 # Reload cached artifact into ctx so downstream stages can read from it.
                 # Without this, a partial run (some stages cached, some not) would see None
                 # for the skipped stage's output, causing downstream should_run() checks to fail.
-                if stage.ctx_model is not None and hasattr(ctx, stage.name):
-                    try:
-                        with open(artifact_path, encoding="utf-8") as f:
-                            data = json.load(f)
-                        setattr(ctx, stage.name, stage.ctx_model(**data))
-                    except Exception:
-                        pass  # best-effort; if reload fails downstream sees None (same as before)
-                continue
+                if cache_key is None:
+                    if stage.ctx_model is not None and hasattr(ctx, stage.name):
+                        try:
+                            with open(artifact_path, encoding="utf-8") as f:
+                                data = json.load(f)
+                            setattr(ctx, stage.name, stage.ctx_model(**data))
+                        except Exception:
+                            pass  # best-effort; if reload fails downstream sees None (same as before)
+                    continue
 
             ctx = stage.run(ctx, job_dir)
 
@@ -64,6 +85,8 @@ class PipelineRunner:
                 out_obj = ctx.snapshot_summary()
 
             write_json(artifact_path, out_obj)
+            if cache_key is not None:
+                write_artifact_cache_key(artifact_path, cache_key)
 
         return ctx
 

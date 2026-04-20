@@ -81,6 +81,14 @@ class JobPipePaths:
         return self.data_root / "jobs_expired.jsonl"
 
     @property
+    def nav_connector_path(self) -> Path:
+        return self.reports_dir / "nav_connector.jsonl"
+
+    @property
+    def leads_connector_path(self) -> Path:
+        return self.reports_dir / "leads_connector.jsonl"
+
+    @property
     def profile_pack_path(self) -> Path:
         return self.data_root / "profile_pack.md"
 
@@ -121,8 +129,44 @@ class JobPipePaths:
         return self.reports_dir / "profile_builder_state.json"
 
     @property
+    def profile_layer_state_path(self) -> Path:
+        return self.reports_dir / "profile_layer_state.json"
+
+    @property
+    def projection_store_path(self) -> Path:
+        return self.reports_dir / "projection_store.json"
+
+    @property
+    def experiment_runs_path(self) -> Path:
+        return self.reports_dir / "experiment_runs.json"
+
+    @property
+    def experiments_dir(self) -> Path:
+        return self.reports_dir / "experiments"
+
+    @property
+    def experiment_review_state_path(self) -> Path:
+        return self.reports_dir / "experiment_review_state.json"
+
+    @property
+    def outcome_feedback_state_path(self) -> Path:
+        return self.reports_dir / "outcome_feedback_state.json"
+
+    @property
+    def settings_state_path(self) -> Path:
+        return self.reports_dir / "settings_state.json"
+
+    @property
+    def automation_state_path(self) -> Path:
+        return self.reports_dir / "automation_runs.json"
+
+    @property
     def profile_embedding_path(self) -> Path:
         return self.cache_dir / "profile_embedding.npy"
+
+    @property
+    def profile_embedding_meta_path(self) -> Path:
+        return self.cache_dir / "profile_embedding.meta.json"
 
     @property
     def dashboard_export_path(self) -> Path:
@@ -141,7 +185,14 @@ class JobPipePaths:
         return self.repo_configs_dir / "pipeline.v1.yaml"
 
     def ensure_data_dirs(self) -> None:
-        for path in (self.data_root, self.reports_dir, self.exports_dir, self.cache_dir, self.tmp_dir):
+        for path in (
+            self.data_root,
+            self.reports_dir,
+            self.exports_dir,
+            self.cache_dir,
+            self.tmp_dir,
+            self.experiments_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
 
@@ -167,10 +218,17 @@ def _legacy_copy_plan(paths: JobPipePaths, include_artifacts: bool) -> Iterable[
         (paths.repo_reports_dir / "gmail_token.json", paths.gmail_token_path, False),
         (paths.repo_reports_dir / "suggested_jobs.jsonl", paths.suggested_jobs_path, False),
         (paths.repo_reports_dir / "profile_builder_state.json", paths.profile_builder_state_path, False),
+        (paths.repo_reports_dir / "profile_layer_state.json", paths.profile_layer_state_path, False),
+        (paths.repo_reports_dir / "projection_store.json", paths.projection_store_path, False),
+        (paths.repo_reports_dir / "outcome_feedback_state.json", paths.outcome_feedback_state_path, False),
+        (paths.repo_reports_dir / "settings_state.json", paths.settings_state_path, False),
+        (paths.repo_reports_dir / "automation_runs.json", paths.automation_state_path, False),
         (paths.repo_reports_dir / "profile_embedding.npy", paths.profile_embedding_path, False),
         (paths.repo_root / "jobs_state.json", paths.jobs_state_path, False),
         (paths.repo_root / "jobs_delta.jsonl", paths.jobs_delta_path, False),
         (paths.repo_root / "jobs_expired.jsonl", paths.jobs_expired_path, False),
+        (paths.repo_reports_dir / "nav_connector.jsonl", paths.nav_connector_path, False),
+        (paths.repo_reports_dir / "leads_connector.jsonl", paths.leads_connector_path, False),
         (paths.repo_reports_dir / "dashboard.html", paths.dashboard_export_path, False),
     ]
     if include_artifacts:

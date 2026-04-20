@@ -65,28 +65,21 @@ if ($Serve) {
     exit 0
 }
 
-# --- Optional: Suggestion intake (FINN/LinkedIn email scan + FINN search scrape) ---
-# Only when -WithSuggestions is passed. All three steps have built-in 09:00-19:00 Oslo
-# time guards — they exit cleanly if run outside that window.
+# --- Optional: Suggestion intake (settings-aware mailbox leads + FINN search scrape) ---
+# Only when -WithSuggestions is passed. The mailbox step respects Settings / Integrations
+# lead-intake enablement and routes fetched leads into the normal jobs_delta connector.
+# Daytime guards still apply where scraping is involved.
 if ($WithSuggestions) {
-    Write-Host "[0a/4] scan_gmail --scan-suggestions (FINN/LinkedIn emails)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.scan_gmail `
-        --scan-suggestions `
-        --days 30
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "scan_gmail --scan-suggestions failed (exit $LASTEXITCODE). Continuing."
-    }
-
-    Write-Host ""
-    Write-Host "[0b/4] pull_suggested (FINN jobs from email queue, daytime only)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.pull_suggested `
+    Write-Host "[0a/4] sync_mailbox_leads (Gmail recommendations -> jobs_delta connector)..." -ForegroundColor Yellow
+    & $py -m jobpipe.cli.sync_mailbox_leads `
+        --days 30 `
         --max 20
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pull_suggested failed (exit $LASTEXITCODE). Continuing."
+        Write-Warning "sync_mailbox_leads failed (exit $LASTEXITCODE). Continuing."
     }
 
     Write-Host ""
-    Write-Host "[0c/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
+    Write-Host "[0b/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
     & $py -m jobpipe.cli.pull_finn_search `
         --max 40 `
         @overlayArgs
