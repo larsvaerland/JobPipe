@@ -27,24 +27,33 @@ If this file is blank or stale, ignore it and follow the canonical planning docu
 
 No active scoped contract is open right now.
 
-The latest completed scoped sprint on `codex/job-catalog-foundation` was the bounded public-transition hardening slice for:
+The latest completed scoped sprint on `codex/job-catalog-foundation` was the bounded moderator/projection hardening slice for:
 
-- Sprint 4 Topic 9: candidate-aware target-title safety
-- Sprint 4 Topic 10: focused persona-audit evidence refresh
+- Sprint 5 Topic 11: candidate-aware moderator demotion for weak-fit off-anchor product-leadership reviews
+- Sprint 5 Topic 12: dashboard payload preservation of persisted `final_decision` for persona-audit correctness
 
 Completed on 2026-04-20 with this evidence:
 
-- `python -m pytest tests/test_triage_target_safety.py tests/test_geo_filter.py -q` -> `32 passed in 2.55s`
-- `python -m pytest tests/ -q` -> `191 passed in 5.96s`
+- `python -m pytest tests/test_moderate.py tests/test_export_dashboard_app_state.py tests/test_persona_audit.py -q` -> `41 passed in 0.62s`
+- `python -m pytest tests/ -q` -> `195 passed in 5.28s`
 - `python compile_check.py` -> `OK — 70 files parsed cleanly`
 - `python -m jobpipe.cli.main run --dry-run --no-open` -> OK (`Events scanned: 749; Unique jobs (latest): 748; 871 jobs / 24 actionable / 1 tracked`)
-- `python -m jobpipe.cli.persona_audit` -> latest audit root `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_174339`
+- `python -m jobpipe.cli.persona_audit` -> latest audit root `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_181802`
 
 Tracked code/docs aligned with that closure:
 
-- `jobpipe/stages/triage.py`
-- `tests/test_triage_target_safety.py`
+- `jobpipe/stages/moderate.py`
+- `jobpipe/projections/dashboard.py`
+- `tests/test_moderate.py`
+- `tests/test_export_dashboard_app_state.py`
 - `specs/persona-audit-findings-2026-04-17.md`
+
+Outcome summary:
+
+- the early-adjacent persona now pushes all three product-leadership roles to `SKIP`
+- the dashboard/persona-audit projection now preserves persisted candidate-aware `final_decision` values instead of silently reclassifying them from thresholds alone
+- the public-transition persona still keeps `Produktleder for sentrale backend-tjenester` and `Head of Enterprise Architecture` in `REVIEW_LOW`
+- monitoring/watchlist noise remains open and should be handled as its own next slice rather than being inferred from projection quirks
 
 ## Next handoff
 

@@ -969,7 +969,7 @@ def build_payload(
 
     jobs = []
     for row in jobs_raw:
-        if row.get("fit_score") is not None and thresholds:
+        if not str(row.get("final_decision") or "").strip() and row.get("fit_score") is not None and thresholds:
             row["final_decision"] = _reclassify(row.get("fit_score"), row.get("pivot_score"), thresholds)
 
         is_actionable = row.get("final_decision") in _ACTIONABLE

@@ -277,6 +277,50 @@ Status update:
   - evaluate whether the remaining early-adjacent `Produktleder` review is acceptable adjacency or should be demoted too
   - do not reopen the already-landed candidate-aware target-title safety slice unless a new audit rerun shows it regressing
 
+**Latest rerun evidence — 2026-04-20 (post-moderator / projection hardening)**
+
+Latest audit root:
+
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_181802`
+
+Observed movement on the latest validated code state:
+
+- `persona_b_specialist`
+  - `0 apply / 1 review / 5 skip`
+  - all three product-leadership roles remain `SKIP`
+  - only `IT-ingeniør - sikkerhet` remains `REVIEW_LOW`
+- `persona_c_public_transition`
+  - `0 apply / 2 review / 4 skip`
+  - `Produktleder` and `Produktleder til team Beredskap og krisehåndtering` remain `SKIP`
+  - `Produktleder for sentrale backend‑tjenester` now remains `REVIEW_LOW`
+  - `Head of Enterprise Architecture` also remains `REVIEW_LOW`
+- `persona_d_early_adjacent`
+  - `0 apply / 1 review / 5 skip`
+  - all three product-leadership roles now fall to `SKIP`
+  - the previous sticky `Produktleder` review is gone
+  - only `IT-ingeniør - sikkerhet` remains `REVIEW_LOW`
+
+Implementation note:
+
+- this bounded follow-on slice did not reopen triage heuristics
+- it changed two seams instead:
+  - `jobpipe/stages/moderate.py` now demotes weak-fit `REVIEW_LOW` outcomes to `SKIP` for cautious/earlier-career profiles when product-leadership remains off-anchor and selection risk is very high
+  - `jobpipe/projections/dashboard.py` now preserves persisted `final_decision` from the primary DB instead of silently threshold-reclassifying rows whenever `fit_score` exists
+
+Interpretation:
+
+- the early-adjacent product-title leak is now closed on the canonical persisted path
+- the earlier matrix mismatch was partly a projection bug: the dashboard/persona-audit payload was overriding persisted candidate-aware decisions with fresh threshold-only reclassification
+- after fixing that projection seam, the remaining product-leadership inertia is narrower but still real in the public-transition persona
+- finding `4` therefore remains open, but the residual surface is now:
+  - one public-transition backend/product-leadership role (`Entur`)
+  - one adjacent strategic architecture role (`Head of Enterprise Architecture`)
+
+Status update:
+
+- finding `4` remains open
+- the next clean hardening move should focus on public-transition directionality and platform/back-end product adjacency, not on reopening the fixed early-adjacent moderator or dashboard seams
+
 ### 5. Monitoring is still too noisy relative to audit slice size
 
 **Severity:** medium
@@ -351,6 +395,46 @@ Status update:
 
 - finding `5` remains open
 - next hardening should focus on further per-job aggregation or demotion of medium-noise watches, not on reopening the current materiality model
+
+**Latest rerun evidence — 2026-04-20 (post-projection consistency fix)**
+
+Latest audit root:
+
+- `C:\Users\larsv\JobpipeData\audit\public_oss_persona_audit_20260420_181802`
+
+Observed monitoring summary on the latest validated code state:
+
+- reference persona:
+  - `watchlist_count=12`
+  - `watchlist_count_by_materiality: high=3, medium=5, low=4`
+  - `change_event_count=6`
+- specialist persona:
+  - `watchlist_count=4`
+  - `watchlist_count_by_materiality: high=0, medium=2, low=2`
+  - `change_event_count=6`
+- public-transition persona:
+  - `watchlist_count=8`
+  - `watchlist_count_by_materiality: high=0, medium=4, low=4`
+  - `change_event_count=6`
+- early-adjacent persona:
+  - `watchlist_count=8`
+  - `watchlist_count_by_materiality: high=0, medium=4, low=4`
+  - `change_event_count=6`
+
+Interpretation:
+
+- the projection consistency fix makes these counts more trustworthy than the prior mismatched rerun
+- the quieter intermediate numbers were partly understated because the dashboard payload was reclassifying persisted decisions instead of preserving the canonical DB state
+- monitoring noise is therefore still a live product issue, especially for:
+  - the reference persona (`12`)
+  - the public-transition persona (`8`)
+  - the early-adjacent persona (`8`)
+- finding `5` remains open and should now be treated as a true watchlist/change-event modeling problem rather than a dashboard accounting artifact
+
+Status update:
+
+- finding `5` remains open
+- the next clean hardening move should target explicit watchlist aggregation or candidate-facing demotion of medium-noise watches after the post-refactor baseline rebuild
 
 ## Active hardening order
 

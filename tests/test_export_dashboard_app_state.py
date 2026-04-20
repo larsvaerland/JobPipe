@@ -425,7 +425,7 @@ def test_build_payload_reads_jobs_and_events_from_primary_db(tmp_path):
     assert len(payload["jobs"]) == 1
     assert payload["jobs"][0]["job_id"] == "job-db"
     assert payload["jobs"][0]["title"] == "Principal Product Lead"
-    assert payload["jobs"][0]["final_decision"] == "APPLY_STRONGLY"
+    assert payload["jobs"][0]["final_decision"] == "APPLY"
     assert len(payload["events"]) == 2
     assert payload["events"][-1]["run_id"] == "run-db"
     assert payload["events"][-1]["job_id"] == "job-db"
@@ -435,6 +435,68 @@ def test_build_payload_reads_jobs_and_events_from_primary_db(tmp_path):
     assert payload["jobs"][0]["job_calibration_assessment"]["direct_feedback_signals"] == ["promote"]
     assert payload["summary"]["calibration_summary"]["manual_promotions"] == 1
     assert "ranking:apply_floor" in payload["summary"]["calibration_summary"]["active_setting_keys"]
+
+
+def test_build_payload_preserves_persisted_candidate_aware_skip(tmp_path):
+    out_runs = tmp_path / "out_runs"
+    db_path = tmp_path / "jobpipe.sqlite"
+
+    out_runs.mkdir()
+
+    conn = connect_primary_db(db_path)
+    ensure_candidate(conn, candidate_id="candidate-a")
+    upsert_job_evaluation(
+        conn,
+        {
+            "candidate_id": "candidate-a",
+            "job_id": "job-preserve-skip",
+            "run_id": "run-preserve-skip",
+            "run_mtime": 1713345600.0,
+            "run_seen_at": "2026-04-17T08:00:00Z",
+            "title": "Produktleder",
+            "employer": "Example AS",
+            "sector": "",
+            "work_city": "Oslo",
+            "work_county": "Oslo",
+            "work_postalCode": "0001",
+            "applicationDue": "2026-04-30",
+            "source_url": "https://example.test/job-preserve-skip",
+            "application_url": "",
+            "triage_decision": "REVIEW",
+            "triage_confidence": 0.95,
+            "triage_explanation": "Forced review safety.",
+            "triage_signals": "platform_suggested,safety:target_title",
+            "reverse_decision": "",
+            "reverse_confidence": None,
+            "reverse_rationale": "",
+            "fit_score": 38,
+            "pivot_score": 55,
+            "final_decision": "SKIP",
+            "final_confidence": 0.65,
+            "recommendation_reason": "fit=38, pivot=55, candidate_risk=off_anchor_product_leadership_scope",
+            "cv_focus": "",
+            "feedback_flags": "",
+            "description_snip": "",
+            "skip_reason": "moderate",
+            "raw_index_json": json.dumps({"job_id": "job-preserve-skip"}, ensure_ascii=False),
+            "raw_match_json": json.dumps({"overlaps": [], "gaps": [], "hard_blockers": [], "notes": ""}, ensure_ascii=False),
+            "raw_pivot_json": json.dumps({"pivot_type": "", "potential_risk": "", "why_it_matters": []}, ensure_ascii=False),
+            "raw_moderator_json": json.dumps({"cv_focus": [], "feedback_flags": []}, ensure_ascii=False),
+            "closed_at": "",
+            "updated_at": "2026-04-17T08:00:10Z",
+        },
+    )
+    conn.commit()
+    conn.close()
+
+    payload = build_payload(
+        out_runs,
+        primary_db_path_=db_path,
+        candidate_id="candidate-a",
+    )
+
+    assert payload["jobs"][0]["job_id"] == "job-preserve-skip"
+    assert payload["jobs"][0]["final_decision"] == "SKIP"
 
 
 def test_build_payload_includes_operational_summary_counts(tmp_path):
