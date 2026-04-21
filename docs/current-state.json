@@ -290,9 +290,33 @@
       ]
     },
     "risk_label": "green",
-    "notes": "Slice 4 is the first slice that wires the builder into the CLI surface. Read-only smoke command. No generation, no agent call, no pipeline semantics change. 11 binary acceptance criteria. 8 synchronous tests. Brief lives at docs/execplans/T002-slice-4.md on ops/orchestrator-v2. Coordinator-applied fix to moderator validation documented in the brief itself under 'Coordinator correction applied in round 3'."
+    "notes": "Slice 4 is the first slice that wires the builder into the CLI surface. Read-only smoke command. No generation, no agent call, no pipeline semantics change. 11 binary acceptance criteria. 8 synchronous tests. Brief lives at docs/execplans/T002-slice-4.md on ops/orchestrator-v2. Coordinator-applied fix to moderator validation documented in the brief itself under 'Coordinator correction applied in round 3'.",
+    "project_item": {
+      "id": "PVTI_lAHOCSFbLc4BJUdazgqmD5E",
+      "project_number": 6,
+      "project_url": "https://github.com/users/larsvaerland/projects/6",
+      "type": "draft_issue",
+      "title": "T002 Slice 4 - build-authoring-context smoke CLI hook (#61)",
+      "fields": {
+        "status": "Ready",
+        "priority": "P1",
+        "size": "S",
+        "type": "Task",
+        "area": "CV Authoring",
+        "delegation": "Agent-ready"
+      }
+    },
+    "codex_pre_stage": {
+      "branch": "codex/T002-authoring-mvp",
+      "reset_to": "origin/main",
+      "reset_sha": "eae36db00ca9dd8032017d3fd56167c0d875f734",
+      "pushed_at": "2026-04-21T21:05:00+02:00",
+      "force_with_lease": true,
+      "previous_sha": "cfbf7d4037e97d6ea6f954981b158a950467b928",
+      "notes": "Per persistent memory rule: pre-stage codex branch before every handoff. Resetting from cfbf7d4 (Slice 3 pre-squash) to eae36db (Slice 3 merge) aligns codex worktree with the squash-merged main."
+    }
   },
-  "updated_at": "2026-04-21T21:00:00+02:00",
+  "updated_at": "2026-04-21T21:15:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
