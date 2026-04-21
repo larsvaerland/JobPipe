@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 active \u2014 Slices 1/2/3 merged. Slice 4 (#61 smoke CLI hook) ready for planner pickup.",
+  "active_goal": "T002 authoring MVP Sprint 1 active — Slices 1/2/3 merged. Slice 4 (#61 smoke CLI hook) planner brief approved by coordinator; ready for Codex handoff.",
   "current_task_id": "T002",
   "current_slice": "T002-slice-4",
-  "status": "slice_4_awaiting_planner_pickup",
+  "status": "slice_4_planner_approved_awaiting_codex",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -228,13 +228,13 @@
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
     "artifacts": [
       "docs/decisions.md - Op 2 + Option C decisions as durable record",
-      "docs/ai-playbook.md \u00a7PR target branch - PRs target main post-Op2",
-      "docs/ai-playbook.md \u00a7Slice Brief Self-Review - planner self-validates before handing up",
-      "docs/ai-playbook.md \u00a7Codex Worker Prompt Template - reusable Codex prompt shell",
-      "docs/ai-playbook.md \u00a7Sprint Loops - standing loops for planner, Codex, coordinator",
-      "docs/ai-playbook.md \u00a7Cheap Delegation - explicit delegation matrix for each role",
-      "docs/execplans/T002.md \u00a7Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
-      "docs/execplans/T002.md \u00a7Slice-pickup protocol - planner claims slices 2..N without re-routing",
+      "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
+      "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
+      "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
+      "docs/ai-playbook.md §Sprint Loops - standing loops for planner, Codex, coordinator",
+      "docs/ai-playbook.md §Cheap Delegation - explicit delegation matrix for each role",
+      "docs/execplans/T002.md §Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
+      "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
       "docs/integrations/README.md - upstream role + seam map",
       "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
     ],
@@ -258,7 +258,7 @@
       "#63"
     ],
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "slices_1_2_3_merged_slice_4_awaiting_planner_pickup",
+    "status": "slices_1_2_3_merged_slice_4_planner_approved",
     "planner_branch": "claude/T002-authoring-mvp",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec.",
     "current_slice": "#61",
@@ -268,14 +268,31 @@
     "issue": "#61",
     "title": "Add `jobpipe build-authoring-context --job <id>` smoke CLI hook",
     "slice_brief": "docs/execplans/T002-slice-4.md",
-    "planner_status": "awaiting_pickup",
+    "planner_status": "approved",
     "codex_status": "not_started",
-    "planner_stamp": null,
-    "coordinator_stamp": null,
-    "risk_label": "amber",
-    "notes": "Slice 4 is the first slice that wires the builder into the CLI surface. Scope: a read-only smoke command that constructs and prints an AuthoringCaseContext for a single job-id from canonical pipeline state. No generation, no agent call, no pipeline semantics change. Planner must: (1) decide exactly where the CLI entrypoint lives (subcommand of jobpipe.cli.main), (2) decide what canonical state source the smoke command reads from (DB? fixture? run_id-scoped?), (3) decide serialization format (default JSON; --format flag?), (4) confirm candidate_id/evaluation_id resolution matches Slice 3 field-source correction (candidate_id=default_candidate_id(); evaluation_id=f\"{ctx.meta.run_id}:{ctx.job_id}\"). Planner pickup protocol: claim from docs/execplans/T002.md Sprint 1 without re-routing."
+    "planner_stamp": {
+      "by": "claude-sonnet",
+      "at": "2026-04-21",
+      "rounds": 3,
+      "notes": "Round 1 had C1/C2/C3 structural issues (positional candidate_id kwarg, unverified resume shape, date-based layout naming). Round 2 regressed catastrophically (invented builder kwargs, wrong import path). Round 3 restored round-1 structure with the three corrections applied and the full smoke module template."
+    },
+    "coordinator_stamp": {
+      "by": "claude-opus",
+      "at": "2026-04-21",
+      "status": "approved_with_inline_correction",
+      "correction": "Round 3 brief had JobContext.model_construct(... moderator=None, ...) which would trigger the Slice 3 builder guard ValueError on every invocation. Coordinator applied inline fix: moderator=ModeratorOut.model_validate(moderator_data). Symmetric to existing parsed=JobParse.model_validate(parsed_data) pattern. Existence check on moderator_data stays in build_context_for_job as the primary guard; builder assertion becomes a last-resort backstop.",
+      "verified_on_main": [
+        "jobpipe/authoring/builder.py raises ValueError on moderator is None AND parsed is None (verified on eae36db)",
+        "ModeratorOut and JobParse both extend BaseModel (pydantic v2) so .model_validate is correct",
+        "jobpipe/cli/sync_evaluations.py uses _load_stage('05_moderator.json', '06_moderator.json') fallback pattern — brief mirrors this",
+        "jobpipe/decision/__init__.py exports build_candidate_evidence_context, build_candidate_narrative_context, build_decision_context",
+        "jobpipe/core/candidate_data.py load_candidate_profile_pack and load_candidate_resume_json both accept keyword-only candidate_id"
+      ]
+    },
+    "risk_label": "green",
+    "notes": "Slice 4 is the first slice that wires the builder into the CLI surface. Read-only smoke command. No generation, no agent call, no pipeline semantics change. 11 binary acceptance criteria. 8 synchronous tests. Brief lives at docs/execplans/T002-slice-4.md on ops/orchestrator-v2. Coordinator-applied fix to moderator validation documented in the brief itself under 'Coordinator correction applied in round 3'."
   },
-  "updated_at": "2026-04-21T20:30:00+02:00",
+  "updated_at": "2026-04-21T21:00:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
@@ -302,6 +319,6 @@
     "project_item_status": "Done",
     "acceptance_met": "11/11",
     "validation": "11 tests passed; compile_check OK (75 files); no crewai/autogen/langchain imports; Pydantic v2 .model_dump() used.",
-    "notes": "Pure constructor. keyword-only candidate_id (required) and evaluation_id (default None). _enum_val applied to both final_decision and act_now. ValueError guards for absent moderator/parsed include job_id. Slice 1 docstring drift documented in the brief's Field-source correction note; NOT re-opened \u2014 separate follow-up issue recommended for docs hygiene."
+    "notes": "Pure constructor. keyword-only candidate_id (required) and evaluation_id (default None). _enum_val applied to both final_decision and act_now. ValueError guards for absent moderator/parsed include job_id. Slice 1 docstring drift documented in the brief's Field-source correction note; NOT re-opened — separate follow-up issue recommended for docs hygiene."
   }
 }
