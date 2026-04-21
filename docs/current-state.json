@@ -1,9 +1,9 @@
 {
-  "active_goal": "Continue job catalog foundation work",
+  "active_goal": "Land T001 Slice 1 via PR #90; plan Op 2 OSS unification + upstream-fork integration strategy",
   "current_task_id": "T001",
   "current_slice": "T001-slice-1",
-  "status": "implementation_in_progress",
-  "lead_worker": "codex",
+  "status": "review_in_progress",
+  "lead_worker": "claude",
   "active_branch": "codex/job-catalog-foundation-v2",
   "coordinator_branch": "ops/orchestrator-v2",
   "implementation_branch": "codex/job-catalog-foundation-v2",
@@ -32,8 +32,34 @@
     "planner_branch": "claude/job-catalog-foundation-v2",
     "notes": "Codex worker prompt stamped approved. Escalation gates in the prompt remain in force during implementation."
   },
-  "last_tests_run": [],
-  "last_test_status": "not_run",
+  "last_tests_run": [
+    {
+      "ran_at": "2026-04-21",
+      "where": "host venv (C:\\Users\\larsv\\Jobpipe\\.venv)",
+      "commands": [
+        "python compile_check.py",
+        "python -m jobpipe.cli.main inspect-db --help",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp tests/test_inspect_primary_db_claims.py -q"
+      ],
+      "result": "4 passed; compile_check OK (71 files); help lists new --show choices and --job-id"
+    }
+  ],
+  "last_test_status": "passed",
+  "toolchain_notes": [
+    "Python 3.14 + anyio plugin autoload + Windows = OSError [WinError 10106] at asyncio backend init. Workaround: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 + explicit -p no:debugging -p no:cacheprovider. Separate follow-up slice should pin pytest plugins or add pyproject.toml pytest config."
+  ],
+  "implementation_pr": {
+    "number": 90,
+    "url": "https://github.com/larsvaerland/Jobpipe/pull/90",
+    "base": "codex/job-catalog-foundation",
+    "head": "codex/job-catalog-foundation-v2",
+    "title": "T001 Slice 1: inspect-db claim-layer views",
+    "commits_bundled": ["c3ddb0f", "582fa82", "7cac9a5", "f4b3062"],
+    "project_item_id": "PVTI_lAHOCSFbLc4BJUdazgqkLKk",
+    "status": "In review",
+    "opened_at": "2026-04-21",
+    "notes": "PR targets codex/job-catalog-foundation (private integration lane) rather than main because origin/main and the real codebase have unrelated histories. Reconciliation happens under Op 2 (OSS unification)."
+  },
   "github_project_item": {
     "slice": "T001-slice-1",
     "item_id": "PVTI_lAHOCSFbLc4BJUdazgqjqHU",
@@ -42,7 +68,7 @@
     "type": "draft_issue",
     "title": "T001 Slice 1 - Inspect persisted claim layer",
     "fields": {
-      "status": "In Progress",
+      "status": "In review",
       "priority": "P1",
       "size": "S",
       "type": "Task",
@@ -67,11 +93,20 @@
     "notes": "Playbook section landed on ops/orchestrator-v2 as commit c42e8d6."
   },
   "open_risks": [
-    "Codex implementation is in flight on codex/job-catalog-foundation-v2; changes to schema, derive.py, persistence.py, cli/main.py, pipeline stages, or any new runtime dependency must stop and escalate to the coordinator.",
-    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice."
+    "origin/main and codex/job-catalog-foundation have unrelated histories. Slice 1 shipped via the private integration lane to avoid a destructive reconciliation under pressure. Op 2 (OSS unification) must decide merge-vs-reset before any PR targets main directly.",
+    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice after PR #90 lands.",
+    "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
+    "Upstream integration strategy for the 3 forked repos is not yet captured in repo docs; Op 2 should surface the integration boundary before code-level reconciliation."
   ],
   "blocked_on": [],
-  "needs_founder_decision": [],
-  "touched_files": [],
-  "updated_at": "2026-04-21T15:30:00+02:00"
+  "needs_founder_decision": [
+    "Op 2 path selection: (A) merge --allow-unrelated-histories to preserve public main history, or (B) archive main as refs/tags/oss-main-pre-unify and force-push the real codebase to main. User lean appears to be (B) since paid/multi-user work has not yet started and the private lane is effectively the intended OSS state.",
+    "Upstream fork integration model: which 3 forks, what role each plays (vendored dependency vs submodule vs fork-with-patches), and how they feed into the JobPipe runtime. Needed before Op 2 can be scoped concretely."
+  ],
+  "touched_files": [
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (via PR #90)",
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (via PR #90)",
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (via PR #90)"
+  ],
+  "updated_at": "2026-04-21T16:45:00+02:00"
 }
