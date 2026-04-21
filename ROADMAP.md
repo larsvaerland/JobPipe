@@ -106,6 +106,7 @@ Deliver:
 - safer examples and fixtures
 - more credible first-run experience for non-reference users
 - controlled tailoring research imported from local prototypes only through the canonical evidence/narrative model
+- reviewed AI document-authoring MVP path from [specs/ai-document-authoring-mvp-workflow-2026-04-21.md](specs/ai-document-authoring-mvp-workflow-2026-04-21.md), tracked primarily through GitHub Project #6 issues #56-#89
 - thin explicit sibling seams only where they reinforce the canonical model:
   - [specs/jobsync-integration-seam.md](specs/jobsync-integration-seam.md)
   - [specs/reactive-resume-integration-seam.md](specs/reactive-resume-integration-seam.md)
