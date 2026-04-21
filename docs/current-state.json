@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 \u2014 Slice 2 (#59) MERGED. Slice 3 (#60) next: constructor that builds AuthoringCaseContext from canonical state.",
+  "active_goal": "T002 authoring MVP Sprint 1 \u2014 Slice 3 (#60) APPROVED and ready for Codex. AuthoringCaseContext constructor from canonical state.",
   "current_task_id": "T002",
   "current_slice": "T002-slice-3",
-  "status": "slice_3_awaiting_planner_pickup",
+  "status": "slice_3_approved_ready_for_codex",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -257,22 +257,22 @@
       "#63"
     ],
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "slice_3_awaiting_planner_pickup",
+    "status": "slice_3_approved_ready_for_codex",
     "planner_branch": "claude/T002-authoring-mvp",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec."
   },
   "current_slice_status": {
     "issue": "#60",
-    "title": "Constructor that builds AuthoringCaseContext from canonical state",
-    "slice_brief": null,
-    "planner_status": "not_started",
+    "title": "AuthoringCaseContext constructor from canonical state",
+    "slice_brief": "docs/execplans/T002-slice-3.md",
+    "planner_status": "approved",
     "codex_status": "not_started",
-    "planner_stamp": null,
-    "coordinator_stamp": null,
-    "risk_label": "tbd",
-    "notes": "Awaiting planner pickup. Governing spec: specs/ai-document-authoring-mvp-workflow-2026-04-21.md. Contract pieces AuthoringCaseContext (#58) and output models (#59) are merged into main."
+    "planner_stamp": "2026-04-21",
+    "coordinator_stamp": "2026-04-21",
+    "risk_label": "green",
+    "notes": "GitHub issue #60 title ('Story: Generate one structured application package from a bounded case') describes full generation. T002.md \u00a7Sprint 1 scopes this to the constructor only. Generation deferred. Inherited Slice 1 docstring drift on candidate_id/evaluation_id sources documented in slice brief \u00a7Field-source correction note; Slice 1 is NOT re-opened. Constructor signature uses keyword-only candidate_id (required) + evaluation_id (optional, default None)."
   },
-  "updated_at": "2026-04-21T20:00:00+02:00",
+  "updated_at": "2026-04-21T21:00:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
