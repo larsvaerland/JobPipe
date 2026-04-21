@@ -2,7 +2,7 @@
   "active_goal": "T002 authoring MVP Sprint 1 active — Slices 1/2/3 merged. Slice 4 (#61 smoke CLI hook) planner brief approved by coordinator; ready for Codex handoff.",
   "current_task_id": "T002",
   "current_slice": "T002-slice-4",
-  "status": "slice_4_planner_approved_awaiting_codex",
+  "status": "slice_4_brief_patched_codex_resumable",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -269,7 +269,7 @@
     "title": "Add `jobpipe build-authoring-context --job <id>` smoke CLI hook",
     "slice_brief": "docs/execplans/T002-slice-4.md",
     "planner_status": "approved",
-    "codex_status": "not_started",
+    "codex_status": "escalated_and_resumed",
     "planner_stamp": {
       "by": "claude-sonnet",
       "at": "2026-04-21",
@@ -314,9 +314,31 @@
       "force_with_lease": true,
       "previous_sha": "cfbf7d4037e97d6ea6f954981b158a950467b928",
       "notes": "Per persistent memory rule: pre-stage codex branch before every handoff. Resetting from cfbf7d4 (Slice 3 pre-squash) to eae36db (Slice 3 merge) aligns codex worktree with the squash-merged main."
+    },
+    "correction_round_2": {
+      "by": "claude-opus",
+      "at": "2026-04-21",
+      "trigger": "Codex escalated at Step 0 signature-check gate after reset+read of Slice 4 brief on codex/T002-authoring-mvp.",
+      "escalation_summary": "Brief's round-3 module template assumed builder signatures (job_ctx) / (job_ctx, resume) / (job_ctx, decision, evidence, resume). Actual signatures on origin/main take Mapping[str, Any] + separate resume/profile_pack/evidence-unit inputs. Codex correctly stopped rather than adapting around the brief.",
+      "resolution": "Rewrote module template to delegate derived-context assembly to the production helper jobpipe.stages.application_pack._build_application_pack_contexts, plus reuse _load_resume_context for resume compaction. This removes all three direct builder calls from the smoke CLI and guarantees parity with the production application_pack stage.",
+      "additional_fix": "Triage/profile_match/pivot stage data now validated via _try_validate(TriageOut|ProfileMatchOut|PivotOut, data) so _application_pack_job_view sees real pydantic models.",
+      "brief_commit": "cc136fa",
+      "brief_commit_message": "T002 Slice 4 brief: correction round 2 (context-builder signatures)",
+      "brief_diff_stat": "1 file changed, 152 insertions(+), 61 deletions(-)",
+      "pushed_to": "origin/ops/orchestrator-v2",
+      "files_touched": [
+        "docs/execplans/T002-slice-4.md"
+      ],
+      "codex_action": "Re-fetch + reset to origin/codex/T002-authoring-mvp (unchanged, still eae36db), re-read the brief from origin/ops/orchestrator-v2, and resume implementation with the corrected template.",
+      "verified_signatures_on_main": {
+        "build_decision_context": "jobpipe/decision/derive.py: (job: Mapping[str, Any], *, candidate_profile: Mapping[str, Any] | None = None) -> DecisionContext",
+        "build_candidate_evidence_context": "jobpipe/decision/evidence.py: (job: Mapping[str, Any], resume_json: Mapping[str, Any], *, candidate_id: str = 'default', focus_terms: Iterable[str] = (), limit: int = 6) -> CandidateEvidenceContext",
+        "build_candidate_narrative_context": "jobpipe/decision/narrative.py: (job: Mapping[str, Any], profile_pack: str, evidence_units: list[CandidateEvidenceUnit], selected_evidence_units: list[CandidateEvidenceSelection], *, candidate_id: str = 'default', decision_table: JobDecisionTable | None = None) -> CandidateNarrativeContext",
+        "production_helper": "jobpipe/stages/application_pack.py:_build_application_pack_contexts(ctx: JobContext, resume_ctx: dict) -> tuple[DecisionContext, CandidateEvidenceContext, CandidateNarrativeContext]"
+      }
     }
   },
-  "updated_at": "2026-04-21T21:15:00+02:00",
+  "updated_at": "2026-04-21T22:00:00+02:00",
   "t002_slice_2": {
     "issue": "#59",
     "status": "merged",
