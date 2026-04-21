@@ -1,8 +1,8 @@
 {
-  "active_goal": "PR #90 in review on private lane; Op 2 slice 1 plan doc landed; T002 authoring MVP (Option C) queued behind PR #90 merge",
-  "current_task_id": "T001",
-  "current_slice": "T001-slice-1",
-  "status": "review_in_progress",
+  "active_goal": "PR #90 merged + Op 2 complete (main reunified to private lane); T002 authoring MVP (Option C, Issue #58) is now the next lane",
+  "current_task_id": "T002",
+  "current_slice": "T002-slice-1",
+  "status": "ready_for_next_lane",
   "lead_worker": "claude",
   "active_branch": "codex/job-catalog-foundation-v2",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -56,9 +56,12 @@
     "title": "T001 Slice 1: inspect-db claim-layer views",
     "commits_bundled": ["c3ddb0f", "582fa82", "7cac9a5", "f4b3062"],
     "project_item_id": "PVTI_lAHOCSFbLc4BJUdazgqkLKk",
-    "status": "In review",
+    "status": "Merged",
     "opened_at": "2026-04-21",
-    "notes": "PR targets codex/job-catalog-foundation (private integration lane) rather than main because origin/main and the real codebase have unrelated histories. Reconciliation happens under Op 2 (OSS unification)."
+    "merged_at": "2026-04-21T15:04:38Z",
+    "merge_commit": "9446998e0bd70743cfed1b25d615360aae2fccca",
+    "merge_strategy": "merge commit (preserves 4-commit history)",
+    "notes": "PR targeted codex/job-catalog-foundation (private integration lane). After merge, origin/main was force-updated to the merge SHA under Op 2 slice 3; main now reflects the unified codebase."
   },
   "github_project_item": {
     "slice": "T001-slice-1",
@@ -94,17 +97,24 @@
   },
   "op2_lane": {
     "name": "Op 2: OSS unification + upstream-fork integration model",
-    "status": "plan_only",
+    "status": "done",
     "plan_doc": "docs/opsplans/op2-oss-unification.md",
     "plan_commit": "fe61ba0",
     "path_decision": "B",
-    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA. Path A rejected because preserving unrelated lineage drags a branching history into the 'one clean codebase' OSS story. Slice 3 (force-update) remains RED GATE and needs an explicit go-ahead.",
+    "path_decision_notes": "Path B approved: archive current origin/main as refs/tags/oss-main-pre-unify, then force-update origin/main to the private-lane merged SHA. Path A rejected because preserving unrelated lineage drags a branching history into the 'one clean codebase' OSS story.",
+    "ordering_decision": "A",
+    "ordering_decision_notes": "PR #90 merged first (merge commit, 4-commit history preserved); main then force-updated to the merge SHA. Preserves PR #90 as a real review artifact in history.",
     "slices": {
       "slice_1_plan_doc": "done (commit fe61ba0 on ops/orchestrator-v2)",
-      "slice_2_archive_tag": "pending founder go-ahead after PR #90 merges",
-      "slice_3_force_update_main": "RED GATE - pending founder sign-off, runs after slice 2",
-      "slice_4_integrations_readme": "pending - can run parallel with or after slice 3"
+      "slice_2_archive_tag": "done (refs/tags/oss-main-pre-unify -> 927927add3d454065240b5fd6b3dee7003796d69, wraps commit b8bc34c1575bcb92b15b611984ee10016b55809d)",
+      "slice_3_force_update_main": "done (origin/main force-updated b8bc34c -> 9446998 on 2026-04-21)",
+      "slice_4_integrations_readme": "done (commit 8cb7560 on ops/orchestrator-v2, docs/integrations/README.md)"
     },
+    "main_sha": "9446998e0bd70743cfed1b25d615360aae2fccca",
+    "archive_tag": "oss-main-pre-unify",
+    "archive_tag_object": "927927add3d454065240b5fd6b3dee7003796d69",
+    "archive_tag_wraps": "b8bc34c1575bcb92b15b611984ee10016b55809d",
+    "rollback_command": "git push origin +b8bc34c1575bcb92b15b611984ee10016b55809d:refs/heads/main",
     "upstream_fork_model": {
       "principle": "Use upstream repos as intended by GitHub. Slim seams, replaceable adapters, minimum integration. JobPipe is the engine; the forked/external repos are noise-reducing surfaces up until the candidate presses apply.",
       "reactive_resume": {
@@ -144,17 +154,19 @@
     "parked_reason": "Supabase / crewAI runtime / hosted shell explicitly out of scope for MVP per governing spec"
   },
   "open_risks": [
-    "origin/main and codex/job-catalog-foundation have unrelated histories. Slice 1 shipped via the private integration lane to avoid a destructive reconciliation under pressure. Op 2 slice 3 (RED GATE force-update) resolves this but requires explicit founder sign-off per plan doc.",
-    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice after PR #90 lands.",
+    "specs/job-claims-model.md 'First implementation slice' items 1-6 are drifted vs. code (already implemented) and should be reconciled in a follow-up docs-hygiene slice.",
     "Python 3.14 + anyio plugin autoload breaks pytest on Windows; validation depends on a workaround. A follow-up slice should add a pytest config or pin plugins.",
-    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for."
+    "T002 Option C requires that the author/revise contract layer stays agent-runtime-swappable. If the first slice couples tightly to crewAI primitives, the product locks to a specific agent framework and loses the pluggability Option C was chosen for.",
+    "Post-unification: any clone of the old origin/main (tip b8bc34c) will require git fetch --prune + hard reset to match the new main. Archive tag oss-main-pre-unify preserves the old tip for provenance."
   ],
   "blocked_on": [],
-  "needs_founder_decision": [
-    "Op 2 slice 2 (archive tag oss-main-pre-unify) - safe, reversible - awaits 'go' after PR #90 merges.",
-    "Op 2 slice 3 (force-update origin/main) - RED GATE, irreversible in OSS audit-trail sense - awaits explicit 'go' after slice 2."
-  ],
+  "needs_founder_decision": [],
   "recent_decisions": [
+    {
+      "decided_at": "2026-04-21",
+      "decision": "Op 2 executed end-to-end: PR #90 merged (merge commit 9446998), archive tag oss-main-pre-unify pushed, origin/main force-updated to 9446998, docs/integrations/README.md landed.",
+      "rationale": "All slices completed with founder sign-off at each RED GATE. Main now reflects the unified private-lane codebase; old main preserved under tag for provenance."
+    },
     {
       "decided_at": "2026-04-21",
       "decision": "Op 2 path B (archive + force-update) over path A (merge --allow-unrelated-histories)",
@@ -172,10 +184,11 @@
     }
   ],
   "touched_files": [
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (via PR #90)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (via PR #90)",
-    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (via PR #90)",
-    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)"
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\jobpipe\\cli\\inspect_primary_db.py (merged via PR #90, now on origin/main)",
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\tests\\test_inspect_primary_db_claims.py (merged via PR #90, now on origin/main)",
+    "C:\\Users\\larsv\\Jobpipe-codex-v2\\docs\\cli.md (merged via PR #90, now on origin/main)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\opsplans\\op2-oss-unification.md (commit fe61ba0)",
+    "C:\\Users\\larsv\\Jobpipe-orchestrator-v2\\docs\\integrations\\README.md (commit 8cb7560)"
   ],
-  "updated_at": "2026-04-21T17:00:00+02:00"
+  "updated_at": "2026-04-21T17:15:00+02:00"
 }
