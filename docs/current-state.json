@@ -200,16 +200,30 @@
       "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
       "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
       "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
+      "docs/ai-playbook.md §Sprint Loops - standing loops for planner, Codex, coordinator",
+      "docs/ai-playbook.md §Cheap Delegation - explicit delegation matrix for each role",
+      "docs/execplans/T002.md §Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
       "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
       "docs/integrations/README.md - upstream role + seam map",
       "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
     ],
     "coordinator_still_owns": [
-      "Review gate stamps before Codex runs",
+      "Sprint goal + slice ordering (set once per sprint in the task execplan)",
+      "Review gate stamps before Codex runs (can delegate to Sonnet subagent when no Approval Gate flagged)",
       "Approval Gate judgment calls (auth, billing, migrations, deployment, secrets, destructive deletes, pipeline semantics, scoring/selection, OSS/Workbench boundary, model-cost)",
       "Cross-task architectural decisions not yet in decisions.md",
-      "Routing a new task from scratch (T003+)"
+      "Routing a new task from scratch (T003+) or closing a sprint and opening the next"
     ]
   },
-  "updated_at": "2026-04-21T17:45:00+02:00"
+  "active_sprint": {
+    "task": "T002",
+    "sprint_number": 1,
+    "sprint_goal": "Deterministic contract layer + first authoring plumbing below the agent runtime. Option C compliant. No crewAI imports.",
+    "ordered_slices": ["#58", "#59", "#60", "#61", "#63"],
+    "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
+    "status": "ready_for_planner_pickup",
+    "planner_branch": "claude/T002-authoring-mvp",
+    "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec."
+  },
+  "updated_at": "2026-04-21T18:00:00+02:00"
 }

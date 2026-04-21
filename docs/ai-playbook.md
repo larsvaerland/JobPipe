@@ -292,3 +292,81 @@ DELIVERABLE
 The planner should not invent new sections. If a section does not apply,
 write `N/A` under it rather than delete it — reviewers scan the same shape
 across slices.
+
+## Sprint Loops
+
+A **sprint** is a sequence of slices from one governing spec, inside one MVP
+scope, that planner and Codex can chew through without a coordinator
+re-routing turn per slice. The coordinator sets the sprint goal + slice
+ordering once in the task execplan; the rest runs on the loops below.
+
+### Planner standing loop (per slice, inside an active sprint)
+
+1. Read the governing spec + task execplan + Slice Brief Self-Review.
+2. Pick the next slice from the sprint's ordered list.
+3. Run Slice Brief Self-Review. If any item fails → stop and ping coordinator
+   with a one-paragraph routing question. Do not draft further.
+4. If all pass: draft slice brief, Codex prompt (using the template), and
+   Project #6 draft. Hand up for checklist review.
+5. On coordinator approval, hand Codex the prompt.
+6. Start the next slice's brief while Codex implements the current one
+   (pipelined).
+
+### Codex standing loop (per approved slice)
+
+1. Read the approved Codex prompt. Do not re-derive scope.
+2. Implement on `codex/<task-id>-<slug>`.
+3. Run validation commands exactly as listed.
+4. Open PR into `main`, link Project #6 item.
+5. Report: commands run, test output, files touched, any surprises.
+6. On review feedback: address, push to same branch, re-run validation.
+7. On merge: mark Project #6 item Done, pick up next approved prompt.
+
+### Coordinator standing loop (per sprint)
+
+1. Set sprint goal + ordered slice list in the task execplan.
+2. For each planner hand-up: run Slice Brief Self-Review as checklist.
+   Approve, narrow with one sentence, or escalate to Approval Gate.
+3. For each Codex PR: run code review. Approve, request changes, or
+   escalate.
+4. When sprint exit trips, re-engage in Opus mode to set the next sprint.
+
+### Sprint exit criteria
+
+Close the sprint when any of:
+
+- All sprint slices merged.
+- An Approval Gate trips.
+- Scope needs to expand beyond the sprint's governing spec.
+- A decision needs to land in `docs/decisions.md` (durable, Opus-level).
+
+## Cheap Delegation
+
+Each role should delegate the cheapest safe way. The goal is: Opus coordinator
+only pays Opus tokens for judgment that actually needs Opus. Same pattern for
+planner and Codex.
+
+| Role | Delegate what | To | Trigger |
+|---|---|---|---|
+| Coordinator | Codebase search / file discovery | Explore subagent (quick or medium) | Finding files, symbols, call sites |
+| Coordinator | Slice Brief checklist pass | Sonnet subagent via Agent tool | Hand-up with no Approval Gate flagged |
+| Coordinator | Routine PR code review (no gate flagged) | Sonnet subagent (code-review skill) | PR is small, scope matches approved brief |
+| Coordinator | Docs-drift scan across root docs | Sonnet subagent | Mechanical cross-file comparison |
+| Coordinator | Commit message / PR body drafting | Haiku or Sonnet | Formatting-only text |
+| Planner | Field-to-source audit | Explore subagent | Mapping canonical sources for a slice brief |
+| Planner | Pattern-match existing tests | Explore subagent | Finding a test to mirror |
+| Planner | Codex prompt draft polishing | Sonnet subagent | Template is filled, polish only |
+| Codex | Rename / format-only diffs | GPT-5 mini | Pure mechanical edits with a test oracle |
+| Codex | Test-output transcription | Stays on primary tier | Correctness judgment required |
+
+### Never delegate (escalate instead)
+
+- Any Approval Gate (auth, billing, migrations, deployment, secrets,
+  destructive deletes, pipeline semantics, scoring/selection, OSS/Workbench
+  boundary, model-cost).
+- Any "this feels wrong but I can't say why" signal.
+- Any cross-task architectural decision.
+- Any route that could blur Option C (a `crewai` import entering a contract
+  module).
+
+When in doubt, escalate cheap and early, not expensive and late.
