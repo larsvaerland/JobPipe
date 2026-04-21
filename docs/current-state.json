@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 authoring MVP Sprint 1 — Slice 2 (#59) APPROVED and ready for Codex. Output model contracts.",
+  "active_goal": "T002 authoring MVP Sprint 1 \u2014 Slice 2 (#59) MERGED. Slice 3 (#60) next: constructor that builds AuthoringCaseContext from canonical state.",
   "current_task_id": "T002",
-  "current_slice": "T002-slice-2",
-  "status": "slice_2_approved_ready_for_codex",
+  "current_slice": "T002-slice-3",
+  "status": "slice_3_awaiting_planner_pickup",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -227,13 +227,13 @@
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
     "artifacts": [
       "docs/decisions.md - Op 2 + Option C decisions as durable record",
-      "docs/ai-playbook.md §PR target branch - PRs target main post-Op2",
-      "docs/ai-playbook.md §Slice Brief Self-Review - planner self-validates before handing up",
-      "docs/ai-playbook.md §Codex Worker Prompt Template - reusable Codex prompt shell",
-      "docs/ai-playbook.md §Sprint Loops - standing loops for planner, Codex, coordinator",
-      "docs/ai-playbook.md §Cheap Delegation - explicit delegation matrix for each role",
-      "docs/execplans/T002.md §Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
-      "docs/execplans/T002.md §Slice-pickup protocol - planner claims slices 2..N without re-routing",
+      "docs/ai-playbook.md \u00a7PR target branch - PRs target main post-Op2",
+      "docs/ai-playbook.md \u00a7Slice Brief Self-Review - planner self-validates before handing up",
+      "docs/ai-playbook.md \u00a7Codex Worker Prompt Template - reusable Codex prompt shell",
+      "docs/ai-playbook.md \u00a7Sprint Loops - standing loops for planner, Codex, coordinator",
+      "docs/ai-playbook.md \u00a7Cheap Delegation - explicit delegation matrix for each role",
+      "docs/execplans/T002.md \u00a7Sprint 1 - ordered slice list #58, #59, #60, #61, #63",
+      "docs/execplans/T002.md \u00a7Slice-pickup protocol - planner claims slices 2..N without re-routing",
       "docs/integrations/README.md - upstream role + seam map",
       "specs/ai-document-authoring-mvp-workflow-2026-04-21.md - governing slice sequence"
     ],
@@ -257,20 +257,32 @@
       "#63"
     ],
     "governing_spec": "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
-    "status": "ready_for_planner_pickup",
+    "status": "slice_3_awaiting_planner_pickup",
     "planner_branch": "claude/T002-authoring-mvp",
     "coordinator_reengage_at": "All 5 slices merged, OR Approval Gate trips, OR scope expands beyond governing spec."
   },
   "current_slice_status": {
-    "issue": "#59",
-    "title": "Define GeneratedApplicationPackage and DocumentValidationResult as Pydantic models",
-    "slice_brief": "docs/execplans/T002-slice-2.md",
-    "planner_status": "approved",
+    "issue": "#60",
+    "title": "Constructor that builds AuthoringCaseContext from canonical state",
+    "slice_brief": null,
+    "planner_status": "not_started",
     "codex_status": "not_started",
-    "planner_stamp": "2026-04-21",
-    "coordinator_stamp": "2026-04-21",
-    "risk_label": "green",
-    "notes": "GitHub issue #59 title is stale ('Create frozen one-job authoring fixture'). docs/execplans/T002.md §Sprint 1 is canonical and assigns #59 = output model contracts. Fixture work is deferred."
+    "planner_stamp": null,
+    "coordinator_stamp": null,
+    "risk_label": "tbd",
+    "notes": "Awaiting planner pickup. Governing spec: specs/ai-document-authoring-mvp-workflow-2026-04-21.md. Contract pieces AuthoringCaseContext (#58) and output models (#59) are merged into main."
   },
-  "updated_at": "2026-04-21T18:45:00+02:00"
+  "updated_at": "2026-04-21T20:00:00+02:00",
+  "t002_slice_2": {
+    "issue": "#59",
+    "status": "merged",
+    "pr": 93,
+    "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/93",
+    "codex_commit": "56dbc72",
+    "merge_commit": "f15b88334fe6d5ec30499b807a128657048c2d2d",
+    "merged_at": "2026-04-21T00:00:00Z",
+    "project_item": "PVTI_lAHOCSFbLc4BJUdazgqljzw",
+    "project_status": "Done",
+    "notes": "GeneratedApplicationPackage + DocumentValidationResult Pydantic v2 models. 7 synchronous tests passed. No crewai import. Scope contract-only."
+  }
 }
