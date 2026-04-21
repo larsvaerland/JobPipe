@@ -6,6 +6,10 @@ Canonical planning source:
 
 - [MASTER_PLAN.md](MASTER_PLAN.md)
 
+Canonical execution board:
+
+- [GitHub Project #6 - JobPipe](https://github.com/users/larsvaerland/projects/6)
+
 Canonical product thesis:
 
 - [PRODUCT_VISION.md](PRODUCT_VISION.md)
@@ -13,6 +17,17 @@ Canonical product thesis:
 Current planning audit:
 
 - [specs/platform-alignment-audit.md](specs/platform-alignment-audit.md)
+
+This file stays intentionally high-level.
+
+Use the GitHub Project for:
+
+- active backlog placement
+- initiative / epic / feature / story / task hierarchy
+- sprint selection
+- release milestone grouping
+
+Do not duplicate the full backlog tree here.
 
 ## Current phase
 
@@ -113,6 +128,13 @@ Only after the local-first model is stable:
 2. candidate/advisor workflows beyond direct file editing
 3. later private/commercial implementation built on top of the public foundation
 4. selective retrieval improvements where they solve a proven problem
+
+## Backlog only
+
+These are not active roadmap items now and should not be treated as the current build path:
+
+1. evaluate whether Supabase should ever be used as an optional new database/deployment substrate on top of the same canonical JobPipe model
+2. review the deactivated NAV Supabase Edge ingestion script as a possible future intake backlog item only, not as the current canonical ingestion path
 
 ## Explicit non-goals for now
 

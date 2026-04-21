@@ -1,6 +1,6 @@
 # JobPipe Master Plan
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-21
 
 This is the single planning source of truth for JobPipe.
 
@@ -75,11 +75,16 @@ The repo should be interpreted in this order:
 6. `docs/`
 7. `specs/`
 
+Canonical execution board:
+
+- [GitHub Project #6 - JobPipe](https://github.com/users/larsvaerland/projects/6)
+
 Document roles:
 
 - `MASTER_PLAN.md`: canonical planning source of truth
 - `PRODUCT_VISION.md`: durable product thesis and wedge framing
 - `ROADMAP.md`: short execution view only
+- `GitHub Project #6`: active backlog placement, issue hierarchy, release milestones, sprint selection, and execution tracking
 - `OSS_SCOPE.md`: public repo scope, OSS/private boundary, and contribution surface definition
 - `DEPENDENCY_POLICY.md`: maintained-OSS building-block direction and license policy for the public repo
 - `docs/`: current runtime, workflow, and operator guidance
