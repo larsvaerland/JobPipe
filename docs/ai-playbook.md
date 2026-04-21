@@ -124,9 +124,43 @@ Do not say the repo is clean unless `git status --short` was checked.
   sources; treat them as historical recovery material unless explicitly
   revalidated.
 
-## GitHub Project
+## GitHub Project execution board
 
-GitHub Project #6 is the active execution board for backlog placement, issue
-hierarchy, release milestones, sprint selection, and execution tracking. Do not
-duplicate the full backlog tree into repo markdown. Mirror only durable product
-direction or high-level roadmap consequences into repo docs.
+GitHub Project #6 is the canonical execution board for JobPipe.
+
+Operating rules:
+
+- Every implementable task should exist as a GitHub issue or draft issue on
+  Project #6 before Codex starts code work.
+- Planner output must reference the GitHub issue or project item when one
+  exists.
+- PRs should link back to the corresponding issue.
+- `docs/current-state.json` and `docs/execplans/*` remain the repo-local
+  memory layer; project status of record lives on Project #6.
+- If a task is not yet on Project #6, stop and ask the founder whether to
+  create a draft issue or a full issue.
+
+Repo-doc rules:
+
+- Do not duplicate the full backlog tree into repo markdown.
+- Mirror only durable product direction or high-level roadmap consequences
+  into repo docs.
+
+Coordinator output schema (use for all routing turns):
+
+    TASK CLASSIFICATION:
+    GITHUB PROJECT ITEM STATUS:
+    CHOSEN WORKER:
+    BRANCH NAME:
+    ONE-STEP OBJECTIVE:
+    CONTEXT FILES:
+    SUCCESS CRITERIA:
+    TESTS REQUIRED:
+    APPROVAL STATUS:
+    EXACT WORKER PROMPT:
+
+`GITHUB PROJECT ITEM STATUS` values: `Linked: #<number>`, `Draft: <id>`,
+`Pending creation`, or `Not required (planning-only)`.
+
+Detailed governance lives in
+`specs/github-workflow-governance-audit-2026-04-21.md`.
