@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 3 IN PROGRESS — Slice 9 done (crewAI 1.14.2 on Python 3.12 at C:\\Users\\larsv\\envs\\crewai-env). Next: hand T002-sprint-3-orchestrator.md to Codex for Tasks 1-3 (S10 skeleton, S11 factory, S12 crew).",
+  "active_goal": "T002 Sprint 3 closed — PR #107 merged (65b074d). S10/S11/S12 done. Pending: S13 live exit test (need APPLY-decision job + run --author crewai). Follow-up hygiene: #108 evidence_refs type, #109 test assertion fix, #110 dead code.",
   "current_task_id": "T002",
-  "current_slice": "T002-sprint-3-slice-9-done",
-  "status": "sprint_3_slice_9_complete_ready_for_codex",
+  "current_slice": "T002-sprint-3-s13-exit-test",
+  "status": "sprint_3_implementation_merged_awaiting_exit_test",
   "lead_worker": "claude",
   "active_branch": "claude/T002-authoring-mvp",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -177,7 +177,19 @@
       "slice_10_skeleton": "pending Codex (Task 1 in orchestrator brief)",
       "slice_11_factory": "pending Codex (Task 2 in orchestrator brief)",
       "slice_12_crew": "pending Codex (Task 3 in orchestrator brief)",
-      "slice_13_live_run": "pending coordinator + Lars (after Codex PR merges)"
+      "slice_13_live_run": "pending — need APPLY-decision job, then run: C:\\Users\\larsv\\envs\\crewai-env\\Scripts\\python.exe -m jobpipe.cli.main author-package --job <id> --author crewai --no-persist"
+    },
+    "pr": {
+      "number": 107,
+      "url": "https://github.com/larsvaerland/Jobpipe/pull/107",
+      "merge_commit": "65b074d09576ddb0abfcf0c0658388c0d21b03ac",
+      "merged_at": "2026-04-22",
+      "commits": ["faff993", "4460c2e", "0d8c8c5"]
+    },
+    "followup_issues": {
+      "108": "Fix evidence_refs type drift (list[dict] vs list[str])",
+      "109": "Fix test_author_cli_no_crewai — assert import statement not string occurrence",
+      "110": "Remove dead sys.modules lookup in build_author simple branch"
     }
   },
   "open_risks": [
@@ -214,6 +226,11 @@
       "decided_at": "2026-04-22",
       "decision": "T002 Sprint 3 started — crewAI integration decision documented in specs/crewai-integration-decision.md. Orchestrator+sub-agent brief at docs/execplans/T002-sprint-3-orchestrator.md.",
       "rationale": "crewAI 1.14.2 selected: vendor-agnostic via LiteLLM, MCP-native, isolated in Python 3.12 venv. Slice 9 env confirmed working. Codex handles Tasks 1-3 (S10/S11/S12) sequentially."
+    },
+    {
+      "decided_at": "2026-04-22",
+      "decision": "T002 Sprint 3 implementation closed — PR #107 merged (65b074d). CrewAIAuthor, factory, 2-agent crew all merged to main. S13 exit test pending live APPLY-decision run.",
+      "rationale": "All invariants hold: no crewai import in jobpipe/, 20 tests pass across Python 3.12 and 3.14, compile_check 82 files. Three follow-up hygiene issues opened (#108/#109/#110), none blocking."
     }
   ],
   "coordinator_leverage_scaffolding": {
