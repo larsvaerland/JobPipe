@@ -1,286 +1,204 @@
 # JobSync Integration Seam
 
-**Date:** 2026-04-19
-
-This spec defines the intended thin integration seam between:
-
-- `JobPipe`
-- `jobsync`
-
-The goal is to support a useful companion workflow without turning `JobPipe` into a UI orchestration repo or turning `jobsync` into the source of canonical decision state.
+**Date:** 2026-04-19  
+**Updated:** 2026-04-22 — reflects actual implemented state  
+**Status:** Seam is live. Both sides have working code. Manual write-back loop.
 
 ---
 
-## Purpose
+## What JobSync is
 
-`jobsync` should act as a companion workflow surface for the candidate.
+JobSync is a self-hosted Next.js (v1.1.10) job-search companion app, running locally at `http://localhost:3737` via Docker. It provides:
 
-It should be able to consume:
+- **Application tracker** — job list with status, applied date, due date, source, cover letter + resume attached per job
+- **Decision board / dashboard** — activity metrics, pipeline statistics, search progress visualisation
+- **Task and activity management** — tasks and activities linked to jobs with time tracking
+- **AI capabilities** — resume review, job-match scoring (supports Ollama locally, OpenAI, Gemini, DeepSeek, OpenRouter via settings UI)
+- **Automation engine** — scheduled job discovery via jsearch board with keyword matching, match threshold, deduplication, and accept/dismiss workflow
+- **Resume and cover letter storage** — variants stored and linked per job
+- **Notes and questions** per job
 
-- selected job projections
-- explicit decision context
-- document references
-- application-state changes
+JobSync is candidate-facing. JobPipe is the decision engine. The seam is narrow and deliberate.
 
-without becoming the canonical source of:
+---
 
-- job evaluation state
-- claims
-- selection logic
-- evidence or narrative semantics
+## Architectural rule (unchanged)
 
-The architectural rule remains:
+- `JobPipe` owns canonical decision state, claims, evaluation logic, evidence, and narrative semantics.
+- `JobSync` consumes bounded projections and emits bounded workflow events back.
+- Neither repo knows the other's internal architecture.
 
-- `JobPipe` owns canonical decision state
-- `jobsync` consumes bounded projections and emits bounded workflow events back
+---
+
+## What is actually built
+
+### JobPipe side
+
+| Component | Location | What it does |
+|---|---|---|
+| `export-jobsync` CLI | `jobpipe/cli/export_jobsync.py` | Reads canonical DB + artifact runs, builds `application_case_projections`, writes `jobsync_cases.json` |
+| `record-jobsync-event` CLI | `jobpipe/cli/record_jobsync_event.py` | Records one `JobSyncApplicationStatusEvent` back into canonical DB |
+| Projection builders | `jobpipe/projections/jobsync.py` | `build_jobsync_job_summary`, `build_jobsync_decision_brief`, `build_jobsync_document_refs`, `build_jobsync_application_case_projection/s` |
+| Model | `jobpipe/model/` | `JobSyncApplicationStatusEvent` |
+| Runtime helper | `jobpipe/runtime/` | `record_jobsync_application_status_event()` |
+
+Default export filter: `APPLY_STRONGLY`, `APPLY`, `REVIEW_HIGH`, `REVIEW_LOW`. Can be overridden per job or decision type via CLI flags.
+
+### JobSync side
+
+| Endpoint | Method | Accepts | What it does |
+|---|---|---|---|
+| `/api/integrations/jobpipe/jobs` | POST | `ExternalJobsImportEnvelope` (kind: `curated_jobs_import`) | Imports curated APPLY-decision jobs into JobSync tracker |
+| `/api/integrations/jobpipe/authoring` | POST | `ExternalAuthoringSyncEnvelope` (kind: `authoring_sync`) | Syncs generated document refs (CV, cover letter, screening answers) per job |
+| `/api/jobs/export` | POST | — | Streams tracked jobs as CSV |
+
+Authentication: `X-JobPipe-Token` header must match `JOBSYNC_SYNC_TOKEN` env var in JobSync.
+
+---
+
+## Contract types (source of truth: `jobsync/src/lib/external-jobs.ts`)
+
+### Outbound from JobPipe → JobSync: `ExternalJobsImportEnvelope`
+
+```typescript
+ExternalJobsImportEnvelope {
+  contractVersion?: string
+  producer?: string          // "jobpipe"
+  kind?: string              // "curated_jobs_import"
+  sentAt?: string
+  userEmail?: string
+  jobs?: ExternalJobImportRecord[]
+}
+
+ExternalJobImportRecord {
+  externalSource: string     // "jobpipe"
+  externalId: string         // canonical job_id
+  title: string
+  company: string
+  location?: string
+  jobUrl?: string
+  applicationUrl?: string
+  description?: string
+  jobSource?: string
+  status?: string
+  decision?: string          // "APPLY", "APPLY_STRONGLY", etc.
+  fitScore?: number | null
+  pivotScore?: number | null
+  triageExplanation?: string
+  decisionBrief?: Record<string, unknown>
+  artifactPlan?: Record<string, unknown>
+  applicationCaseProjection?: Record<string, unknown>
+  applicationPacket?: Record<string, unknown>
+  updatedAt?: string
+}
+```
+
+JobSync stores full `externalData` blob per job (decision brief, scores, artifact plan, application packet) and surfaces decision context in the tracker.
+
+### Authoring sync: `ExternalAuthoringSyncEnvelope`
+
+```typescript
+ExternalAuthoringSyncEnvelope {
+  kind: "authoring_sync"
+  authoring?: ExternalAuthoringSyncRecord[]
+}
+
+ExternalAuthoringSyncRecord {
+  externalSource: string
+  externalId: string         // canonical job_id
+  workspaceUrl?: string
+  applySessionUrl?: string
+  authoringState?: {
+    resume?: ExternalAuthoringSection
+    coverLetter?: ExternalAuthoringSection
+    screeningAnswers?: ExternalAuthoringSection
+  }
+}
+
+ExternalAuthoringSection {
+  variantRef?: string
+  documentRef?: string
+  exportPdfPath?: string
+  exportJsonPath?: string
+  exportDocxPath?: string
+  artifactRefs?: Array<Record<string, unknown>>
+}
+```
+
+### Write-back from JobSync → JobPipe: `JobSyncApplicationStatusEvent`
+
+Recorded via `record-jobsync-event` CLI:
+
+```
+jobpipe record-jobsync-event <job_id> <event_type> [--notes "..."] [--event-at ISO8601] [--metadata-json {...}]
+```
+
+Event types: `applied`, `interviewed`, `rejected`, `offer`, `withdrawn`, etc. (bounded by canonical `application_events` model).
+
+---
+
+## How the loop works today
+
+```
+JobPipe DB (APPLY decisions)
+  ↓
+jobpipe export-jobsync         → jobsync_cases.json
+  ↓
+POST /api/integrations/jobpipe/jobs  (with X-JobPipe-Token)
+  ↓
+JobSync tracker shows curated jobs with decision context
+  ↓
+User works the jobs in JobSync (track, note, attach docs, apply)
+  ↓
+POST /api/integrations/jobpipe/authoring  (after author-package run)
+  ↓
+JobSync shows linked CV/cover letter per job
+  ↓
+User clicks Apply in JobSync
+  ↓
+[manual today] jobpipe record-jobsync-event <job_id> applied
+  ↓
+Canonical application_events in JobPipe DB
+```
+
+---
+
+## What is NOT automatic yet
+
+The write-back from JobSync → JobPipe on "Apply" is manual today. JobSync does not currently push a webhook or call back to JobPipe when a user marks a job as applied. The `record-jobsync-event` CLI closes the loop but must be invoked manually.
+
+Options for making this automatic:
+1. JobSync automation plugin that POSTs to a JobPipe local HTTP endpoint on status change
+2. JobPipe polling the JobSync `/api/jobs/export` CSV and diffing status changes
+3. A thin jobpipe-mcp-server that JobSync can call as a tool (Sprint 4 candidate)
+
+The current manual pattern is acceptable for a single-user local setup. Automation is a Sprint 4+ item.
+
+---
+
+## Boundary rules (unchanged)
+
+`jobsync` should never be required to understand:
+- `job_claims`, `job_selection_signals`, `job_selection_assessments`
+- `candidate_evidence_units`, `candidate_narrative_profiles`
+- `job_narrative_assessments`
+
+Thin projections of those concepts may be displayed. Canonical ownership stays in JobPipe.
 
 ---
 
 ## Non-goals
 
-This seam is not:
-
-- a repo merge
-- a shared database
-- a shared schema by accident
-- a backend fusion
-- an excuse to move canonical ranking, claims, or narrative logic into `jobsync`
-
-It should remain deliberately narrow.
-
----
-
-## Design principles
-
-1. `JobPipe` remains the canonical decision engine.
-2. `jobsync` remains a companion workflow/UI system.
-3. Data crossing the seam must be explicit, bounded, and versioned.
-4. The seam should be additive and tolerant of drift.
-5. Write-back from `jobsync` must be event-like, not arbitrary state mutation.
-6. The seam must not require shared internal package structure.
-
----
-
-## What `JobPipe` should send
-
-The seam should project only the minimum companion payload needed for workflow and document handling.
-
-### Canonical outbound families
-
-Recommended outbound projection families:
-
-1. `job_summary`
-2. `decision_brief`
-3. `document_refs`
-4. `application_case_projection`
-
-### 1. `job_summary`
-
-Compact human-facing job context.
-
-Recommended fields:
-
-- `job_id`
-- `title`
-- `employer`
-- `location`
-- `application_due`
-- `source_url`
-- `application_url`
-- `updated_at`
-
-### 2. `decision_brief`
-
-Thin explanation of why the job is worth attention.
-
-Recommended fields:
-
-- `final_decision`
-- `recommendation_reason`
-- `decision_table_summary`
-- `selection_risk_level`
-- `top_claims`
-- `top_selection_signals`
-- `top_mitigation_moves`
-- `top_evidence_units`
-- `narrative_motivation_brief`
-
-Important rule:
-
-- this is a projection of canonical state
-- not the full canonical object graph
-
-### 3. `document_refs`
-
-References to generated or reviewed materials.
-
-Recommended fields:
-
-- `document_id`
-- `kind`
-- `status`
-- `storage_path`
-- `updated_at`
-
-### 4. `application_case_projection`
-
-The compact case bundle `jobsync` needs to display and act on the job as a workflow item.
-
-Recommended fields:
-
-- `job_summary`
-- `decision_brief`
-- `document_refs`
-- `current_application_status`
-- `last_application_event_at`
-- `next_action_hint`
-
----
-
-## What `jobsync` should send back
-
-The write-back seam should be narrow and event-like.
-
-### Canonical inbound families
-
-Recommended inbound families:
-
-1. `application_status_event`
-2. `note_event`
-3. `document_ref_event`
-
-### 1. `application_status_event`
-
-Maps to canonical `application_events`.
-
-Recommended fields:
-
-- `job_id`
-- `candidate_id`
-- `event_type`
-- `event_at`
-- `source`
-- `notes`
-- `metadata_json`
-
-### 2. `note_event`
-
-Optional freeform working note.
-
-Recommended fields:
-
-- `job_id`
-- `candidate_id`
-- `note_text`
-- `created_at`
-- `source`
-
-### 3. `document_ref_event`
-
-Used when `jobsync` helps the user attach or select the document actually used.
-
-Recommended fields:
-
-- `job_id`
-- `candidate_id`
-- `document_kind`
-- `storage_path`
-- `status`
-- `created_at`
-- `source`
-
----
-
-## Boundary rule
-
-`jobsync` should never be required to understand:
-
-- `job_claims`
-- `job_selection_signals`
-- `job_selection_assessments`
-- `candidate_evidence_units`
-- `candidate_narrative_profiles`
-- `job_narrative_assessments`
-
-It may display thin projections of those concepts, but canonical ownership stays in `JobPipe`.
-
----
-
-## Transport options
-
-The seam should remain implementation-agnostic.
-
-Acceptable transport patterns:
-
-- JSON export/import files
-- local outbox/inbox folders
-- thin HTTP sync endpoint
-- later explicit API surface
-
-The transport is secondary to the contract.
-
----
-
-## First implementation slice
-
-The first useful canonical slice should stay narrow:
-
-1. one versioned outbound payload family from `JobPipe`
-2. one versioned inbound status-event family back into `JobPipe`
-3. no shared DB
-4. no coupled internal imports across repos
-5. no requirement for `jobsync` to re-derive ranking or decision semantics
-
-Current status:
-
-- canonical model shapes now exist under `jobpipe/model/`
-- canonical projection builders now exist under `jobpipe/projections/`
-- canonical inbound status-event runtime helper now exists under `jobpipe/runtime/`
-- the first thin transport-facing CLIs are:
-  - `jobpipe export-jobsync`
-  - `jobpipe record-jobsync-event`
-
-These CLIs are intentionally narrow. They establish the seam without introducing a broad repo-to-repo sync layer.
-
----
-
-## Recommended code placement in `JobPipe`
-
-When implemented, this seam should land as:
-
-- model shapes in `jobpipe/model/`
-- transport/runtime helpers in `jobpipe/runtime/` or `jobpipe/compat/`
-- projection builders in `jobpipe/projections/`
-
-It should not start by expanding `jobpipe/core/` or by adding broad orchestration to `jobpipe/cli/`.
-
----
-
-## Relationship to current salvage work
-
-The separate `agentic_jobpilot` repo contains useful examples of:
-
-- `DecisionBrief`
-- `ArtifactPlan`
-- `ApplicationCaseProjection`
-- status sync
-- authoring sync
-
-Those are useful **shape references**, but should only be imported here after they are expressed through the canonical JobPipe boundary model in this spec.
+- Shared DB or schema
+- Repo merge or coupled imports
+- JobSync as canonical decision store
+- JobPipe depending on JobSync UI/process assumptions
 
 ---
 
 ## Success criteria
 
-This seam is successful if:
-
-- `jobsync` can show the right jobs with the right compact decision context
-- status changes can flow back into canonical `JobPipe` state
-- document usage can be traced without making `jobsync` the canonical document store
-- neither repo needs to know the other's internal architecture in detail
-
-It fails if:
-
-- canonical decision logic drifts into `jobsync`
-- `JobPipe` starts depending on `jobsync` UI/process assumptions
-- the seam becomes broad enough that repo separation stops meaning anything
+- JobSync shows the right jobs with the right compact decision context ✓
+- Status changes can flow back into canonical JobPipe state (manually today, automatic later)
+- Document usage can be traced without making JobSync the canonical document store (authoring sync endpoint exists)
+- Neither repo knows the other's internal architecture ✓
