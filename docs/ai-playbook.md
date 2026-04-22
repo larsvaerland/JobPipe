@@ -441,3 +441,59 @@ planner and Codex.
   module).
 
 When in doubt, escalate cheap and early, not expensive and late.
+
+## Fast-Path for Green XS Slices
+
+Added 2026-04-22. Applies next sprint onward.
+
+A **Green XS slice** is deterministic work under 30 minutes with a cheap oracle
+(tests pass, compile check passes). Examples: add tests for an existing function,
+rename across a bounded set of files, update a fixture, minor config addition.
+
+**Rule:** Green XS slices skip the full execplan. The planner writes a mini-prompt
+directly on the GitHub issue (50–100 words). Coordinator approval is not required.
+Codex picks it up, implements, opens PR. Planner spot-checks compile + tests. Merge.
+
+**Mini-prompt format (comment on the issue):**
+
+```
+Codex — Green XS slice. Branch: codex/<task-id>-<slug>. Base: main.
+
+WHAT: [1–2 sentences, no ambiguity]
+FILES: [exact files to touch — if more than 3, this is not XS]
+ACCEPTANCE: [exact criteria — test name(s) pass, compile_check OK]
+OUT OF SCOPE: [anything adjacent that must not be touched]
+VALIDATION: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest <test_file> -v -p no:debugging -p no:cacheprovider --basetemp .pytest-tmp && python compile_check.py
+ESCALATE IF: [any Approval Gate from §Approval Gates is touched]
+```
+
+**Gate check before using fast-path:**
+
+- [ ] No DB schema change
+- [ ] No new external dependency
+- [ ] No shared module signature change
+- [ ] No pipeline-semantic change
+- [ ] No auth / billing / secrets / deployment touch
+- [ ] Diff is ≤ 3 files
+
+If any box is unchecked → not a Green XS slice → full execplan required.
+
+## Founder Decisions (2026-04-22)
+
+Locked decisions from the AI toolchain setup research (specs/ai-toolchain-setup-2026-04-22.md):
+
+1. **Documentation substrate:** GitHub Issues + Project #6 as append-only decision log.
+   Durable decisions → one issue per decision, updates via comments. `docs/decisions.md`
+   remains a human-readable index. Specs in `specs/` remain editable but workers must
+   not overwrite canonical decisions — link to the issue instead.
+
+2. **Fast-path rollout:** Starts next sprint (after T002 closes). Apply to all
+   Green XS issues from that point forward.
+
+3. **CrewAI author/reviser loop:** Included in T002, not a separate task. Sprint 4
+   of T002 will wire the author/reviser agent loop end-to-end.
+
+4. **Orchestration crew:** Build it. Lives in `jobpipe_crewai/orchestration/`.
+   Uses existing worktree config (CLAUDE.md, ai-playbook.md, current-state.json,
+   WHO_AM_I/, gh CLI). Sprint 4 scope alongside the author/reviser loop.
+   GitHub issue: #114.

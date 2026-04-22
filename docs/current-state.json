@@ -201,6 +201,29 @@
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
+  "sprint_4_scope": {
+    "note": "Next sprint after T002 Slice 5 (#63) merges. All items approved 2026-04-22.",
+    "items": [
+      "T002 author/reviser CrewAI loop — wire end-to-end in jobpipe_crewai/",
+      "Orchestration crew — jobpipe_crewai/orchestration/ (router + status reporter, #114)",
+      "Fast-path rollout — Green XS slices use mini-prompt, no full execplan",
+      "Profile supplement YAML schema + context_loader.py (S2-A, S2-B per authoring-data-schema spec)",
+      "Persist cover letter draft to generated_documents (S2-C)"
+    ],
+    "governing_specs": [
+      "specs/ai-document-authoring-mvp-workflow-2026-04-21.md",
+      "specs/authoring-data-schema-2026-04-22.md",
+      "specs/ai-toolchain-setup-2026-04-22.md"
+    ]
+  },
+  "founder_decisions_2026_04_22": {
+    "documentation_substrate": "GitHub Issues + Project #6 as append-only decision log. docs/decisions.md stays as human-readable index.",
+    "fast_path_rollout": "Starts next sprint. Green XS slices use mini-prompt on issue, no execplan, no coordinator approval.",
+    "crewai_author_reviser": "Included in T002 Sprint 4, not a separate task.",
+    "orchestration_crew": "Build it in Sprint 4. jobpipe_crewai/orchestration/. GitHub #114.",
+    "model_routing": "Adopt tiered routing table from specs/ai-toolchain-setup-2026-04-22.md. Stop Opus on implementation review immediately.",
+    "crewai_as_coding_tool": "No. Authoring domain only. Research tracked in #112."
+  },
   "recent_decisions": [
     {
       "decided_at": "2026-04-21",
