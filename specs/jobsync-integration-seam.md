@@ -156,23 +156,62 @@ JobSync shows linked CV/cover letter per job
   ↓
 User clicks Apply in JobSync
   ↓
-[manual today] jobpipe record-jobsync-event <job_id> applied
+ATS sends confirmation email to Gmail
   ↓
-Canonical application_events in JobPipe DB
+jobpipe scan-gmail  (scheduled or on-demand)
+  ↓
+Canonical application_events in JobPipe DB  (automatic, fuzzy-matched)
+  ↓
+Next jobpipe export-jobsync run pushes updated status back to JobSync tracker
 ```
 
 ---
 
-## What is NOT automatic yet
+## Write-back paths: Gmail scanner (automatic) + CLI (manual)
 
-The write-back from JobSync → JobPipe on "Apply" is manual today. JobSync does not currently push a webhook or call back to JobPipe when a user marks a job as applied. The `record-jobsync-event` CLI closes the loop but must be invoked manually.
+### Automatic: Gmail status scanner
 
-Options for making this automatic:
+`jobpipe/cli/scan_gmail.py` (default mode) runs a programmatic Gmail scan that closes the write-back loop without any JobSync webhook:
+
+```
+User applies via JobSync
+  ↓
+ATS sends confirmation email (Jobbnorge, EasyCruit, Teamtailor, WebCruiter, etc.)
+  ↓
+jobpipe scan-gmail                → classifies: applied / interview / rejected
+  ↓
+Fuzzy-matches to canonical job via employer name + title score
+  ↓
+Writes JobSyncApplicationStatusEvent to canonical DB (only upgrades, never downgrades)
+  ↓
+Next jobpipe export-jobsync run   → pushes updated status to JobSync tracker
+```
+
+Rules:
+- Status priority order: `applied=1 < interview=2 < rejected=3` — only upgrades, never overwrites a higher-priority status
+- Never overwrites a manually-set status
+- Requires a fuzzy match above threshold; unmatched emails are logged and skipped
+
+This is the recommended path for single-user local operation.
+
+### Manual: record-jobsync-event CLI
+
+For statuses that don't arrive via email (or to record events immediately):
+
+```
+jobpipe record-jobsync-event <job_id> applied [--notes "..."] [--event-at ISO8601]
+```
+
+Event types: `applied`, `interviewed`, `rejected`, `offer`, `withdrawn`, etc.
+
+### Future: direct webhook / MCP
+
+Options for tighter real-time integration (Sprint 4+):
 1. JobSync automation plugin that POSTs to a JobPipe local HTTP endpoint on status change
 2. JobPipe polling the JobSync `/api/jobs/export` CSV and diffing status changes
-3. A thin jobpipe-mcp-server that JobSync can call as a tool (Sprint 4 candidate)
+3. A thin `jobpipe-mcp-server` that crewAI agents and Claude can call as a tool — exposes evidence, decision brief, narrative, and status update as MCP tools
 
-The current manual pattern is acceptable for a single-user local setup. Automation is a Sprint 4+ item.
+The Gmail scanner is sufficient for the single-user local loop today. MCP-server integration is the preferred Sprint 4 direction.
 
 ---
 
@@ -199,6 +238,6 @@ Thin projections of those concepts may be displayed. Canonical ownership stays i
 ## Success criteria
 
 - JobSync shows the right jobs with the right compact decision context ✓
-- Status changes can flow back into canonical JobPipe state (manually today, automatic later)
-- Document usage can be traced without making JobSync the canonical document store (authoring sync endpoint exists)
+- Status changes flow back into canonical JobPipe state automatically via Gmail scanner ✓ (manual CLI also available)
+- Document usage can be traced without making JobSync the canonical document store (authoring sync endpoint exists) ✓
 - Neither repo knows the other's internal architecture ✓

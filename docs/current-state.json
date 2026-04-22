@@ -233,6 +233,33 @@
       "rationale": "All invariants hold: no crewai import in jobpipe/, 20 tests pass across Python 3.12 and 3.14, compile_check 82 files. Three follow-up hygiene issues opened (#108/#109/#110), none blocking."
     }
   ],
+  "intake_pipeline": {
+    "documented_at": "2026-04-22",
+    "spec": "specs/intake-pipeline-inventory.md",
+    "sources": {
+      "nav_scrape": {"status": "live", "suggested_by_platform": false},
+      "gmail_suggestion_scan": {"status": "live", "suggested_by_platform": true, "covers": ["finn.no email leads", "linkedin email leads"]},
+      "finn_chrome_extension": {"status": "live", "suggested_by_platform": false},
+      "linkedin_scrape": {"status": "future", "notes": "Possible via MCP + crewAI browser agent"}
+    },
+    "dedup": "multi-level: within-run, against primary DB, cross-source by job_id/URL",
+    "suggested_by_platform_semantics": "true = bypasses semantic pre-filter (platform already ran candidate-profile match); false = full pipeline"
+  },
+  "gmail_connector": {
+    "status": "live",
+    "file": "jobpipe/cli/scan_gmail.py",
+    "modes": {
+      "status_scan": {
+        "flag": "(default, no flags)",
+        "description": "Scans ATS confirmation emails, classifies applied/interview/rejected, fuzzy-matches to canonical job, writes JobSyncApplicationStatusEvent to DB. Only upgrades status. Closes write-back loop automatically.",
+        "closes_issue": "#28"
+      },
+      "suggestions_scan": {
+        "flag": "--scan-suggestions",
+        "description": "Extracts job URLs from FINN digest and LinkedIn recommendation emails, dedupes, queues with suggested_by_platform=true"
+      }
+    }
+  },
   "coordinator_leverage_scaffolding": {
     "purpose": "One-time Opus work so Sonnet planner + Codex implementer can run cheap and stable without coordinator re-routing per slice.",
     "artifacts": [
