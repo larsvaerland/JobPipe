@@ -40,6 +40,7 @@ reports/profile_embedding.npy
 profile_pack.md
 reports/resume.json
 reports/resume_fixed.json
+/resume.json
 
 # Personal profile folder (CrewAI-compatible contract)
 # Personal source files stay local; only .example templates + README are tracked.
@@ -66,6 +67,7 @@ prototype/
 
 # Logs and temp artifacts
 *.log
+*.err
 *.tmp
 *_out.txt
 commit_msg.txt
