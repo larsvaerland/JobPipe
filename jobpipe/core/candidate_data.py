@@ -7,7 +7,58 @@ from pathlib import Path
 from typing import Any
 
 from jobpipe.core.profile_pack import parse_profile_pack
-from jobpipe.runtime.paths import primary_db_path, profile_pack_path, resume_json_path
+from jobpipe.runtime.paths import primary_db_path, profile_dir, profile_pack_path, resume_json_path
+
+
+# Marker used to detect already-stitched profile_pack blobs so we don't
+# double-append siblings on repeat loads.
+_SIBLINGS_MARKER = "<!-- PROFILE_SIBLINGS_APPLIED -->"
+
+# Sibling files stitched onto profile_pack.md at load time.
+# Order matters for prompt readability: constraints first, motivation second.
+_PROFILE_SIBLINGS: tuple[tuple[str, str], ...] = (
+    ("constraints.md", "Constraints (profile/constraints.md)"),
+    ("motivation.md", "Motivation (profile/motivation.md)"),
+)
+
+
+def _apply_profile_siblings(base: str) -> str:
+    """
+    Append sibling files from profile_dir() (constraints.md, motivation.md)
+    onto the profile_pack.md blob so triage + authoring see the full contract.
+
+    Idempotent: returns base unchanged if already stitched (marker detected).
+    No-op if siblings don't exist on disk.
+    """
+    if not base:
+        return base
+    if _SIBLINGS_MARKER in base:
+        return base
+
+    try:
+        dir_ = profile_dir()
+    except Exception:
+        return base
+    if not dir_.exists() or not dir_.is_dir():
+        return base
+
+    addenda: list[str] = []
+    for fname, heading in _PROFILE_SIBLINGS:
+        sibling = dir_ / fname
+        if not sibling.exists():
+            continue
+        try:
+            content = sibling.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if not content:
+            continue
+        addenda.append(f"\n\n---\n\n## {heading}\n\n{content}")
+
+    if not addenda:
+        return base
+
+    return f"{base.rstrip()}\n{_SIBLINGS_MARKER}{''.join(addenda)}\n"
 
 
 def default_candidate_id() -> str:
@@ -58,17 +109,25 @@ def load_candidate_profile_pack(
     candidate_id: str | None = None,
     db_path: str | Path | None = None,
 ) -> str:
+    """
+    Resolve the candidate's profile_pack.md and stitch in sibling files
+    (constraints.md, motivation.md) from profile_dir() at the bottom.
+
+    Stitching is idempotent — a marker comment prevents double-append on
+    repeat loads whether the base came from an explicit path, the primary
+    DB, or the default disk fallback.
+    """
     explicit_path = _normalize_path(profile_path)
     if explicit_path is not None:
-        return explicit_path.read_text(encoding="utf-8")
+        return _apply_profile_siblings(explicit_path.read_text(encoding="utf-8"))
 
     row = _load_active_profile_row(db_path=db_path, candidate_id=candidate_id)
     if row and str(row.get("profile_pack_md") or "").strip():
-        return str(row["profile_pack_md"])
+        return _apply_profile_siblings(str(row["profile_pack_md"]))
 
     fallback = profile_pack_path()
     if fallback.exists():
-        return fallback.read_text(encoding="utf-8")
+        return _apply_profile_siblings(fallback.read_text(encoding="utf-8"))
 
     raise FileNotFoundError(
         "No candidate profile found in the primary DB or at the default profile_pack.md path."

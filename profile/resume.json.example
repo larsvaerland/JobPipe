@@ -1,0 +1,92 @@
+{
+  "$schema": "https://jsonresume.org/schema/1.0.0/resume.json",
+  "basics": {
+    "name": "Lars Værland",
+    "label": "Senior Product Manager — AI products, platforms, agentic workflows",
+    "email": "lars.vaerland@gmail.com",
+    "phone": "",
+    "url": "",
+    "summary": "Senior PM with 10+ years in B2B SaaS and technical products. Hands-on with CrewAI, Claude agents, LLM eval loops. Currently pursuing a master's in change management at Handelshøyskolen BI. Norwegian + English, based in Oslo.",
+    "location": {
+      "city": "Oslo",
+      "countryCode": "NO",
+      "region": "Oslo"
+    },
+    "profiles": [
+      {
+        "network": "LinkedIn",
+        "username": "larsvaerland",
+        "url": "https://www.linkedin.com/in/larsvaerland/"
+      },
+      {
+        "network": "GitHub",
+        "username": "larsvaerland",
+        "url": "https://github.com/larsvaerland"
+      }
+    ]
+  },
+  "work": [
+    {
+      "name": "Example Company A",
+      "position": "Senior Product Manager",
+      "startDate": "2022-01",
+      "endDate": "",
+      "summary": "Led the platform/AI area. Shipped X, Y, Z.",
+      "highlights": [
+        "Owned roadmap for ___ team of ___ engineers",
+        "Launched ___ which drove ___% lift in ___",
+        "Built evaluation pipeline for LLM outputs, reducing hallucination rate by ___%"
+      ]
+    },
+    {
+      "name": "Example Company B",
+      "position": "Product Manager",
+      "startDate": "2019-03",
+      "endDate": "2021-12",
+      "summary": "First PM for the ___ product. Took it from ___ to ___.",
+      "highlights": [
+        "Grew monthly active users from ___ to ___",
+        "Established OKRs and weekly metrics review",
+        "Hired and onboarded the next PM"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Handelshøyskolen BI",
+      "area": "Change Management (MAN5006 Endringsledelse)",
+      "studyType": "Master's (in progress)",
+      "startDate": "2024-08",
+      "endDate": "2026-06"
+    }
+  ],
+  "skills": [
+    {
+      "name": "Product management",
+      "keywords": ["Roadmapping", "Discovery", "OKRs", "Stakeholder management", "Technical writing"]
+    },
+    {
+      "name": "AI & LLM tooling",
+      "keywords": ["CrewAI", "Claude Agent SDK", "LiteLLM", "Prompt engineering", "LLM evals"]
+    },
+    {
+      "name": "Engineering literacy",
+      "keywords": ["Python", "TypeScript", "SQL", "Git/GitHub", "System design basics"]
+    },
+    {
+      "name": "Change management",
+      "keywords": ["Kotter", "ADKAR", "Organisational design", "Process redesign"]
+    }
+  ],
+  "languages": [
+    { "language": "Norwegian", "fluency": "Native" },
+    { "language": "English", "fluency": "Full professional" }
+  ],
+  "projects": [
+    {
+      "name": "JobPipe / JobPilot",
+      "description": "Automated job-hunting pipeline — scrapers, fit scoring, CV tailoring, cover-letter generation.",
+      "keywords": ["CrewAI", "Python", "Agentic workflows"]
+    }
+  ]
+}

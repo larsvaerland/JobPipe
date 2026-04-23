@@ -13,7 +13,7 @@ from jobpipe.core.candidate_data import load_candidate_profile_pack
 from jobpipe.core.io import now_iso
 from jobpipe.core.profile_pack import parse_profile_pack
 from jobpipe.core.primary_db import connect_primary_db, upsert_candidate, upsert_candidate_profile
-from jobpipe.runtime.paths import primary_db_path
+from jobpipe.runtime.paths import primary_db_path, resume_json_path
 
 _DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
 
@@ -31,14 +31,25 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="Import a structured Reactive Resume JSON snapshot into canonical candidate_profiles state."
     )
-    parser.add_argument("resume_json_path", help="Path to the structured Reactive Resume JSON export")
+    parser.add_argument(
+        "resume_json_path",
+        nargs="?",
+        default=None,
+        help="Path to the structured resume JSON export (default: resolves via resume_json_path(), which prefers ./profile/resume.json)",
+    )
     parser.add_argument("--profile", default="", help="Optional profile_pack.md override")
     parser.add_argument("--candidate-id", default=_DEFAULT_CANDIDATE_ID, help=f"Candidate ID (default: {_DEFAULT_CANDIDATE_ID})")
     parser.add_argument("--db", default=str(primary_db_path()), help=f"Path to primary jobpipe.sqlite (default: {primary_db_path()})")
     parser.add_argument("--display-name", default="", help="Optional display name override")
     args = parser.parse_args(argv)
 
-    resume_path = Path(args.resume_json_path)
+    resume_path = Path(args.resume_json_path) if args.resume_json_path else resume_json_path()
+    if not resume_path.exists():
+        raise SystemExit(
+            f"Resume JSON not found at {resume_path}. "
+            "Provide a path argument, drop a file at ./profile/resume.json, "
+            "or set JOBPIPE_RESUME_JSON."
+        )
     resume_json = _read_json(resume_path)
     db_path = Path(args.db)
     profile_pack = load_candidate_profile_pack(args.profile, candidate_id=args.candidate_id, db_path=db_path)

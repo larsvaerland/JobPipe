@@ -41,6 +41,16 @@ profile_pack.md
 reports/resume.json
 reports/resume_fixed.json
 
+# Personal profile folder (CrewAI-compatible contract)
+# Personal source files stay local; only .example templates + README are tracked.
+profile/profile_pack.md
+profile/resume.json
+profile/constraints.md
+profile/motivation.md
+profile/cover_letter_voice.md
+!profile/*.example
+!profile/README.md
+
 # Personal job favorites/tracking data
 favorites_batch.jsonl
 favorites_cache.json

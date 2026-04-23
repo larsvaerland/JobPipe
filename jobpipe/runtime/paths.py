@@ -93,10 +93,34 @@ def exports_root() -> Path:
     return repo_root() / "reports"
 
 
+def profile_dir() -> Path:
+    """
+    Authoritative profile input folder.
+
+    Contract: mirrors the Job Hunter Crew (CrewAI) `profile/` layout:
+      profile/profile_pack.md     — truth source for triage + authoring
+      profile/resume.json         — JSON Resume 1.0
+      profile/constraints.md      — hard constraints (geo, language, comp, timeline)
+      profile/motivation.md       — strategic direction (role types, stage, team)
+      profile/cover_letter_voice.md — authoring voice rules (T002)
+      profile/*.example           — templates for future candidates
+
+    Override with JOBPIPE_PROFILE_DIR.
+    """
+    raw = (os.environ.get("JOBPIPE_PROFILE_DIR") or "").strip()
+    if raw:
+        return _expand_path(raw)
+    return repo_root() / "profile"
+
+
 def profile_pack_path() -> Path:
     raw = (os.environ.get("JOBPIPE_PROFILE_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
+    # Preferred: <repo_root>/profile/profile_pack.md (Job Hunter Crew layout)
+    dir_candidate = profile_dir() / "profile_pack.md"
+    if dir_candidate.exists():
+        return dir_candidate
     root = data_root()
     if root is not None:
         return _prefer_existing(documents_root() / "profile_pack.md", root / "profile_pack.md")
@@ -107,6 +131,10 @@ def resume_json_path() -> Path:
     raw = (os.environ.get("JOBPIPE_RESUME_JSON") or "").strip()
     if raw:
         return _expand_path(raw)
+    # Preferred: <repo_root>/profile/resume.json (Job Hunter Crew layout)
+    dir_candidate = profile_dir() / "resume.json"
+    if dir_candidate.exists():
+        return dir_candidate
     root = data_root()
     if root is not None:
         return _prefer_existing(documents_root() / "resume.json", root / "resume.json")
@@ -207,6 +235,7 @@ __all__ = [
     "jobs_expired_path",
     "jobs_state_path",
     "primary_db_path",
+    "profile_dir",
     "profile_embedding_cache_path",
     "profile_pack_path",
     "repo_root",

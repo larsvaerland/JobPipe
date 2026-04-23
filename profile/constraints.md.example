@@ -1,0 +1,37 @@
+# Hard constraints
+
+**Location:**
+- Based in Oslo, Norway.
+- On-site/hybrid in greater Oslo: yes.
+- Remote within EU/EEA timezones (CET ±2): yes.
+- Remote US-only with mandatory overlap past 19:00 CET: no.
+- Relocation: not right now.
+
+**Language:**
+- English: native-level written + spoken.
+- Norwegian: conversational / professional — fine for daily work, Slack, meetings.
+  Not ideal for roles that require Norwegian-only customer interviews, legal review, or regulated-industry writing in Norwegian.
+- If the posting is 100% Norwegian and the role is customer-facing in Norwegian, drop realism_score.
+
+**Work authorisation:** EU/EEA citizen, no sponsorship needed in EU.
+
+**Employment type:**
+- Full-time permanent: preferred.
+- Contract: considered if rate and scope are right.
+- Equity-heavy, salary-light early-stage: only for exceptional teams.
+
+**Seniority:**
+- Senior PM, Lead PM, Principal PM, Group PM: yes.
+- Junior/Associate PM: no.
+- Head of Product for very early-stage: yes, case by case.
+
+**Industries to avoid:**
+- Online gambling / sportsbook.
+- Weapons / defence (dual-use OK — e.g. geospatial intelligence platforms).
+- Ad-tech surveillance and third-party tracking.
+- Pure crypto trading / DeFi speculation.
+
+**Compensation floor:**
+- Oslo-market senior PM comp. I will not disclose a specific number in this file;
+  the scorer should not penalise or flag postings on comp unless comp is explicitly
+  listed and obviously below market.
