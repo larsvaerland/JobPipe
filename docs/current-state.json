@@ -1,8 +1,8 @@
 {
-  "active_goal": "T002 Sprint 4: Slice A merged (PR #116, fa0deaa). Slice B (scripts/flow_author.py) handed to Codex — branch codex/T002-s4b-flow-author, crewai-env. PR #115 merged (unblocked B+C). S13 exit test still pending.",
-  "current_task_id": "T002",
-  "current_slice": "T002-sprint-4-slice-b",
-  "status": "sprint_4_slice_b_handed_to_codex",
+  "active_goal": "Staged NAV ingest (2026-04-24 founder directive): 100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full feed. Execplan at docs/execplans/staged-ingest-2026-04-24.md. Profile/ contract landed. JobSync purge deferred. T002 Sprint 4 Slice B paused (in-flight codex/T002-s4b-flow-author runs to completion naturally).",
+  "current_task_id": "staged-ingest-2026-04-24",
+  "current_slice": "stage_1_100_jobs",
+  "status": "stage_1_ready_awaiting_founder_run",
   "lead_worker": "codex",
   "active_branch": "codex/T002-s4b-flow-author",
   "coordinator_branch": "ops/orchestrator-v2",
@@ -201,6 +201,67 @@
   ],
   "blocked_on": [],
   "needs_founder_decision": [],
+  "ingest_prep_track": {
+    "status": "stage_1_ready",
+    "goal": "Staged NAV ingest: 100 jobs → 500 → full NAV feed, with manual threshold tuning between stages.",
+    "opened_at": "2026-04-23",
+    "opened_by": "lars",
+    "notes": "Founder directive 2026-04-23: pause new T002 Sprint 4 slice handoffs until prereqs clear. In-flight work (PR #116, codex/T002-s4b-flow-author) runs to completion naturally.",
+    "prereqs": {
+      "profile_folder_contract": {
+        "status": "landed",
+        "delivered_at": "2026-04-24",
+        "path": "profile/",
+        "contents": [
+          "profile/profile_pack.md (17.4 KB — truth source for triage + authoring)",
+          "profile/resume.json (19.3 KB — JSON Resume 1.0)",
+          "profile/constraints.md (hard rammer — stitched onto profile_pack at load)",
+          "profile/motivation.md (strategic direction — stitched onto profile_pack at load)",
+          "profile/cover_letter_voice.md (T002 authoring voice)",
+          "profile/*.example (templates)"
+        ],
+        "code_landed": [
+          "jobpipe/runtime/paths.py — profile_dir() helper; profile_pack_path() + resume_json_path() prefer ./profile/",
+          "jobpipe/core/candidate_data.py — _apply_profile_siblings() stitches constraints.md + motivation.md (idempotent via <!-- PROFILE_SIBLINGS_APPLIED --> marker)",
+          "jobpipe/cli/import_reactive_resume.py — resume_json_path arg now optional positional, defaults to resume_json_path()"
+        ],
+        "env_overrides": [
+          "JOBPIPE_PROFILE_DIR — override the folder location",
+          "JOBPIPE_PROFILE_PATH — override just the profile_pack.md path",
+          "JOBPIPE_RESUME_JSON — override just the resume.json path"
+        ],
+        "followup_cleanup": "Delete repo-root profile_pack.md + resume.json once confident profile/ layout is stable (duplicates now).",
+        "smoke_test": "profile_pack length 22692 = 17385 base + ~5300 siblings; marker present; idempotent on double-load."
+      },
+      "jobsync_purge": {
+        "status": "deferred",
+        "deferred_at": "2026-04-24",
+        "deferred_by": "lars",
+        "execplan": "docs/execplans/jobsync-purge-prep.md",
+        "notes": "Deferred per founder directive 2026-04-24. JobSync sync is a post-application_pack operation — it does NOT block the core triage/parse/match/pack pipeline. Staged ingest runs end-to-end on JobPipe side; JobSync sync is paused until purge research (§3) clears. Reconfirm before first JobSync sync after this ingest."
+      },
+      "jobpipe_purge": {
+        "status": "documented",
+        "command": "jobpipe reset-runtime --tag pre_new_cv_20260424",
+        "reversible": true,
+        "notes": "Archive-based. Runs under JOBPIPE_DATA_DIR only — does NOT touch repo-root profile_pack.md or resume.json. Must run BEFORE import-reactive-resume so the fresh db receives the new candidate_profiles row."
+      },
+      "tuning_posture": {
+        "status": "accepted_manual",
+        "notes": "No first-N-runs autotune exists in code or specs. Threshold tuning is manual between stages. Calibration loop (spec: local-calibration-learning.md) is feedback-driven and only kicks in once user generates signal. Automated tuning moved to backlog research item."
+      }
+    },
+    "staged_runs": {
+      "execplan": "docs/execplans/staged-ingest-2026-04-24.md",
+      "cadence": "100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full remainder",
+      "stage_1_100_jobs": "ready_to_run",
+      "stage_2_100_jobs": "pending_stage_1",
+      "stage_3_500_jobs": "pending_stage_2",
+      "stage_4_full_feed": "pending_stage_3",
+      "intake_command": "jobpipe pull-sheets --sheet-url $env:JOBPIPE_CSV_URL",
+      "run_command_template": ".\\go.ps1 --max-jobs <N>"
+    }
+  },
   "sprint_4_scope": {
     "note": "Next sprint after T002 Slice 5 (#63) merges. All items approved 2026-04-22.",
     "items": [
@@ -225,6 +286,26 @@
     "crewai_as_coding_tool": "No. Authoring domain only. Research tracked in #112."
   },
   "recent_decisions": [
+    {
+      "decided_at": "2026-04-24",
+      "decision": "JobSync purge deferred from ingest-prep track. Staged NAV ingest (docs/execplans/staged-ingest-2026-04-24.md) runs the core JobPipe pipeline (triage -> parse -> profile_match -> pivot -> moderate -> application_pack) in four stages: 100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full remainder. No JobSync sync during this ingest.",
+      "rationale": "JobSync sync is a post-application_pack operation, not a pipeline prerequisite. Purge research (§3 of docs/execplans/jobsync-purge-prep.md) is still owed but no longer blocks intake. Reconfirm purge disposition before the first JobSync sync after this ingest."
+    },
+    {
+      "decided_at": "2026-04-24",
+      "decision": "Adopted Job Hunter Crew profile/ folder as JobPipe's authoritative input contract. Mirrored entire folder to <repo_root>/profile/ (profile_pack.md, resume.json, constraints.md, motivation.md, cover_letter_voice.md + .example templates). Code change landed in 3 files: paths.py adds profile_dir() helper and prefers profile/ location in profile_pack_path() + resume_json_path(); candidate_data.py stitches constraints.md + motivation.md onto profile_pack at load time (idempotent, marker-guarded); import_reactive_resume CLI accepts optional positional path and defaults to resume_json_path().",
+      "rationale": "profile_pack.md already referenced constraints.md as sibling (seksjon 2 'see constraints.md for the full set') — the multi-file contract was always implied, we just didn't honor it. Single source of truth: edit once in profile/, both Job Hunter Crew and JobPipe see it. cover_letter_voice.md has a home for T002 authoring. motivation.md becomes the canonical strategic_direction source — no more duplicate-into-section-0 workaround."
+    },
+    {
+      "decided_at": "2026-04-24",
+      "decision": "CV + profile_pack delivered from CrewAI Job Hunter Crew to repo root (resume.json 19.3 KB JSON Resume 1.0, profile_pack.md 17.4 KB with strategic direction embedded in section 0). Ingest-prep now blocked only on JobSync purge research (§3 of docs/execplans/jobsync-purge-prep.md).",
+      "rationale": "Format choice: JSON Resume 1.0. Importer is schema-lenient (only reads basics.name + basics.email), so JSON Resume vs Reactive-Resume native shape is neutral for triage. JSON Resume wins for ATS + author/revise agents: stable community schema. Strategic direction now in profile_pack section 0 explicitly, so triage sees it regardless of whether it reads motivation.md as sibling."
+    },
+    {
+      "decided_at": "2026-04-23",
+      "decision": "Open ingest_prep_track: pause new T002 Sprint 4 slice handoffs; in-flight PR #116 and codex/T002-s4b-flow-author run to completion. Prereqs: new CV JSON (waiting on founder), JobSync purge (research-pending, execplan drafted), jobpipe reset-runtime (documented), profile_pack.md manual edit, automated tuning deferred to backlog.",
+      "rationale": "Staged NAV ingest takes precedence. Confirmed no autotune-on-first-N-runs exists (specs/local-calibration-learning.md is feedback-driven only). JobSync purge path is undocumented — must be researched and confirmed before any destructive action."
+    },
     {
       "decided_at": "2026-04-21",
       "decision": "Op 2 executed end-to-end: PR #90 merged, archive tag pushed, origin/main force-updated to 9446998, docs/integrations/README.md landed.",
