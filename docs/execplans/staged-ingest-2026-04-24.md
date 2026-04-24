@@ -84,22 +84,9 @@ If distribution is wildly off (e.g. >95% SKIP_TRIAGE or <0.5% APPLY), recalibrat
 - Rationale: Borderline relevant roles (e.g. "Administrativ koordinator") scored 0.27–0.29, just under the 0.30 cut. Opening the 0.27–0.30 band lets the nano-model LLM triage decide — cheap insurance against false negatives. NAV feed is general Norwegian market; 99% SKIP on raw feed is expected and not a problem in itself.
 - Commit SHA: (pending — see git commit block below)
 
-### Stage 2 — 100 more
+### Stage 2 — MERGED INTO STAGE 1 RUN
 
-```powershell
-.\go.ps1 --max-jobs 100
-```
-
-Same recalibration checklist. Compare distribution against Stage 1. If KEEP-rate swings >20% between Stage 1 and Stage 2 after a knob change, the change was too aggressive — revert one step and re-run.
-
-**Stage 2 calibration entry** *(fill in after run)*:
-- Run timestamp:
-- Queue before / after: _ / _
-- Decision breakdown: SKIP_TRIAGE=_, SKIP_MATCH=_, REVIEW_LOW=_, REVIEW_HIGH=_, APPLY=_
-- Drift vs Stage 1 (pp): _
-- Spot-check findings:
-- Knob change(s) applied:
-- Rationale:
+> **2026-04-24 retrospective:** Stage 1 and Stage 2 were folded into a single 440-job calibration batch (1305 jobs reached triage before geo/hard-no filters). The separate 100-job Stage 2 pass was skipped. See `calibration/2026-04-24_n440.*` for the combined artifact. Stage 2 template intentionally left as a marker; do not fill it in. Next calibrated run is Stage 3 below.
 
 ### Stage 3 — 500 jobs
 

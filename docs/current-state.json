@@ -1,10 +1,10 @@
 {
-  "active_goal": "Staged NAV ingest (2026-04-24 founder directive): 100 -> recalibrate -> 100 -> recalibrate -> 500 -> recalibrate -> full feed. Execplan at docs/execplans/staged-ingest-2026-04-24.md. Profile/ contract landed. JobSync purge deferred. T002 Sprint 4 Slice B paused (in-flight codex/T002-s4b-flow-author runs to completion naturally).",
+  "active_goal": "Staged NAV ingest (2026-04-24 founder directive): Stage 1+2 closed as single 440-job pass; Stage 3 (500 jobs) ready to run. Execplan at docs/execplans/staged-ingest-2026-04-24.md. Profile/ contract landed. JobSync purge deferred. T002 Sprint 4 Slice A merged (PR #116 at b48c792 on 2026-04-24). Slice B (codex/T002-s4b-flow-author) paused.",
   "current_task_id": "staged-ingest-2026-04-24",
   "current_slice": "stage_3_500_jobs",
   "status": "stage_3_ready_awaiting_founder_run",
-  "lead_worker": "codex",
-  "active_branch": "codex/T002-s4b-flow-author",
+  "lead_worker": "lars",
+  "active_branch": "ops/orchestrator-v2",
   "coordinator_branch": "ops/orchestrator-v2",
   "implementation_branch": "codex/T002-s4b-flow-author",
   "planner_branch": "ops/orchestrator-v2",
@@ -190,6 +190,22 @@
       "108": "Fix evidence_refs type drift (list[dict] vs list[str])",
       "109": "Fix test_author_cli_no_crewai — assert import statement not string occurrence",
       "110": "Remove dead sys.modules lookup in build_author simple branch"
+    },
+    "sprint_4": {
+      "slice_a_render_docx": {
+        "status": "merged",
+        "pr": 116,
+        "pr_url": "https://github.com/larsvaerland/Jobpipe/pull/116",
+        "merge_commit": "b48c792",
+        "merge_strategy": "squash",
+        "merged_at": "2026-04-24T06:58:30Z",
+        "notes": "render_cover_letter_docx Node.js subprocess wrapper + 3 tests. Codex branch deleted on merge."
+      },
+      "slice_b_flow_author": {
+        "status": "paused",
+        "branch": "codex/T002-s4b-flow-author",
+        "notes": "Paused per founder directive 2026-04-23 (ingest_prep_track). Resume after Stage 3 clears."
+      }
     }
   },
   "open_risks": [
@@ -293,6 +309,11 @@
     "crewai_as_coding_tool": "No. Authoring domain only. Research tracked in #112."
   },
   "recent_decisions": [
+    {
+      "decided_at": "2026-04-24",
+      "decision": "PR #116 (T002 Sprint 4 Slice A — render_cover_letter_docx Node.js subprocess) squash-merged to main at b48c792. Branch codex/T002-s4a-render-docx deleted. PR #96 (WHO_AM_I role split) closed as superseded — intent already landed in subsequent ops/orchestrator-v2 commits. Codex worktree reset to origin/main and cleaned of 24 stale diagnostic .bat/.py files.",
+      "rationale": "Audit revealed PR #96 was CONFLICTING and its content had been absorbed into later commits; PR #116 was green, mergeable, and isolated scope (the T002 Sprint 4 pause applied to new handoffs, not to in-flight work). Clearing both unblocks Lars to run Stage 3 without open-PR noise."
+    },
     {
       "decided_at": "2026-04-24",
       "decision": "Stage 1+2 closed as a single 440-job calibration pass (1305 jobs reached triage). semantic_filter_threshold lowered 0.30 -> 0.27 in configs/pipeline.v1.yaml. Outcome: 1299 SKIP, 5 REVIEW_LOW, 1 APPLY (Nofence Senior Product Manager - Data & AI). Kongsberg Defence hardware role flagged as false positive by Lars override; candidate for future hard_no_title_regex addition pending Stage 3 confirmation. Profile_pack unchanged — too early + too little APPLY signal.",
