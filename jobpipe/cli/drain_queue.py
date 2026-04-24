@@ -119,6 +119,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--no-only-changed", action="store_true", help="Pull ALL rows each loop (ignores delta; expensive).")
     ap.add_argument("--sleep", type=float, default=0.0, help="Sleep seconds between loops (default: 0).")
     ap.add_argument("--max-loops", type=int, default=200, help="Safety cap on loop count (default: 200).")
+    ap.add_argument("--max-jobs", type=int, default=0, help="Stop after processing this many jobs total (0 = unlimited).")
 
     # --- Pull filtering (passed through to pull_sheets_csv) ---
     ap.add_argument("--status-filter", default="ACTIVE", metavar="STATUS",
@@ -264,6 +265,10 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             total_batches += 1
             total_rows_processed += len(batch)
+
+            if args.max_jobs > 0 and total_rows_processed >= args.max_jobs:
+                print(f"[drain_queue] max-jobs {args.max_jobs} reached. Stopping.")
+                break
 
             # optional cleanup
             try:
