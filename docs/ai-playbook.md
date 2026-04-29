@@ -37,6 +37,12 @@ Tool-surface rule:
   - the connector/app tool does not expose the needed operation.
 - Report which tool path was chosen when the choice matters to the workflow.
 
+Windows worktree note:
+
+- For the current Windows-first local workflow, use the standard described in
+  [docs/windows-code-intelligence.md](C:/Users/larsv/Jobpipe-codex-v2/docs/windows-code-intelligence.md)
+  before inventing a new local code-intelligence setup per task.
+
 ## Worker Split
 
 - Claude Desktop is the planner, orchestrator, and reviewer.
