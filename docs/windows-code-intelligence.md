@@ -126,6 +126,33 @@ Keep tool installs outside the repo:
 
 Do not vendor these tools into the JobPipe repo.
 
+## MCP integration
+
+These tools are now also configured as MCP servers for the local desktop
+clients:
+
+- Codex: `C:\Users\larsv\.codex\config.toml`
+- Claude Desktop:
+  `C:\Users\larsv\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json`
+
+Configured MCP tools:
+
+- `axon`
+- `codegraphcontext`
+- `repomix`
+- `gitnexus` (kept configured, but still non-default on the Windows daily path)
+
+Shared machine-level manifest:
+
+- `C:\Users\larsv\tool-evals\mcp\shared-mcp-servers.json`
+
+Important:
+
+- Codex and Claude can use their own app-level MCP configs.
+- Future CrewAI tooling does **not** automatically inherit those configs.
+- For future CrewAI work, treat the shared manifest as the canonical source of
+  truth for tool wiring.
+
 ## Repo hygiene rules
 
 Local-only artifacts must stay out of commits:
