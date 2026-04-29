@@ -31,6 +31,8 @@ Status meanings:
 | `jobpipe/cli/` | Canonical operator interface and thin orchestration layer | canonical | Hiding core product logic directly in CLI modules | Argument parsing, orchestration, thin wrappers over owned modules |
 | `jobpipe/core/` | Transitional shared IO, DB helpers, legacy ownership, compat shims | transitional | Treating it as the permanent home for new product logic | Narrow bug fixes, extraction into `runtime/` or `model/`, compat preservation |
 | `jobpipe/stages/` | Evaluation pipeline execution order and stage orchestration | transitional | Expanding stage-local logic that should live in `decision/` | Stage wiring, prompt/stage behavior, narrow pipeline fixes |
+| `jobpipe/authoring/` | Deterministic authoring contracts, packaging, validation, and document rendering surfaces | canonical | Letting agent-runtime code leak into the contract layer | Contract tightening, persistence, rendering, deterministic validation |
+| `jobpipe_crewai/` | Optional agent-runtime implementation for authoring flow | transitional | Treating CrewAI runtime details as canonical product contracts | Runtime-only flow/crew changes behind JobPipe-native contracts |
 | `jobpipe/compat/` | Reserved compatibility boundary | compat | Building new features here | Only explicit compatibility shims |
 | `configs/` | Runtime thresholds, stage order, model choices, rules | canonical | Treating config changes as no-risk text edits | Threshold/routing edits with validation and explicit review |
 | `docs/` | Runtime/operator explanation and architecture memory | canonical | Duplicating backlog or stale branch-specific instructions | Architecture docs, operator docs, cleanup maps |
@@ -73,8 +75,12 @@ Status meanings:
 - Stages are still on the live path.
 - That does not make them the canonical owner of every concept they currently touch.
 
-## Current worktree caveat
+### `jobpipe/authoring`
 
-This worktree contains `jobpipe/authoring/` and `jobpipe_crewai/` directories only as local `__pycache__` leftovers; there are no tracked source files there in the current `main` worktree state.
+- Keep the contract layer deterministic and runtime-swappable.
+- Do not couple these modules tightly to a specific agent framework.
 
-Treat those directories as absent for ownership purposes in this worktree until real tracked source files exist again.
+### `jobpipe_crewai`
+
+- This is the bounded runtime implementation layer, not the product contract boundary.
+- If an edit changes the meaning of generated package fields, validation, or persistence shape, it likely belongs in `jobpipe/authoring` or `jobpipe/model` instead.
