@@ -53,6 +53,16 @@ Windows wrapper:
 .\go.ps1 -DryRun
 ```
 
+Windows temp-dir rule:
+
+- Do not use repo-root `--basetemp` values such as `.pytest-tmp`.
+- Prefer a temp path outside the repo, for example:
+
+```powershell
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
+python -m pytest -p no:debugging -p no:cacheprovider --basetemp "$env:TEMP\\jobpipe-pytest"
+```
+
 For a step-by-step manual validation path with explicit success and failure outcomes, use [docs/public-loop-test-howto.md](docs/public-loop-test-howto.md).
 
 ## Planning / docs-only changes

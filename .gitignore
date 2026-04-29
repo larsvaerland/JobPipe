@@ -61,6 +61,10 @@ prototype/
 commit_msg.txt
 pipeline_error.json
 .jobpipe_tmp/
+.pytest-tmp/
+.pytest-tmp-*/
+.tmp-authoring-smoke/
+pytest-cache-files-*/
 
 # OS / IDE
 .DS_Store
@@ -74,3 +78,8 @@ desktop.ini
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Local code-intelligence artifacts
+.axon/
+.cgcignore
+.gitnexus/

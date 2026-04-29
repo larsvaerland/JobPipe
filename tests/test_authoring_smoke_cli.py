@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -21,8 +22,8 @@ from jobpipe.model.schema import JobContext
 
 @pytest.fixture
 def work_tmp() -> Path:
-    root = Path("tmp-authoring-smoke")
-    root.mkdir(exist_ok=True)
+    root = Path(tempfile.gettempdir()) / "jobpipe-tmp-authoring-smoke"
+    root.mkdir(parents=True, exist_ok=True)
     path = root / uuid.uuid4().hex
     path.mkdir()
     try:
