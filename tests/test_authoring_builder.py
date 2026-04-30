@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import os
-import subprocess
+import ast
 from pathlib import Path
 
 import pytest
@@ -273,19 +272,17 @@ def test_determinism() -> None:
 
 
 def test_no_crewai_import() -> None:
-    env = None
-    git_grep_dir = Path("C:/Program Files/Git/usr/bin")
-    if git_grep_dir.exists():
-        env = dict(os.environ)
-        env["PATH"] = f"{git_grep_dir}{os.pathsep}{env.get('PATH', '')}"
+    jobpipe_dir = Path("jobpipe")
+    hits: list[tuple[Path, str]] = []
+    for path in jobpipe_dir.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "crewai" or alias.name.startswith("crewai."):
+                        hits.append((path, alias.name))
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                if node.module == "crewai" or node.module.startswith("crewai."):
+                    hits.append((path, node.module))
 
-    result = subprocess.run(
-        ["grep", "-r", "crewai", "jobpipe/", "--include=*.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-
-    assert result.returncode == 1, f"Unexpected crewai reference found:\n{result.stdout}"
-    assert result.stdout == ""
+    assert not hits, f"Unexpected crewai reference found: {hits}"

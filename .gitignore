@@ -38,6 +38,7 @@ reports/profile_embedding.npy
 
 # Personal profile and CV data
 profile_pack.md
+!tests/fixtures/personas/*/profile_pack.md
 reports/resume.json
 reports/resume_fixed.json
 
