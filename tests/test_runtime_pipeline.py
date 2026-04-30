@@ -4,7 +4,7 @@ import pytest
 
 from jobpipe.core.config import PipelineConfig
 from jobpipe.core.runner import Stage
-from jobpipe.runtime.pipeline import build_stages
+from jobpipe.stages.pipeline import build_stages
 
 
 def _stub_stage_factory(*args, **kwargs):
@@ -36,13 +36,13 @@ def _cfg(stages: list[str]) -> PipelineConfig:
 
 
 def _patch_stage_factories(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("jobpipe.runtime.pipeline.triage_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.reverse_triage_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.parse_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.profile_match_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.pivot_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.moderate_stage_factory", _stub_stage_factory)
-    monkeypatch.setattr("jobpipe.runtime.pipeline.application_pack_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.triage_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.reverse_triage_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.parse_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.profile_match_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.pivot_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.moderate_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.application_pack_stage_factory", _stub_stage_factory)
 
 
 def test_build_stages_translates_yaml_aliases(monkeypatch: pytest.MonkeyPatch) -> None:

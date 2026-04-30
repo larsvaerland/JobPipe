@@ -110,6 +110,8 @@ def build_stages(cfg: PipelineConfig, profile_pack: str = "") -> List[Stage]:
             should_pack, run_pack = application_pack_stage_factory(
                 model=cfg.models.get("application_pack", "gpt-4.1"),
             )
-            stages.append(Stage(name="application_pack", run=run_pack, should_run=should_pack, ctx_model=ApplicationPackOut))
+            stages.append(
+                Stage(name="application_pack", run=run_pack, should_run=should_pack, ctx_model=ApplicationPackOut)
+            )
 
     return stages

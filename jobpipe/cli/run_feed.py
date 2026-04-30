@@ -24,7 +24,7 @@ load_env_file(".env")
 from jobpipe.core.candidate_data import default_candidate_id, load_candidate_profile_pack
 from jobpipe.core.config import load_config
 from jobpipe.runtime.paths import artifacts_root, primary_db_path, repo_root
-from jobpipe.runtime.pipeline import build_stages
+from jobpipe.stages.pipeline import build_stages
 from jobpipe.core.primary_db import (
     connect_primary_db,
     ensure_candidate,
