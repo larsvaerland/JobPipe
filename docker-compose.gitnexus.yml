@@ -7,7 +7,7 @@ services:
     volumes:
       - gitnexus-data:/data/gitnexus
       - gitnexus-data:/home/node/.gitnexus
-      - ${GITNEXUS_WORKSPACE:-C:/Users/larsv}:/workspace:ro
+      - ${GITNEXUS_WORKSPACE:-C:/Users/larsv}:/workspace
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsSI", "http://localhost:4747/api/heartbeat"]
