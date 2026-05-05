@@ -41,6 +41,11 @@ def _patch_stage_factories(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("jobpipe.stages.pipeline.parse_stage_factory", _stub_stage_factory)
     monkeypatch.setattr("jobpipe.stages.pipeline.profile_match_stage_factory", _stub_stage_factory)
     monkeypatch.setattr("jobpipe.stages.pipeline.pivot_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.triage_features_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.triage_decision_v3_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.triage_ambiguity_v3_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.advantage_assessment_v3_stage_factory", _stub_stage_factory)
+    monkeypatch.setattr("jobpipe.stages.pipeline.narrative_strategy_v3_stage_factory", _stub_stage_factory)
     monkeypatch.setattr("jobpipe.stages.pipeline.moderate_stage_factory", _stub_stage_factory)
     monkeypatch.setattr("jobpipe.stages.pipeline.application_pack_stage_factory", _stub_stage_factory)
 
@@ -75,6 +80,11 @@ def test_build_stages_uses_default_order_when_config_empty(monkeypatch: pytest.M
         "parsed",
         "profile_match",
         "pivot",
+        "triage_features",
+        "triage_decision_v3",
+        "triage_ambiguity_v3",
+        "advantage_assessment_v3",
+        "narrative_strategy_v3",
         "moderator",
         "application_pack",
     ]

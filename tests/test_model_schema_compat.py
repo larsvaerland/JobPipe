@@ -27,4 +27,17 @@ def test_job_context_snapshot_summary_uses_model_schema() -> None:
         "fit_score": None,
         "pivot_score": None,
         "confidence": None,
+        # v3 scoring fields
+        "triage_v3_label": None,
+        "triage_v3_weighted_score": None,
+        "triage_v3_confidence": None,
+        "triage_v3_needs_ambiguity": None,
+        "triage_ambiguity_label": None,
+        # advantage assessment
+        "advantage_type": None,
+        "advantage_match_score": None,
+        "advantage_review_priority": None,
+        # narrative strategy
+        "narrative_positioning_angle": None,
+        "narrative_brand_frame": None,
     }

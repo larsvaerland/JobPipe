@@ -7,9 +7,26 @@ import re
 from agents import Agent
 
 from jobpipe.core.profile_pack import parse_profile_pack
-from jobpipe.model.schema import JobContext, TriageOut
+from jobpipe.model.schema import HardGates, JobContext, TriageOut
 from jobpipe.stages._common import build_job_header, job_excerpt, run_agent
 from jobpipe.stages.semantic_filter import build_semantic_filter
+
+
+def _passing_hard_gates() -> HardGates:
+    return HardGates(
+        title_gate=True,
+        language_gate=True,
+        sector_gate=True,
+        geo_gate=True,
+        remote_gate=True,
+        must_have_tech_gate=True,
+        duplicate_gate=True,
+        blocker_reasons=[],
+    )
+
+
+def _hard_gate_snapshot(**updates: object) -> HardGates:
+    return _passing_hard_gates().model_copy(update=updates)
 
 
 _TITLE_FAMILY_MARKERS: dict[str, tuple[str, ...]] = {
@@ -330,6 +347,7 @@ def triage_stage_factory(
                         explanation=f"Geo filter: postalCode(s) {postals} ikke tillatt",
                         signals=["geo_postal_skip"] + postals[:3],
                         forced_safety=False,
+                        hard_gates=_hard_gate_snapshot(geo_gate=False, blocker_reasons=["geo_postal_skip"]),
                     )
                     return ctx
 
@@ -350,6 +368,7 @@ def triage_stage_factory(
                             explanation=f"Geo filter: fylke/kommune '{county_hay[:60]}' ikke i tillatt sone",
                             signals=["geo_county_skip", county_hay[:40]],
                             forced_safety=False,
+                            hard_gates=_hard_gate_snapshot(geo_gate=False, blocker_reasons=["geo_county_skip"]),
                         )
                         return ctx
 
@@ -362,6 +381,7 @@ def triage_stage_factory(
                     explanation="Hard-no role type matched title",
                     signals=["hard_no_title"],
                     forced_safety=False,
+                    hard_gates=_hard_gate_snapshot(title_gate=False, blocker_reasons=["hard_no_title"]),
                 )
                 return ctx
 
@@ -401,6 +421,8 @@ def triage_stage_factory(
 
         result = run_agent(agent, input_text, trace={"stage": "triage", "job_id": ctx.job_id})
         out = result.final_output_as(TriageOut)
+        # All deterministic hard gates passed — record that the LLM stage was reached.
+        out.hard_gates = _passing_hard_gates()
 
         # Append sem score to signals for calibration visibility (only for jobs that
         # passed the semantic filter — blocked ones already have sim: in their signals)
