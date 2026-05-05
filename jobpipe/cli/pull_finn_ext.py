@@ -5,50 +5,46 @@ captures jobs as you browse FINN.no and POSTs them to a local Flask server
 (server.py, port 5071). The server writes them to a jobs.jsonl file.
 
 This script reads that output, normalizes it to pipeline-compatible JSONL,
-deduplicates against the primary JobPipe DB, and writes to jobs_delta.jsonl.
+deduplicates against the ledger, and writes to jobs_delta.jsonl.
 
 These jobs are from YOUR browsing — not platform suggestions — so they carry
 suggested_by_platform=false. The pipeline processes them normally.
 
 Usage:
-    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --out /path/to/jobs_delta.jsonl
-    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --append
-    jobpipe pull-finn-ext --finn-jobs "C:/path/to/jobs.jsonl" --dry-run
+    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --out .\\jobs_delta.jsonl
+    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --append
+    python -m jobpipe.cli.pull_finn_ext --finn-jobs "C:/path/to/jobs.jsonl" --dry-run
 
 FINN Chrome Extension output dir default (Windows):
-    C:\\Users\\larsv\\projects\\Tools\\job-hunter-pilot-chrome extension Finn\\output\\jobs.jsonl
+    %USERPROFILE%\\projects\\Tools\\job-hunter-pilot-chrome extension Finn\\output\\jobs.jsonl
 """
 from __future__ import annotations
 
 import argparse
 import io
 import json
-import os
 import re
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from jobpipe.core.evaluation_state import load_job_catalog
-from jobpipe.core.io import load_env_file
-from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
+from jobpipe.core.lead_intake import append_leads
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
-load_env_file(".env")
+# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-DEFAULT_OUT_PATH = jobs_delta_path()
-DEFAULT_DB_PATH = primary_db_path()
-DEFAULT_CANDIDATE_ID = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_LEDGER_PATH = _DEFAULT_PATHS.ledger_sqlite_path
+DEFAULT_OUT_PATH = _DEFAULT_PATHS.leads_connector_path
 
-# Default location of FINN Chrome Extension output (Lars's machine)
+# Default location of FINN Chrome Extension output under the current user's home directory.
 DEFAULT_FINN_EXT_JOBS = (
-    r"C:\Users\larsv\projects\Tools\job-hunter-pilot-chrome extension Finn\output\jobs.jsonl"
+    str(Path.home() / "projects" / "Tools" / "job-hunter-pilot-chrome extension Finn" / "output" / "jobs.jsonl")
 )
-
-
-def _configure_stdout() -> None:
-    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 # --- Date parsing ---
@@ -181,14 +177,34 @@ def _normalize(raw: dict) -> Optional[dict]:
     }
 
 
+# --- Ledger deduplication ---
+
+def _load_ledger_ids(ledger_path: Path) -> set:
+    """Return set of job_ids already processed in the ledger."""
+    if not ledger_path.exists():
+        return set()
+    try:
+        conn = sqlite3.connect(str(ledger_path))
+        rows = conn.execute("SELECT job_id FROM ledger").fetchall()
+        conn.close()
+        return {r[0] for r in rows}
+    except Exception as e:
+        print(f"Warning: could not read ledger ({e}). Deduplication disabled.", file=sys.stderr)
+        return set()
+
+
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
-    _configure_stdout()
     ap = argparse.ArgumentParser(
         description="Normalize FINN Chrome Extension job captures to pipeline JSONL format.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
+    )
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
     )
     ap.add_argument(
         "--finn-jobs",
@@ -197,7 +213,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument(
         "--out",
-        default=str(DEFAULT_OUT_PATH),
+        default="",
         help=f"Output JSONL path (default: {DEFAULT_OUT_PATH})",
     )
     ap.add_argument(
@@ -206,19 +222,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Append to output file instead of overwriting",
     )
     ap.add_argument(
-        "--db",
-        default=str(DEFAULT_DB_PATH),
-        help="Primary jobpipe.sqlite path for deduplication",
-    )
-    ap.add_argument(
-        "--candidate-id",
-        default=DEFAULT_CANDIDATE_ID,
-        help="Candidate ID for primary DB deduplication",
+        "--ledger",
+        default="",
+        help=f"Ledger SQLite path for deduplication (default: {DEFAULT_LEDGER_PATH})",
     )
     ap.add_argument(
         "--no-dedupe",
         action="store_true",
-        help="Disable primary-DB deduplication (include all jobs, even already processed)",
+        help="Disable ledger deduplication (include all jobs, even already processed)",
     )
     ap.add_argument(
         "--dry-run",
@@ -227,6 +238,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     ap.add_argument("--verbose", "-v", action="store_true")
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    out_path = Path(args.out) if args.out else paths.leads_connector_path
+    ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     jobs_path = Path(args.finn_jobs)
     if not jobs_path.exists():
@@ -238,18 +253,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(1)
 
-    if args.no_dedupe:
-        processed_ids: set[str] = set()
-    else:
-        processed_ids = {
-            str(row.get("job_id") or "").strip()
-            for row in load_job_catalog(
-                primary_db_path=Path(args.db),
-                candidate_id=args.candidate_id,
-            )
-            if str(row.get("job_id") or "").strip()
-        }
-    print(f"Loaded {len(processed_ids)} known job IDs for deduplication.")
+    ledger_ids = set() if args.no_dedupe else _load_ledger_ids(ledger_path)
+    print(f"Loaded {len(ledger_ids)} job IDs from ledger for deduplication.")
 
     # Read raw FINN extension records
     raw_jobs: List[dict] = []
@@ -268,7 +273,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Normalize and deduplicate
     normalized: List[dict] = []
     seen_ids: set = set()
-    stats = {"no_id": 0, "known": 0, "duplicate": 0, "new": 0}
+    stats = {"no_id": 0, "in_ledger": 0, "duplicate": 0, "new": 0}
 
     for raw in raw_jobs:
         job = _normalize(raw)
@@ -283,10 +288,10 @@ def main(argv: Optional[List[str]] = None) -> None:
             continue
         seen_ids.add(jid)
 
-        if jid in processed_ids:
-            stats["known"] += 1
+        if jid in ledger_ids:
+            stats["in_ledger"] += 1
             if args.verbose:
-                print(f"  [skip-known] {jid}  {job['title'][:50]}")
+                print(f"  [skip-ledger] {jid}  {job['title'][:50]}")
             continue
 
         normalized.append(job)
@@ -300,31 +305,36 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Write output
     if args.dry_run:
-        print(f"\n[DRY RUN] Would write {len(normalized)} new jobs to {args.out}")
+        print(f"\n[DRY RUN] Would write {len(normalized)} new jobs to {out_path}")
         for job in normalized[:10]:
             print(f"  {job['job_id']}  {job['title'][:60]}  ({job.get('employer_name', '')})")
         if len(normalized) > 10:
             print(f"  ... and {len(normalized) - 10} more")
     elif normalized:
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if args.append else "w"
-        with open(out_path, mode, encoding="utf-8") as f:
-            for job in normalized:
-                f.write(json.dumps(job, ensure_ascii=False) + "\n")
-        print(f"\n[OK] Wrote {len(normalized)} jobs to {out_path} (mode={mode})")
+        if mode == "w":
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("", encoding="utf-8")
+        appended = append_leads(
+            out_path,
+            normalized,
+            intake_channel="manual_browse_capture",
+            connector_source="finn_chrome_ext",
+            pretriage_policy="full_feed",
+        )
+        print(f"\n[OK] Wrote {len(appended)} jobs to {out_path} (mode={mode})")
     else:
         print("\nNo new jobs to write.")
 
     print(
         f"\nSummary:\n"
         f"  New (written):           {stats['new']}\n"
-        f"  Already known:           {stats['known']}\n"
+        f"  Already in ledger:       {stats['in_ledger']}\n"
         f"  Intra-file duplicates:   {stats['duplicate']}\n"
         f"  No finnkode (skipped):   {stats['no_id']}\n"
     )
     if normalized and not args.dry_run:
-        print(f"Next step: run the pipeline on {args.out}")
+        print(f"Next step: run the pipeline on {out_path}")
         print("  .\\go.ps1 -DryRun   (test 2 jobs first)")
         print("  .\\go.ps1           (full run)")
 

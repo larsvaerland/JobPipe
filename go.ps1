@@ -11,12 +11,15 @@ param(
     [switch]$DryRun,
     [switch]$NoOpen,
     [switch]$WithSuggestions,
-    [string[]]$ConfigOverlay
+    [string[]]$ConfigOverlay,
+    [switch]$Serve        # Start local dashboard server (direct status updates, notes, generation)
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot          # ensure CWD = project root (editable install needs this)
 $py = "$PSScriptRoot\.venv\Scripts\python.exe"
+$dataRoot = if ($env:JOBPIPE_DATA_ROOT) { $env:JOBPIPE_DATA_ROOT } else { Join-Path $HOME "JobpipeData" }
+$dashboardPath = Join-Path $dataRoot "exports\dashboard.html"
 
 if (-not (Test-Path $py)) {
     Write-Error "Venv not found at $py - run: python -m venv .venv && .venv\Scripts\pip install -e ."
@@ -36,6 +39,7 @@ if ($ConfigOverlay) {
 
 Write-Host ""
 Write-Host "=== JobPipe ===" -ForegroundColor Cyan
+Write-Host "Data root: $dataRoot"
 if ($DryRun) {
     Write-Host "Mode: DRY RUN (max 2 jobs)"
 } else {
@@ -47,83 +51,48 @@ if ($WithSuggestions) {
 if ($overlayArgs.Count -gt 0) {
     Write-Host "Config overlays: $($ConfigOverlay -join ', ')"
 }
+if ($Serve) {
+    Write-Host "Dashboard server: ON (http://localhost:5100)"
+}
 Write-Host ""
 
-# --- Optional: Suggestion intake (FINN/LinkedIn email scan + FINN search scrape) ---
-# Only when -WithSuggestions is passed. All three steps have built-in 09:00-19:00 Oslo
-# time guards — they exit cleanly if run outside that window.
-if ($WithSuggestions) {
-    Write-Host "[0a/4] scan_gmail --scan-suggestions (FINN/LinkedIn emails)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.scan_gmail `
-        --scan-suggestions `
-        --days 30
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "scan_gmail --scan-suggestions failed (exit $LASTEXITCODE). Continuing."
-    }
-
-    Write-Host ""
-    Write-Host "[0b/4] pull_suggested (FINN jobs from email queue, daytime only)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.pull_suggested `
-        --max 20
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pull_suggested failed (exit $LASTEXITCODE). Continuing."
-    }
-
-    Write-Host ""
-    Write-Host "[0c/4] pull_finn_search (direct FINN keyword search, daytime only)..." -ForegroundColor Yellow
-    & $py -m jobpipe.cli.pull_finn_search `
-        --config .\configs\pipeline.v1.yaml `
-        --max 40 `
+# -Serve: start local dashboard server only (no pipeline run)
+if ($Serve) {
+    Write-Host "Starting dashboard server on http://localhost:5100..." -ForegroundColor Cyan
+    Write-Host "(Press Ctrl+C to stop)"
+    & $py -m jobpipe.cli.dashboard_server `
         @overlayArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pull_finn_search failed (exit $LASTEXITCODE). Continuing."
-    }
-    Write-Host ""
+    exit 0
 }
 
-# 1. Pull + process
-Write-Host "[1/3] drain_queue..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.drain_queue `
-    --profile C:\Users\larsv\JobpipeData\profile_pack.md `
-    --config .\configs\pipeline.v1.yaml `
-    --out .\out_runs `
-    --state .\jobs_state.json `
-    --batch-size $maxJobs `
-    --overwrite `
-    @overlayArgs
+Write-Host "Running canonical scheduled flow..." -ForegroundColor Yellow
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "drain_queue failed (exit $LASTEXITCODE)"
-    exit $LASTEXITCODE
+$runArgs = @(
+    "-m", "jobpipe.cli.run_scheduled_flow",
+    "--data-root", $dataRoot,
+    "--max-jobs", $maxJobs
+)
+if ($WithSuggestions) {
+    $runArgs += "--with-suggestions"
 }
+$runArgs += $overlayArgs
 
-# 2. Sync ledger
-Write-Host ""
-Write-Host "[2/3] sync_ledger..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.sync_ledger `
-    --out .\out_runs `
-    --sqlite .\reports\ledger.sqlite `
-    --csv .\reports\ledger_latest.csv
+& $py @runArgs
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "sync_ledger failed (exit $LASTEXITCODE)"
-    exit $LASTEXITCODE
-}
-
-# 3. Rebuild dashboard
-Write-Host ""
-Write-Host "[3/3] export_dashboard..." -ForegroundColor Yellow
-& $py -m jobpipe.cli.export_dashboard @overlayArgs
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "export_dashboard failed (exit $LASTEXITCODE)"
+    Write-Error "run_scheduled_flow failed (exit $LASTEXITCODE)"
     exit $LASTEXITCODE
 }
 
 Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Green
+Write-Host ""
+Write-Host "Tips:" -ForegroundColor DarkGray
+Write-Host "  .\go.ps1 -Serve   # Start live server (localhost:5100) for direct status updates + notes" -ForegroundColor DarkGray
+Write-Host "  Dashboard export: $dashboardPath" -ForegroundColor DarkGray
+Write-Host ""
 
 if (-not $NoOpen -and -not $DryRun) {
     Write-Host "Opening dashboard..." -ForegroundColor Cyan
-    Start-Process ".\reports\dashboard.html"
+    Start-Process $dashboardPath
 }

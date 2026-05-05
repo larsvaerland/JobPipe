@@ -256,9 +256,3 @@ def bootstrap_private_data(paths: JobPipePaths, *, include_artifacts: bool = Tru
         copied.append(dst)
 
     return copied
-
-# ---------------------------------------------------------------------------
-# Backward-compat re-exports: code that imports from jobpipe.core.paths or
-# jobpipe.runtime.paths still resolves the old module-level path helpers.
-# ---------------------------------------------------------------------------
-from jobpipe.runtime.paths import *  # noqa: F401, F403

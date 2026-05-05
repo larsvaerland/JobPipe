@@ -10,19 +10,15 @@ import re
 import time
 import http.client
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.io import now_iso, stable_job_id, load_env_file
+from jobpipe.core.intake_pipe import CONNECTOR_NAV, POLICY_FULL_FEED, prepare_connector_record
+from jobpipe.core.io import now_iso, stable_job_id
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
-load_env_file(".env")
-
-from jobpipe.runtime.catalog import ingest_catalog_job
-from jobpipe.runtime.paths import jobs_delta_path, jobs_expired_path, jobs_state_path, primary_db_path
-from jobpipe.core.primary_db import (
-    connect_primary_db,
-    mark_source_records_inactive,
-)
+_DEFAULT_PATHS = get_jobpipe_paths()
 
 
 def fetch_text_with_retries(url: str, timeout: int = 120, retries: int = 4) -> str:
@@ -114,8 +110,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sheet-url", required=False, default="", help="Google Sheet URL or leave empty if using --csv-url")
     ap.add_argument("--csv-url", default="", help="Optional direct published CSV URL")
-    ap.add_argument("--out", default=str(jobs_delta_path()), help=f"Output JSONL path (default: {jobs_delta_path()})")
-    ap.add_argument("--state", default=str(jobs_state_path()), help=f"State path for incremental updates (default: {jobs_state_path()})")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument("--out", default="", help=f"Output JSONL path (default: {_DEFAULT_PATHS.nav_connector_path})")
+    ap.add_argument("--state", default="", help=f"State path for incremental updates (default: {_DEFAULT_PATHS.jobs_state_path})")
     ap.add_argument("--only-changed", action="store_true", help="Write only changed/new rows")
     ap.add_argument("--no-dedupe", action="store_true", help="Disable dedupe by uuid/job_id")
     ap.add_argument("--timeout", type=int, default=120, help="HTTP timeout in seconds")
@@ -129,8 +130,8 @@ def main():
     )
     ap.add_argument(
         "--expired-out",
-        default=str(jobs_expired_path()),
-        help=f"Output JSONL for expired (ACTIVE->INACTIVE) job events (default: {jobs_expired_path()}). "
+        default=None,
+        help=f"Output JSONL for expired (ACTIVE->INACTIVE) job events (default: {_DEFAULT_PATHS.jobs_expired_path}). "
              "Set to '' to disable expiry tracking.",
     )
     ap.add_argument(
@@ -143,12 +144,14 @@ def main():
         "--no-skip-expired-deadline",
         dest="skip_expired_deadline",
         action="store_false",
-        help="Disable deadline filtering; include jobs with past deadlines.",
+        help="Disable deadline filtering — include jobs with past deadlines.",
     )
-    ap.add_argument("--db", default=str(primary_db_path()), help="Primary JobPipe DB path for canonical job/source mirroring")
-    ap.add_argument("--source-name", default="nav_sheet", help="Source name to store in job_source_records (default: nav_sheet)")
-    ap.add_argument("--no-mirror-db", action="store_true", help="Skip mirroring canonical job/source data into the primary DB")
     args = ap.parse_args()
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    out_path = Path(args.out) if args.out else paths.nav_connector_path
+    state_path = Path(args.state) if args.state else paths.jobs_state_path
+    expired_out_path = None if args.expired_out == "" else (Path(args.expired_out) if args.expired_out else paths.jobs_expired_path)
 
     if not args.csv_url and not args.sheet_url:
         ap.error("Provide either --csv-url or --sheet-url")
@@ -159,8 +162,8 @@ def main():
         csv_url = sheet_to_csv_url(csv_url)
 
     prev: dict = {}
-    if os.path.exists(args.state):
-        with open(args.state, "r", encoding="utf-8") as f:
+    if state_path.exists():
+        with open(state_path, "r", encoding="utf-8") as f:
             prev = json.load(f)
 
     text = fetch_text_with_retries(csv_url, timeout=args.timeout, retries=args.retries)
@@ -177,8 +180,6 @@ def main():
     # Dedupe bucket: job_id -> best_job
     best: dict[str, dict] = {}
     best_dt: dict[str, datetime] = {}
-    catalog_best: dict[str, dict] = {}
-    catalog_best_dt: dict[str, datetime] = {}
     status_skipped = 0
     deadline_skipped = 0
     inactive_ids: set[str] = set()   # job_ids that are INACTIVE in current sheet
@@ -188,7 +189,7 @@ def main():
         if status_filter:
             row_status = (row.get("status") or "").strip().upper()
             if row_status != status_filter:
-                # Track INACTIVE job_ids for ACTIVE->INACTIVE transition detection
+                # Track INACTIVE job_ids for ACTIVE→INACTIVE transition detection
                 uuid = (row.get("uuid") or "").strip()
                 if uuid:
                     inactive_ids.add(uuid)
@@ -200,7 +201,7 @@ def main():
             due_raw = (row.get("applicationDue") or "").strip()
             if due_raw and due_raw.lower() not in ("snarest", "asap", "fortløpende"):
                 due_dt = parse_iso(due_raw)
-                # parse_iso returns epoch if unparseable; treat epoch as unknown, don't skip
+                # parse_iso returns epoch if unparseable — treat epoch as unknown, don't skip
                 if due_dt.year > 1970 and due_dt < now_utc:
                     deadline_skipped += 1
                     continue
@@ -275,16 +276,6 @@ def main():
         # Choose "newest" version per job_id
         dt = parse_iso(job.get("ad_updated") or job.get("sistEndret") or "")
 
-        prev_catalog = catalog_best.get(job_id)
-        if prev_catalog is None:
-            catalog_best[job_id] = dict(job)
-            catalog_best_dt[job_id] = dt
-        else:
-            cur_dt = catalog_best_dt[job_id]
-            if dt > cur_dt or (dt == cur_dt and len(job["description_html"]) > len(prev_catalog["description_html"])):
-                catalog_best[job_id] = dict(job)
-                catalog_best_dt[job_id] = dt
-
         if args.no_dedupe:
             # keep everything (but still needs unique key in dict -> append counter)
             unique = job_id + "-" + hashlib.sha1(json.dumps(row, sort_keys=True).encode("utf-8")).hexdigest()[:8]
@@ -334,19 +325,28 @@ def main():
         if args.only_changed and old_h == h:
             continue
 
-        out_lines.append(json.dumps(job, ensure_ascii=False))
+        connector_job = prepare_connector_record(
+            job,
+            connector_name=CONNECTOR_NAV,
+            connector_source="nav",
+            intake_channel="sheet",
+            pretriage_policy=POLICY_FULL_FEED,
+        )
+        out_lines.append(json.dumps(connector_job, ensure_ascii=False))
 
-    with open(args.out, "w", encoding="utf-8") as f:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(out_lines) + ("\n" if out_lines else ""))
 
-    with open(args.state, "w", encoding="utf-8") as f:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(state_path, "w", encoding="utf-8") as f:
         json.dump(new_state, f, ensure_ascii=False, indent=2)
 
-    # --- Detect ACTIVE -> INACTIVE transitions ---
+    # --- Detect ACTIVE → INACTIVE transitions ---
     # If a job_id was in the *previous* state (which only tracks ACTIVE jobs)
     # and is now INACTIVE in the sheet, that job has expired on NAV.
     expired_events: list[dict] = []
-    expired_out = (args.expired_out or "").strip()
+    expired_out = str(expired_out_path).strip() if expired_out_path else ""
     if expired_out and inactive_ids:
         prev_rows = prev.get("rows", {})
         for job_id in inactive_ids:
@@ -358,34 +358,17 @@ def main():
                 })
 
     if expired_out:
+        assert expired_out_path is not None
+        expired_out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(expired_out, "w", encoding="utf-8") as f:
             for evt in expired_events:
                 f.write(json.dumps(evt, ensure_ascii=False) + "\n")
-
-    if not args.no_mirror_db:
-        mirrored_at = now_iso()
-        conn = connect_primary_db(args.db)
-        try:
-            for job in catalog_best.values():
-                ingest_catalog_job(
-                    conn,
-                    job,
-                    source_name=args.source_name,
-                    seen_at=mirrored_at,
-                )
-            if inactive_ids:
-                mark_source_records_inactive(conn, args.source_name, inactive_ids, seen_at=mirrored_at)
-            conn.commit()
-        finally:
-            conn.close()
 
     print(f"CSV URL used: {csv_url}")
     print(f"Status filter: {status_filter or 'none (all rows)'} - skipped {status_skipped} rows")
     print(f"Deadline filter: {'on' if args.skip_expired_deadline else 'off'} - skipped {deadline_skipped} rows with past deadlines")
     print(f"Read rows: {len(best)} (dedupe={'off' if args.no_dedupe else 'on'})")
-    print(f"Wrote {len(out_lines)} rows to {args.out}. only_changed={args.only_changed}")
-    if not args.no_mirror_db:
-        print(f"Mirrored canonical jobs: {len(catalog_best)} -> {args.db}")
+    print(f"Wrote {len(out_lines)} rows to {out_path}. only_changed={args.only_changed}")
     if expired_out:
         print(f"Expired events: {len(expired_events)} (ACTIVE->INACTIVE transitions) -> {expired_out}")
 

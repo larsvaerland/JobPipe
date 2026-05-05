@@ -12,16 +12,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from jobpipe.core.intake_pipe import prune_connector_records, rebuild_intake_queue
 from jobpipe.core.io import load_env_file, read_jsonl_lines, write_jsonl_lines, stable_job_id
-from jobpipe.runtime.paths import (
-    exports_root,
-    artifacts_root,
-    jobs_delta_path,
-    jobs_expired_path,
-    jobs_state_path,
-    primary_db_path,
-)
-from jobpipe.core.evaluation_state import load_processed_job_ids
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
+
+_DEFAULT_PATHS = get_jobpipe_paths()
 
 
 def run(cmd: list[str]) -> None:
@@ -32,22 +27,40 @@ def run(cmd: list[str]) -> None:
 def _job_id_from_json(obj: dict[str, Any]) -> str:
     return stable_job_id(obj)
 
-def _evaluation_summary(db_path: Path, candidate_id: str) -> str:
-    """Return a one-line decision breakdown from the primary DB."""
-    if not db_path.exists():
+
+def load_processed_ids(sqlite_path: Path) -> set[str]:
+    """
+    Returns job_ids present in the ledger SQLite.
+    If the DB doesn't exist yet, returns empty set.
+    """
+    if not sqlite_path.exists():
+        return set()
+    try:
+        con = sqlite3.connect(str(sqlite_path))
+        cur = con.cursor()
+        # Ledger schema created by jobpipe.cli.sync_ledger
+        cur.execute("SELECT job_id FROM ledger")
+        rows = cur.fetchall()
+        return {str(r[0]) for r in rows if r and r[0]}
+    except Exception:
+        # If table doesn't exist yet, treat as empty.
+        return set()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def _ledger_summary(ledger_path: Path) -> str:
+    """Return a one-line decision breakdown from ledger.sqlite, e.g. 'SKIP=480 | REVIEW_LOW=12 | APPLY=3'."""
+    if not ledger_path.exists():
         return ""
     try:
-        con = sqlite3.connect(str(db_path))
+        con = sqlite3.connect(str(ledger_path))
         cur = con.cursor()
         cur.execute(
-            """
-            SELECT final_decision, COUNT(*) AS n
-            FROM job_evaluations
-            WHERE candidate_id = ?
-            GROUP BY final_decision
-            ORDER BY n DESC
-            """,
-            [candidate_id],
+            "SELECT final_decision, COUNT(*) AS n FROM ledger GROUP BY final_decision ORDER BY n DESC"
         )
         rows = cur.fetchall()
         con.close()
@@ -58,20 +71,20 @@ def _evaluation_summary(db_path: Path, candidate_id: str) -> str:
     return ""
 
 
-def update_agent_status(project_root: Path, db_path: Path, candidate_id: str, total_rows: int, loops: int) -> None:
+def update_agent_status(project_root: Path, ledger_path: Path, total_rows: int, loops: int) -> None:
     """Overwrite the '## Last pipeline run' block in AGENT_STATUS.md with fresh stats."""
     status_file = project_root / "AGENT_STATUS.md"
     if not status_file.exists():
         return
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    evaluation_line = _evaluation_summary(db_path, candidate_id)
+    ledger_line = _ledger_summary(ledger_path)
 
     run_block = (
         "\n\n---\n\n"
         "## Last pipeline run\n\n"
         f"**{now}** - {total_rows} jobs processed in {loops} loop(s)  \n"
-        + (f"Evaluation totals: {evaluation_line}  \n" if evaluation_line else "")
+        + (f"Ledger totals: {ledger_line}  \n" if ledger_line else "")
     )
 
     try:
@@ -94,32 +107,61 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap = argparse.ArgumentParser(
         description=(
             "Drain JobPipe queue: pull delta from Sheets and run the pipeline in batches until there are no new/changed rows.\n"
-            "This version can skip jobs already present in the primary DB."
+            "This version can skip jobs already present in the SQLite ledger (so you can reset state safely)."
         )
     )
     ap.add_argument("--csv-url", default="", help="Published CSV URL for the EXPORT sheet (optional if JOBPIPE_CSV_URL is set).")
     ap.add_argument("--sheet-url", default="", help="Google Sheets edit URL (optional alternative to --csv-url).")
-    ap.add_argument("--env-file", default=".env", help="Optional .env file (default: .env).")
-    ap.add_argument("--profile", default="", help="Optional path to profile_pack.md override")
     ap.add_argument(
-        "--candidate-id",
+        "--data-root",
         default="",
-        help="Candidate ID for DB-backed profile reads",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
     )
-    ap.add_argument("--config", default="", help="Path to pipeline YAML (optional).")
-    ap.add_argument("--out", default=str(artifacts_root()), help=f"Artifact output folder (default: {artifacts_root()})")
-    ap.add_argument("--reports", default=str(exports_root()), help=f"Exports folder (default: {exports_root()})")
+    ap.add_argument(
+        "--env-file",
+        default="",
+        help=f"Optional .env file (default: {_DEFAULT_PATHS.env_file}).",
+    )
+    ap.add_argument(
+        "--profile",
+        default="",
+        help=f"Path to profile_pack.md (default: {_DEFAULT_PATHS.profile_pack_path})",
+    )
+    ap.add_argument(
+        "--config",
+        default="",
+        help=f"Path to pipeline YAML (default: {_DEFAULT_PATHS.default_config_path}).",
+    )
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
+    ap.add_argument(
+        "--out",
+        default="",
+        help=f"Output folder for runs (default: {_DEFAULT_PATHS.out_runs_dir})",
+    )
+    ap.add_argument(
+        "--reports",
+        default="",
+        help=f"Reports folder (default: {_DEFAULT_PATHS.reports_dir})",
+    )
 
-    ap.add_argument("--state", default=str(jobs_state_path()), help=f"State JSON used by pull_sheets_csv (default: {jobs_state_path()})")
-    ap.add_argument("--delta", default=str(jobs_delta_path()), help=f"Delta JSONL path (default: {jobs_delta_path()})")
+    ap.add_argument(
+        "--state",
+        default="",
+        help=f"State JSON used by pull_sheets_csv (default: {_DEFAULT_PATHS.jobs_state_path})",
+    )
+    ap.add_argument(
+        "--delta",
+        default="",
+        help=f"Delta JSONL path (default: {_DEFAULT_PATHS.jobs_delta_path})",
+    )
 
     ap.add_argument("--batch-size", type=int, default=50, help="How many jobs to process per batch (default: 50)")
+    ap.add_argument("--max-total-jobs", type=int, default=0, help="Stop after processing this many jobs in total (0 = no cap).")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite existing per-job stage JSONs if they exist.")
     ap.add_argument("--reset-state", action="store_true", help="Delete the state file before starting (forces a full first pass).")
     ap.add_argument("--no-only-changed", action="store_true", help="Pull ALL rows each loop (ignores delta; expensive).")
     ap.add_argument("--sleep", type=float, default=0.0, help="Sleep seconds between loops (default: 0).")
     ap.add_argument("--max-loops", type=int, default=200, help="Safety cap on loop count (default: 200).")
-    ap.add_argument("--max-jobs", type=int, default=0, help="Stop after processing this many jobs total (0 = unlimited).")
 
     # --- Pull filtering (passed through to pull_sheets_csv) ---
     ap.add_argument("--status-filter", default="ACTIVE", metavar="STATUS",
@@ -127,19 +169,34 @@ def main(argv: Optional[list[str]] = None) -> None:
     ap.add_argument("--no-skip-expired-deadline", action="store_true", default=False,
                     help="Include jobs with past applicationDue dates (default: skip them).")
 
-    # --- Processed-job filtering ---
-    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in primary DB (default: on).")
-    ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable processed-job filtering.")
-    ap.add_argument("--db", default=str(primary_db_path()), help="Primary jobpipe.sqlite path for processed-job filtering")
-    ap.add_argument("--sync-evaluations-before", action="store_true", default=True, help="Sync evaluation state from artifacts before pulling (default: on).")
-    ap.add_argument("--no-sync-evaluations-before", dest="sync_evaluations_before", action="store_false", help="Disable evaluation sync before pull.")
-    ap.add_argument("--sync-evaluations-after", action="store_true", default=True, help="Sync evaluation state from artifacts after processing (default: on).")
-    ap.add_argument("--no-sync-evaluations-after", dest="sync_evaluations_after", action="store_false", help="Disable evaluation sync after run.")
+    # --- Ledger filtering ---
+    ap.add_argument("--skip-processed", action="store_true", default=True, help="Skip jobs already present in SQLite ledger (default: on).")
+    ap.add_argument("--no-skip-processed", dest="skip_processed", action="store_false", help="Disable ledger filtering.")
+    ap.add_argument(
+        "--ledger-sqlite",
+        default="",
+        help=f"SQLite ledger path (default: {_DEFAULT_PATHS.ledger_sqlite_path} or JOBPIPE_LEDGER_SQLITE).",
+    )
+    ap.add_argument("--sync-ledger-before", action="store_true", default=True, help="Sync ledger from out_runs before pulling (default: on).")
+    ap.add_argument("--no-sync-ledger-before", dest="sync_ledger_before", action="store_false", help="Disable ledger sync before pull.")
+    ap.add_argument("--sync-ledger-after", action="store_true", default=True, help="Sync ledger from out_runs after processing (default: on).")
+    ap.add_argument("--no-sync-ledger-after", dest="sync_ledger_after", action="store_false", help="Disable ledger sync after run.")
 
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=True)
 
-    load_env_file(Path(args.env_file))
-    candidate_id = (args.candidate_id or os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+    env_file = Path(args.env_file) if args.env_file else paths.env_file
+    profile_path = Path(args.profile) if args.profile else paths.profile_pack_path
+    config_path = Path(args.config) if args.config else paths.default_config_path
+    out_dir = Path(args.out) if args.out else paths.out_runs_dir
+    reports_dir = Path(args.reports) if args.reports else paths.reports_dir
+    state_path = Path(args.state) if args.state else paths.jobs_state_path
+    delta_path = Path(args.delta) if args.delta else paths.jobs_delta_path
+    nav_connector_path = paths.nav_connector_path
+    leads_connector_path = paths.leads_connector_path
+
+    load_env_file(env_file)
 
     csv_url = (args.csv_url or os.environ.get("JOBPIPE_CSV_URL", "")).strip()
     sheet_url = (args.sheet_url or os.environ.get("JOBPIPE_SHEET_URL", "")).strip()
@@ -147,55 +204,64 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise SystemExit("Provide --csv-url or --sheet-url, or set JOBPIPE_CSV_URL/JOBPIPE_SHEET_URL in .env")
 
     py = sys.executable
-    out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    reports_dir = Path(args.reports)
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = Path(args.db)
+    ledger_sqlite = (args.ledger_sqlite or os.environ.get("JOBPIPE_LEDGER_SQLITE", "")).strip()
+    ledger_path = Path(ledger_sqlite) if ledger_sqlite else (reports_dir / "ledger.sqlite")
 
-    state_path = Path(args.state)
     if args.reset_state and state_path.exists():
         state_path.unlink()
 
-    delta_path = Path(args.delta)
-    expired_path = jobs_expired_path()
-    tmp_dir = Path(".jobpipe_tmp")
+    expired_path = delta_path.parent / "jobs_expired.jsonl"
+    tmp_dir = paths.tmp_dir
     tmp_dir.mkdir(exist_ok=True)
 
-    # Optional: keep evaluation state up to date before we decide what's "processed"
-    if args.sync_evaluations_before:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_evaluations", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
+    # Optional: keep ledger up to date before we decide what's "processed"
+    if args.sync_ledger_before:
+        sync_cmd = [
+            py,
+            "-m",
+            "jobpipe.cli.sync_ledger",
+            "--data-root",
+            str(paths.data_root),
+            "--out",
+            str(out_dir),
+            "--reports",
+            str(reports_dir),
+            "--sqlite",
+            str(ledger_path),
+        ]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
 
-    processed_ids = load_processed_job_ids(
-        primary_db_path=db_path,
-        candidate_id=candidate_id,
-    ) if args.skip_processed else set()
+    processed_ids = load_processed_ids(ledger_path) if args.skip_processed else set()
     if args.skip_processed:
-        print(f"[drain_queue] processed-job filter ON: {len(processed_ids)} job_ids already evaluated in {db_path}")
+        print(f"[drain_queue] ledger filter ON: {len(processed_ids)} job_ids already in {ledger_path}")
 
     loops = 0
     total_rows_processed = 0
     total_batches = 0
 
     while True:
+        if args.max_total_jobs and total_rows_processed >= args.max_total_jobs:
+            print(f"[drain_queue] max_total_jobs reached ({args.max_total_jobs}). Stopping.")
+            break
+
         loops += 1
         if loops > args.max_loops:
             print(f"[drain_queue] max_loops reached ({args.max_loops}). Stopping.")
             break
 
-        pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv"]
+        pull_cmd = [py, "-m", "jobpipe.cli.pull_sheets_csv", "--data-root", str(paths.data_root)]
         if csv_url:
             pull_cmd += ["--csv-url", csv_url]
         else:
             pull_cmd += ["--sheet-url", sheet_url]
-        pull_cmd += ["--out", str(delta_path), "--state", str(state_path)]
+        pull_cmd += ["--out", str(nav_connector_path), "--state", str(state_path)]
         pull_cmd += ["--expired-out", str(expired_path)]
-        pull_cmd += ["--db", str(db_path)]
         if not args.no_only_changed:
             pull_cmd += ["--only-changed"]
         if args.status_filter and args.status_filter.upper() != "ALL":
@@ -205,12 +271,24 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         run(pull_cmd)
 
+        merge_summary = rebuild_intake_queue(
+            nav_path=nav_connector_path,
+            leads_path=leads_connector_path,
+            out_path=delta_path,
+        )
+        print(
+            "[drain_queue] intake merge: "
+            f"nav={merge_summary['nav_records']} "
+            f"leads={merge_summary['lead_records']} "
+            f"merged={merge_summary['merged_records']}"
+        )
+
         lines = read_jsonl_lines(delta_path)
         if not lines:
             print("[drain_queue] No changes -> done.")
             break
 
-        # Processed-job filter: remove already-processed job_ids
+        # Ledger filter: remove already-processed job_ids
         if args.skip_processed:
             kept: list[str] = []
             skipped = 0
@@ -229,16 +307,31 @@ def main(argv: Optional[list[str]] = None) -> None:
                     # Also dedupe within this run (helps if the sheet contains dupes)
                     processed_ids.add(jid)
             lines = kept
-            print(f"[drain_queue] processed-job filter: skipped={skipped}, remaining={len(lines)}")
+            print(f"[drain_queue] ledger filter: skipped={skipped}, remaining={len(lines)}")
 
         if not lines:
-            print("[drain_queue] All pulled jobs already known -> done.")
+            print("[drain_queue] All pulled jobs already in ledger -> done.")
             break
+
+        if args.max_total_jobs:
+            remaining = args.max_total_jobs - total_rows_processed
+            if remaining <= 0:
+                print(f"[drain_queue] max_total_jobs reached ({args.max_total_jobs}). Stopping.")
+                break
+            if len(lines) > remaining:
+                print(f"[drain_queue] trimming pulled rows from {len(lines)} to {remaining} due to max_total_jobs")
+                lines = lines[:remaining]
 
         # Process the pulled delta fully, even if it contains more than batch-size rows.
         bs = max(1, int(args.batch_size))
+        processed_keys: list[str] = []
         for i in range(0, len(lines), bs):
             batch = lines[i : i + bs]
+            for raw in batch:
+                try:
+                    processed_keys.append(json.loads(raw).get("intake_dedupe_key", ""))
+                except Exception:
+                    continue
             batch_file = tmp_dir / f"jobs_batch_{loops:03d}_{(i//bs)+1:04d}.jsonl"
             write_jsonl_lines(batch_file, batch)
 
@@ -246,21 +339,23 @@ def main(argv: Optional[list[str]] = None) -> None:
                 py,
                 "-m",
                 "jobpipe.cli.run_feed",
+                "--data-root",
+                str(paths.data_root),
+                "--env-file",
+                str(env_file),
                 "--jobs",
                 str(batch_file),
-                "--candidate-id",
-                candidate_id,
+                "--profile",
+                str(profile_path),
                 "--out",
                 str(out_dir),
                 "--max",
                 str(len(batch)),
             ]
-            # Always forward the DB path so run_feed can load the candidate profile
-            run_cmd += ["--db", str(db_path)]
-            if args.profile:
-                run_cmd += ["--profile", args.profile]
-            if args.config:
-                run_cmd += ["--config", args.config]
+            if config_path:
+                run_cmd += ["--config", str(config_path)]
+            for overlay in args.config_overlay:
+                run_cmd += ["--config-overlay", overlay]
             if args.overwrite:
                 run_cmd += ["--overwrite"]
 
@@ -269,32 +364,48 @@ def main(argv: Optional[list[str]] = None) -> None:
             total_batches += 1
             total_rows_processed += len(batch)
 
-            if args.max_jobs > 0 and total_rows_processed >= args.max_jobs:
-                print(f"[drain_queue] max-jobs {args.max_jobs} reached. Stopping.")
-                break
-
             # optional cleanup
             try:
                 batch_file.unlink()
             except OSError:
                 pass
 
+        processed_keys = [key for key in processed_keys if key]
+        if processed_keys:
+            pruned_nav = prune_connector_records(nav_connector_path, processed_keys)
+            pruned_leads = prune_connector_records(leads_connector_path, processed_keys)
+            print(
+                f"[drain_queue] pruned connector staging: nav={pruned_nav}, leads={pruned_leads}"
+            )
+
         if args.sleep and args.sleep > 0:
             time.sleep(args.sleep)
 
-    # Update evaluation state at the end (so the next run won't reprocess even after reset-state)
-    if args.sync_evaluations_after and total_rows_processed > 0:
-        sync_cmd = [py, "-m", "jobpipe.cli.sync_evaluations", "--out", str(out_dir), "--reports", str(reports_dir), "--db", str(db_path), "--candidate-id", candidate_id]
+    # Update ledger at the end (so the next run won't reprocess even after reset-state)
+    if args.sync_ledger_after and total_rows_processed > 0:
+        sync_cmd = [
+            py,
+            "-m",
+            "jobpipe.cli.sync_ledger",
+            "--data-root",
+            str(paths.data_root),
+            "--out",
+            str(out_dir),
+            "--reports",
+            str(reports_dir),
+            "--sqlite",
+            str(ledger_path),
+        ]
         if expired_path.exists():
             sync_cmd += ["--expired-file", str(expired_path)]
         run(sync_cmd)
 
     # Write run summary to AGENT_STATUS.md so any Cowork session sees current state immediately
     project_root = Path(__file__).resolve().parents[2]
-    update_agent_status(project_root, db_path, candidate_id, total_rows_processed, loops)
+    update_agent_status(project_root, ledger_path, total_rows_processed, loops)
 
     print(
-        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, db={db_path}"
+        f"[drain_queue] Finished. loops={loops}, batches={total_batches}, rows_processed={total_rows_processed}, out={out_dir}, ledger={ledger_path}"
     )
 
 

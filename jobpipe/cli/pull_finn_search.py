@@ -7,32 +7,32 @@ It is designed to run on a schedule (e.g., daily via go.ps1 -WithSuggestions).
 How it works:
   1. For each configured search query, fetches FINN search result pages
   2. Extracts finnkodes from <article id="card-{finnkode}"> elements (public SSR HTML)
-  3. Cross-references against the primary JobPipe DB — skips already-processed jobs
+  3. Cross-references against ledger.sqlite — skips already-processed jobs
   4. Fetches full job content for new jobs (JSON-LD → Next.js → HTML fallback)
   5. Appends to jobs_delta.jsonl with suggested_by_platform=true, source=finn_search
 
 Jobs from this source are tagged platform_suggested in triage signals, which:
   - Bypasses the semantic pre-filter (let the LLM decide on algorithm-curated jobs)
-  - Enables calibration analysis (query job_evaluations for platform_suggested + SKIP)
+  - Enables calibration analysis (query ledger for platform_suggested + SKIP)
 
 Anti-bot: time guard 09:00-19:00 Oslo. Random delays (3-9s). Max 40 fetches/run.
 Search page fetches have shorter delays (0.5-1.5s) — they're public listing pages.
 
 Usage:
-    jobpipe pull-finn-search                                  # use YAML defaults
-    jobpipe pull-finn-search --dry-run                        # list new finnkodes only
-    jobpipe pull-finn-search --max 20                         # limit fetches
-    jobpipe pull-finn-search --force-daytime                  # skip time guard (testing)
-    jobpipe pull-finn-search --verbose                        # show fetch details
+    python -m jobpipe.cli.pull_finn_search                    # use YAML defaults
+    python -m jobpipe.cli.pull_finn_search --dry-run          # list new finnkodes only
+    python -m jobpipe.cli.pull_finn_search --max 20           # limit fetches
+    python -m jobpipe.cli.pull_finn_search --force-daytime    # skip time guard (testing)
+    python -m jobpipe.cli.pull_finn_search --verbose          # show fetch details
 """
 from __future__ import annotations
 
 import argparse
 import io
 import json
-import os
 import random
 import re
+import sqlite3
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -42,11 +42,13 @@ from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from jobpipe.core.evaluation_state import load_job_catalog
-from jobpipe.core.io import load_env_file
-from jobpipe.runtime.paths import jobs_delta_path, primary_db_path
+from jobpipe.core.config import load_raw_config
+from jobpipe.core.lead_intake import append_leads
+from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
-load_env_file(".env")
+# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # BeautifulSoup4 (required — in requirements.txt)
 try:
@@ -62,10 +64,10 @@ try:
 except Exception:
     _OSLO_TZ = timezone(timedelta(hours=1))
 
-DEFAULT_OUT_PATH       = jobs_delta_path()
-DEFAULT_CONFIG_PATH    = Path("./configs/pipeline.v1.yaml")
-DEFAULT_DB_PATH        = primary_db_path()
-DEFAULT_CANDIDATE_ID   = (os.environ.get("JOBPIPE_CANDIDATE_ID") or "default").strip() or "default"
+_DEFAULT_PATHS = get_jobpipe_paths()
+DEFAULT_OUT_PATH       = _DEFAULT_PATHS.leads_connector_path
+DEFAULT_LEDGER_PATH    = _DEFAULT_PATHS.ledger_sqlite_path
+DEFAULT_CONFIG_PATH    = _DEFAULT_PATHS.default_config_path
 
 _DAYTIME_START = 9
 _DAYTIME_END   = 19
@@ -75,11 +77,6 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
-
-
-def _configure_stdout() -> None:
-    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Default search queries if not configured in YAML.
 # These map to Lars's FINN profile role preferences.
@@ -238,7 +235,7 @@ def _normalize_ld(ld: dict, finnkode: str, url: str) -> dict:
         "work_postalCode": postal,
         "sourceurl": ld.get("url") or url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "json_ld",
     }
 
@@ -267,7 +264,7 @@ def _normalize_next_data(ad: dict, finnkode: str, url: str) -> dict:
         "work_postalCode": postal,
         "sourceurl": url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "next_data",
     }
 
@@ -291,7 +288,7 @@ def _normalize_html_fallback(soup: "BeautifulSoup", finnkode: str, url: str) -> 
         "description_html": f"<p>{description}</p>" if description else "",
         "sourceurl": url,
         "source": "finn_search",
-        "suggested_by_platform": True,
+        "suggested_by_platform": False,
         "parse_method": "html_fallback",
     }
 
@@ -329,44 +326,46 @@ def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Option
 
 
 # ---------------------------------------------------------------------------
-# Config loading (reads finn_search section from pipeline.v1.yaml if present)
+# Ledger helpers
 # ---------------------------------------------------------------------------
 
-def _load_queries_from_config(config_path: Path) -> Optional[List[Tuple[str, str]]]:
-    """Load finn_search.queries from YAML config. Returns None if not configured."""
-    if not config_path.exists():
-        return None
+def _load_ledger_ids(ledger_path: Path) -> set:
+    if not ledger_path.exists():
+        return set()
     try:
-        import yaml  # type: ignore
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        section = cfg.get("finn_search") or {}
-        queries_raw = section.get("queries") or []
-        if not queries_raw:
-            return None
-        result = []
-        for item in queries_raw:
-            if isinstance(item, str):
-                result.append((item, item))
-            elif isinstance(item, dict):
-                label = item.get("label") or item.get("q") or str(item)
-                q     = item.get("q") or item.get("query") or label
-                result.append((label, q))
-        return result if result else None
-    except Exception:
-        return None
+        conn = sqlite3.connect(str(ledger_path))
+        rows = conn.execute("SELECT job_id FROM ledger").fetchall()
+        conn.close()
+        return {r[0] for r in rows}
+    except Exception as e:
+        print(f"Warning: could not read ledger: {e}", file=sys.stderr)
+        return set()
 
 
-def _load_location_from_config(config_path: Path) -> Optional[str]:
+def _load_finn_search_section(config_path: Path, overlays: List[str]) -> Dict[str, Any]:
     if not config_path.exists():
-        return None
+        return {}
     try:
-        import yaml  # type: ignore
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        return (cfg.get("finn_search") or {}).get("location")
+        cfg = load_raw_config(config_path, overlays=overlays)
     except Exception:
+        return {}
+    section = cfg.get("finn_search") or {}
+    return section if isinstance(section, dict) else {}
+
+
+def _load_queries_from_section(section: Dict[str, Any]) -> Optional[List[Tuple[str, str]]]:
+    queries_raw = section.get("queries") or []
+    if not queries_raw:
         return None
+    result = []
+    for item in queries_raw:
+        if isinstance(item, str):
+            result.append((item, item))
+        elif isinstance(item, dict):
+            label = item.get("label") or item.get("q") or str(item)
+            q = item.get("q") or item.get("query") or label
+            result.append((label, q))
+    return result if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +373,6 @@ def _load_location_from_config(config_path: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[List[str]] = None) -> None:
-    _configure_stdout()
     ap = argparse.ArgumentParser(
         description=(
             "Scrape FINN job search pages by keyword and fetch content for new jobs. "
@@ -383,10 +381,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("--config",   default=str(DEFAULT_CONFIG_PATH), help="Pipeline YAML config")
-    ap.add_argument("--out",      default=str(DEFAULT_OUT_PATH),    help="Output JSONL to append to")
-    ap.add_argument("--db",       default=str(DEFAULT_DB_PATH),     help="Primary jobpipe.sqlite path for dedup")
-    ap.add_argument("--candidate-id", default=DEFAULT_CANDIDATE_ID, help="Candidate ID for primary DB dedup")
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help=f"JobPipe user data root (default: {_DEFAULT_PATHS.data_root})",
+    )
+    ap.add_argument("--config",   default="", help=f"Pipeline YAML config (default: {DEFAULT_CONFIG_PATH})")
+    ap.add_argument("--config-overlay", action="append", default=[], help="Optional config overlay YAML. Can be passed multiple times.")
+    ap.add_argument("--out",      default="", help=f"Output JSONL to append to (default: {DEFAULT_OUT_PATH})")
+    ap.add_argument("--ledger",   default="", help=f"Ledger SQLite for dedup (default: {DEFAULT_LEDGER_PATH})")
     ap.add_argument("--max",      type=int, default=40,             help="Max full-content fetches per run (default: 40)")
     ap.add_argument("--max-pages",type=int, default=2,              help="Max FINN search result pages per query (default: 2)")
     ap.add_argument("--min-delay",type=float, default=3.0,          help="Min seconds between content fetches")
@@ -395,6 +398,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--dry-run",  action="store_true",              help="List new finnkodes without fetching content")
     ap.add_argument("--verbose",  "-v", action="store_true")
     args = ap.parse_args(argv)
+    paths = get_jobpipe_paths(args.data_root or None)
+    bootstrap_private_data(paths, include_artifacts=False)
+    config_path = Path(args.config) if args.config else paths.default_config_path
+    out_path = Path(args.out) if args.out else paths.leads_connector_path
+    ledger_path = Path(args.ledger) if args.ledger else paths.ledger_sqlite_path
 
     if not BS4_AVAILABLE:
         print(
@@ -414,19 +422,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             )
             sys.exit(0)
 
-    config_path = Path(args.config)
-    queries  = _load_queries_from_config(config_path) or DEFAULT_QUERIES
-    location = _load_location_from_config(config_path) or DEFAULT_LOCATION
+    finn_search = _load_finn_search_section(config_path, args.config_overlay)
+    queries = _load_queries_from_section(finn_search) or DEFAULT_QUERIES
+    location = finn_search.get("location") or DEFAULT_LOCATION
 
-    processed_ids = {
-        str(row.get("job_id") or "").strip()
-        for row in load_job_catalog(
-            primary_db_path=Path(args.db),
-            candidate_id=args.candidate_id,
-        )
-        if str(row.get("job_id") or "").strip()
-    }
-    print(f"Known jobs: {len(processed_ids)} (db={args.db})")
+    ledger_ids = _load_ledger_ids(ledger_path)
+    print(f"Ledger: {len(ledger_ids)} known job IDs")
 
     # --- Phase 1: Scrape search pages for new finnkodes ---
     print(f"\n=== Phase 1: Scraping {len(queries)} FINN search queries (max {args.max_pages} pages each) ===")
@@ -451,13 +452,13 @@ def main(argv: Optional[List[str]] = None) -> None:
 
             for fk in finnkodes:
                 jid = f"finn_{fk}"
-                if fk not in seen and jid not in processed_ids:
+                if fk not in seen and jid not in ledger_ids:
                     seen.add(fk)
                     all_new_finnkodes.append(fk)
                     query_new += 1
 
             already = len(finnkodes) - query_new
-            print(f"    Page {page}: {len(finnkodes)} cards  ({query_new} new, {already} already known)")
+            print(f"    Page {page}: {len(finnkodes)} cards  ({query_new} new, {already} already in ledger)")
 
             if len(finnkodes) < 10:
                 # Last page (short result set)
@@ -466,7 +467,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(f"\nTotal new finnkodes found: {len(all_new_finnkodes)}")
 
     if not all_new_finnkodes:
-        print("Nothing new — all jobs already known.")
+        print("Nothing new — all jobs already in ledger.")
         return
 
     if args.dry_run:
@@ -508,12 +509,14 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # --- Write ---
     if fetched:
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "a", encoding="utf-8") as f:
-            for job in fetched:
-                f.write(json.dumps(job, ensure_ascii=False) + "\n")
-        print(f"\n[OK] Appended {len(fetched)} jobs to {out_path}")
+        appended = append_leads(
+            out_path,
+            fetched,
+            intake_channel="scrape_search",
+            connector_source="finn_search",
+            pretriage_policy="full_feed",
+        )
+        print(f"\n[OK] Appended {len(appended)} jobs to {out_path}")
 
     print(
         f"\nSummary:\n"

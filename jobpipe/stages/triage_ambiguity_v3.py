@@ -29,11 +29,7 @@ def triage_ambiguity_v3_cache_key(ctx: JobContext) -> str:
 
 def triage_ambiguity_v3_stage_factory():
     def should_run(ctx: JobContext) -> bool:
-        return bool(
-            ctx.triage_decision_v3
-            and ctx.triage_decision_v3.needs_ambiguity_pass
-            and ctx.triage_features
-        )
+        return bool(ctx.triage_decision_v3 and ctx.triage_decision_v3.needs_ambiguity_pass and ctx.triage_features)
 
     def run(ctx: JobContext, job_dir: str) -> JobContext:
         ambiguity = resolve_triage_ambiguity(ctx.triage_features, ctx.triage_decision_v3)
