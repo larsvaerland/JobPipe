@@ -50,6 +50,7 @@ Product thesis:
 - the system should remove cognitive noise before the user spends effort
 - the user should spend time on review, tailoring, applying, and follow-up, not on feed scanning
 
+<<<<<<< HEAD
 Planning split:
 - `PRODUCT_VISION.md` = north star and long-term roadmap
 - `docs/architecture-plan.md` = ownership and boundaries
@@ -435,12 +436,16 @@ Pipeline runs are currently manual. After each run:
 
 ---
 
-## Agent coordination protocol
+## Axon — Code Intelligence
 
-Three Cowork agents work on this project in parallel. To avoid conflicts:
+Axon is the local code-intelligence MCP (`axon serve --watch`). Re-index manually:
 
-1. Read AGENT_STATUS.md before every session.
-2. Check "Cross-agent requests" — act on any requests addressed to your workstream.
-3. After changes: update your workstream section and add any new cross-agent requests.
-4. Add new audit findings to your section in AUDIT.md.
-5. All significant decisions should be consistent with PRODUCT_VISION.md.
+```powershell
+axon analyze .
+```
+
+Index lives in `.axon/` (gitignored). Use these MCP tools:
+
+- `mcp__axon__axon_query` — find code by concept or keyword
+- `mcp__axon__axon_context` — full context for a symbol (callers, callees)
+- `mcp__axon__axon_file_context` — context for a specific file
