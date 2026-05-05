@@ -93,6 +93,8 @@ def derive_candidate_evidence_units(
     *,
     candidate_id: str = "default",
 ) -> list[CandidateEvidenceUnit]:
+    from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
+    resume_json = normalize_rr_to_jsonresume(dict(resume_json))
     units: list[CandidateEvidenceUnit] = []
 
     for work_index, work_entry in enumerate(resume_json.get("work", []) or []):
