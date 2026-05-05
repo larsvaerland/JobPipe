@@ -41,15 +41,21 @@ def _parse_date_maybe(s: str) -> str:
     s = clean(s)
     if not s:
         return ""
+    # ISO date (YYYY-MM-DD): s[4]=='-' and s[7]=='-' and s[0:4] is the year (>= 1900)
     if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         return s[:10]
-    for sep in (".", "/"):
-        if sep in s:
-            parts = s.split(sep)
-            if len(parts) >= 3:
-                dd, mm, yyyy = parts[0].zfill(2), parts[1].zfill(2), parts[2][:4]
-                if yyyy.isdigit() and mm.isdigit() and dd.isdigit():
-                    return f"{yyyy}-{mm}-{dd}"
+    # Norwegian/European formats: dd.mm.yyyy, dd/mm/yyyy, or dd-mm-yyyy
+    # dd-mm-yyyy guard: s[2]=='-' distinguishes it from ISO (where s[4]=='-')
+    for sep in (".", "/", "-"):
+        if sep not in s:
+            continue
+        if sep == "-" and (len(s) < 10 or s[2] != "-"):
+            continue
+        parts = s.split(sep)
+        if len(parts) >= 3 and len(parts[2]) == 4:
+            dd, mm, yyyy = parts[0].zfill(2), parts[1].zfill(2), parts[2]
+            if yyyy.isdigit() and mm.isdigit() and dd.isdigit():
+                return f"{yyyy}-{mm}-{dd}"
     return s
 
 
