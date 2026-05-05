@@ -360,6 +360,12 @@ class JobContext(BaseModel):
     notes: Dict[str, Any] = Field(default_factory=dict)
 
     def snapshot_summary(self) -> Dict[str, Any]:
+        # Resolved v3 label: prefer ambiguity-resolved label when available
+        effective_v3 = (
+            self.triage_ambiguity_v3.final_decision
+            if self.triage_ambiguity_v3
+            else self.triage_decision_v3
+        )
         return {
             "job_id": self.job_id,
             "title": (self.job.get("title") or "").strip(),
@@ -371,6 +377,13 @@ class JobContext(BaseModel):
             "fit_score": self.profile_match.fit_score if self.profile_match else None,
             "pivot_score": self.pivot.pivot_score if self.pivot else None,
             "confidence": self.moderator.confidence if self.moderator else None,
+            # v3 scoring fields
+            "triage_v3_label": effective_v3.label if effective_v3 else None,
+            "triage_v3_score": effective_v3.weighted_score if effective_v3 else None,
+            "advantage_type": self.advantage_assessment_v3.advantage_type if self.advantage_assessment_v3 else None,
+            "advantageous_match_score": self.advantage_assessment_v3.advantageous_match_score if self.advantage_assessment_v3 else None,
+            "review_priority": self.advantage_assessment_v3.review_priority if self.advantage_assessment_v3 else None,
+            "positioning_angle": self.narrative_strategy_v3.positioning_angle if self.narrative_strategy_v3 else None,
         }
 
 

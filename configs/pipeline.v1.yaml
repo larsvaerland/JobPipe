@@ -46,6 +46,13 @@ thresholds:
   semantic_filter_threshold: 0.27  # Lowered 0.45->0.30->0.27. Stage 1 calibration 2026-04-24: borderline relevant roles (e.g. Administrativ koordinator) scored 0.27-0.29, just under 0.30. Opening band for LLM triage. — calibration showed real interview jobs score 0.33-0.42
   semantic_filter_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
+  # --- v3 triage integration (moderate stage) ---
+  # review_priority from advantage_assessment_v3 >= this → upgrade REVIEW_LOW to REVIEW_HIGH
+  v3_review_priority_boost: 60
+  # v3 discard label demotes REVIEW_LOW → SKIP and softens REVIEW_HIGH → REVIEW_LOW
+  # Disable with: v3_discard_demote: false
+  v3_discard_demote: true
+
   reverse_triage_min_conf: 0.60   # kept for reference if reverse_triage is re-enabled
   reverse_triage_skip_above: 0.82
   apply_strong_fit: 78

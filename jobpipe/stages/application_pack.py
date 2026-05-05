@@ -48,6 +48,19 @@ Du har tilgang til:
 - narrative_fragments: godkjente fortellingsfragmenter for CV/søknad
 - job_narrative_assessment: vurdering av retning, motivasjon og pivot-troverdighet
 - motivation_brief: kort, troverdig begrunnelse for hvorfor rollen gir mening nå
+- narrative_strategy: deterministisk posisjoneringsanalyse (positioning_angle, brand_frame,
+  why_me_now, top_value_props, cv_focus_order, cover_letter_strategy)
+- advantage_assessment: fordelsanalyse (advantage_type, recruiter_hook,
+  applicant_pool_hypothesis, differentiation_signals)
+
+Bruk narrative_strategy og advantage_assessment som det primære kompasset for tonen og
+vinkelen i søknadspakken:
+- positioning_angle setter overordnet ramme — bruk den direkte i cover_letter_angle
+- brand_frame er kandidatens én-linje identitet — la den skinne gjennom i overskrift og åpning
+- why_me_now er kjernen i første avsnitt i søknadsbrevet
+- recruiter_hook er åpningssetningen som stopper scanningen
+- top_value_props og cv_focus_order prioriterer cv_highlights-utvalget
+- cover_letter_strategy er avslutningsstrategien
 
 Velg formulering som ligger tett på kandidatens canonical_text og respekter rewrite_policy.
 
@@ -176,6 +189,38 @@ def _build_application_pack_contexts(
     return decision_context, evidence_context, narrative_context
 
 
+def _narrative_strategy_payload(ctx: JobContext) -> dict:
+    """Compact narrative_strategy_v3 fields for the LLM prompt."""
+    ns = ctx.narrative_strategy_v3
+    if not ns:
+        return {}
+    return {
+        "positioning_angle": ns.positioning_angle,
+        "brand_frame": ns.brand_frame,
+        "why_me_now": ns.why_me_now,
+        "top_value_props": ns.top_value_props,
+        "objections_to_handle": ns.objections_to_handle,
+        "cv_focus_order": ns.cv_focus_order,
+        "cover_letter_strategy": ns.cover_letter_strategy,
+    }
+
+
+def _advantage_assessment_payload(ctx: JobContext) -> dict:
+    """Compact advantage_assessment_v3 fields for the LLM prompt."""
+    aa = ctx.advantage_assessment_v3
+    if not aa:
+        return {}
+    return {
+        "advantage_type": aa.advantage_type,
+        "recruiter_hook": aa.recruiter_hook,
+        "applicant_pool_hypothesis": aa.applicant_pool_hypothesis,
+        "differentiation_signals": aa.differentiation_signals,
+        "advantage_signals": aa.advantage_signals,
+        "objection_signals": aa.objection_signals,
+        "stretch_level": aa.stretch_level,
+    }
+
+
 def _build_application_pack_payload(
     ctx: JobContext,
     resume_ctx: dict,
@@ -203,6 +248,8 @@ def _build_application_pack_payload(
         "profile_match": ctx.profile_match.model_dump() if ctx.profile_match else {},
         "pivot": ctx.pivot.model_dump() if ctx.pivot else {},
         "moderator": ctx.moderator.model_dump() if ctx.moderator else {},
+        "narrative_strategy": _narrative_strategy_payload(ctx),
+        "advantage_assessment": _advantage_assessment_payload(ctx),
         "profile_pack": ctx.profile_pack[:3000],
         "resume_work": resume_ctx["resume_work"],
         "resume_projects": resume_ctx["resume_projects"],

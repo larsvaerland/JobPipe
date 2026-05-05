@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Callable, Tuple
+from typing import Any, Dict
 
 from jobpipe.core.profile_pack import parse_profile_pack
 from jobpipe.decision import derive_selection_assessment
 from jobpipe.model.schema import JobContext, ModeratorOut
+
 
 _SCOPE_CAUTION_TERMS = ("early", "junior", "coordinator", "associate", "specialist", "operations")
 _PRODUCT_FAMILY_TERMS = ("product", "produkt")
@@ -18,27 +19,89 @@ def _clamp01(x) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _v3_adjust_decision(
+    initial: str,
+    ctx: JobContext,
+    *,
+    v3_review_priority_boost: int,
+    v3_discard_demote: bool,
+) -> tuple[str, str]:
+    """
+    Refine initial moderation decision using v3 triage context.
+
+    Rules (calibrated against April-24 run — 99.6% SKIP, 46 KEEPs):
+    - v3 discard + REVIEW_LOW  → SKIP  (v3 confirms borderline is not worth Lars's time)
+    - v3 discard + REVIEW_HIGH → REVIEW_LOW  (soften — fit is decent but v3 sees red flags)
+    - v3 shortlist + REVIEW_LOW → REVIEW_HIGH  (v3 sees structural advantage, promote)
+    - review_priority >= boost + REVIEW_LOW → REVIEW_HIGH  (high-priority review case)
+
+    None of these override SKIP, APPLY, or APPLY_STRONGLY — the hard gates and strong
+    signals stay intact.
+    """
+    # Resolve v3 label: prefer ambiguity-corrected label
+    decision = ctx.triage_decision_v3
+    ambiguity = ctx.triage_ambiguity_v3
+    advantage = ctx.advantage_assessment_v3
+
+    v3_label = None
+    if ambiguity:
+        v3_label = ambiguity.resolved_label
+    elif decision:
+        v3_label = decision.label
+
+    review_priority = advantage.review_priority if advantage else None
+
+    if v3_label is None:
+        return initial, ""
+
+    note_parts: list[str] = []
+    result = initial
+
+    if v3_discard_demote and v3_label == "discard":
+        if initial == "REVIEW_LOW":
+            result = "SKIP"
+            note_parts.append("v3_discard_demote_review_low")
+        elif initial == "REVIEW_HIGH":
+            result = "REVIEW_LOW"
+            note_parts.append("v3_discard_soften_review_high")
+    elif v3_label == "shortlist" and initial == "REVIEW_LOW":
+        result = "REVIEW_HIGH"
+        note_parts.append("v3_shortlist_upgrade")
+    elif (
+        review_priority is not None
+        and review_priority >= v3_review_priority_boost
+        and initial == "REVIEW_LOW"
+    ):
+        result = "REVIEW_HIGH"
+        note_parts.append(f"v3_review_priority={review_priority}")
+
+    return result, ", ".join(note_parts)
+
+
 def moderate_stage_factory(thresholds: Dict[str, Any]):
     """
     Deterministisk moderatorlogikk.
 
-    Regler (som du ba om):
-    - hvis fit < review_min_fit  -> SKIP (uansett pivot)
-    - hvis fit < review_high_min_fit -> REVIEW_LOW (selv om pivot er høy)
-    - svake REVIEW_LOW-kandidater kan demoteres hvis kandidatprofilen gjør
-      bred produktledelse tydelig off-anchor og screeningsrisikoen er svært høy
+    Grunnregler:
+    - fit < review_min_fit  → SKIP (uansett pivot og v3)
+    - fit < review_high_min_fit → REVIEW_LOW (startpunkt, kan justeres av v3)
+    - svake REVIEW_LOW-kandidater kan demoteres ved kandidatrisiko (off-anchor-profil)
+    - v3 triage-kontekst kan løfte REVIEW_LOW → REVIEW_HIGH eller senke REVIEW_HIGH → REVIEW_LOW
     """
 
     thr = thresholds or {}
 
-    # eksisterende terskler (fallbacks)
     apply_strong_fit = int(thr.get("apply_strong_fit", 78))
     apply_fit = int(thr.get("apply_fit", 66))
     pivot_boost_apply = int(thr.get("pivot_boost_apply", 72))
+    review_min_fit = int(thr.get("review_min_fit", 25))
+    review_high_min_fit = int(thr.get("review_high_min_fit", 52))
 
-    # NYE "gate"-terskler
-    review_min_fit = int(thr.get("review_min_fit", 25))              # <- løsere gate (justér i yaml)
-    review_high_min_fit = int(thr.get("review_high_min_fit", 52))    # <- under denne blir det alltid REVIEW_LOW
+    # v3 integration thresholds
+    # review_priority >= this → upgrade REVIEW_LOW to REVIEW_HIGH
+    v3_review_priority_boost = int(thr.get("v3_review_priority_boost", 60))
+    # v3 discard label demotes borderline REVIEW_LOW → SKIP and REVIEW_HIGH → REVIEW_LOW
+    v3_discard_demote = str(thr.get("v3_discard_demote", "true")).lower() not in ("false", "0", "no")
 
     def _profile_text(candidate_profile: dict[str, Any]) -> str:
         snapshot = candidate_profile.get("snapshot") or {}
@@ -119,14 +182,14 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
         fit = int((ctx.profile_match.fit_score if ctx.profile_match else 0) or 0)
         pivot = int((ctx.pivot.pivot_score if ctx.pivot else 0) or 0)
 
-        # 1) hard gate
+        # 1) hard gate — v3 cannot override this
         if fit < review_min_fit:
             final = "SKIP"
-        # 2) mid gate: alltid REVIEW_LOW
+        # 2) borderline zone — start REVIEW_LOW, v3 may adjust
         elif fit < review_high_min_fit:
             final = "REVIEW_LOW"
         else:
-            # 3) normal logikk videre
+            # 3) normal path
             if fit >= apply_strong_fit:
                 final = "APPLY_STRONGLY"
             elif fit >= apply_fit:
@@ -134,25 +197,40 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
             else:
                 final = "REVIEW_HIGH" if pivot >= pivot_boost_apply else "REVIEW_LOW"
 
+        # Existing candidate-risk demotion (runs before v3 to preserve its semantics)
         candidate_risk_demoted = False
         if final == "REVIEW_LOW" and _candidate_risk_demotes_review(ctx, fit, pivot):
             final = "SKIP"
             candidate_risk_demoted = True
 
-        # enkel, stabil confidence
+        # v3 adjustment (only when we're still in a REVIEW zone — not SKIP/APPLY)
+        v3_note = ""
+        if final in ("REVIEW_LOW", "REVIEW_HIGH"):
+            final, v3_note = _v3_adjust_decision(
+                final,
+                ctx,
+                v3_review_priority_boost=v3_review_priority_boost,
+                v3_discard_demote=v3_discard_demote,
+            )
+
         conf = 0.40 + 0.45 * _clamp01(fit / 100.0) + 0.15 * _clamp01(pivot / 100.0)
         conf = round(float(_clamp01(conf)), 2)
 
-        reason = f"fit={fit}, pivot={pivot}"
+        reason_parts = [f"fit={fit}, pivot={pivot}"]
         if candidate_risk_demoted:
-            reason += ", candidate_risk=off_anchor_product_leadership_scope"
+            reason_parts.append("candidate_risk=off_anchor_product_leadership_scope")
+        if v3_note:
+            reason_parts.append(v3_note)
+        reason = ", ".join(reason_parts)
 
+        # Pass through v3 decision so downstream consumers can read it from moderator output
         ctx.moderator = ModeratorOut(
             final_decision=final,
             confidence=conf,
             recommendation_reason=reason,
             cv_focus=[],
             feedback_flags=[],
+            triage_decision_v3=ctx.triage_decision_v3,
         )
         return ctx
 
