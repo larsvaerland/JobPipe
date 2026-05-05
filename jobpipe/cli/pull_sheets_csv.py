@@ -101,6 +101,41 @@ def parse_iso(dt: str) -> datetime:
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
+def _normalize_due(s: str) -> str:
+    """Normalise an applicationDue value to ISO YYYY-MM-DD at ingest time.
+
+    Handles:
+    - Already ISO: YYYY-MM-DD / YYYY-MM-DDTHH:MM:SS  → strip to YYYY-MM-DD
+    - Norwegian dot-format: DD.MM.YYYY               → YYYY-MM-DD
+    - Norwegian slash-format: DD/MM/YYYY             → YYYY-MM-DD
+    - Norwegian hyphen-format: DD-MM-YYYY            → YYYY-MM-DD
+    - Pass-through keywords: snarest / asap / etc.   → unchanged
+    - Anything else (typos, 5-digit year, …)         → unchanged (caller decides)
+    """
+    s = (s or "").strip()
+    if not s:
+        return s
+    lower = s.lower()
+    if lower in ("snarest", "asap", "fortløpende", "løpende"):
+        return s
+    # ISO: YYYY-MM-DD (s[4]=='-' and s[7]=='-')
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    # European formats with exactly 4-digit year
+    for sep in (".", "/", "-"):
+        if sep not in s:
+            continue
+        # For hyphen, require dd-mm-yyyy shape (s[2]=='-') to avoid re-matching partial ISO
+        if sep == "-" and (len(s) < 10 or s[2] != "-"):
+            continue
+        parts = s.split(sep)
+        if len(parts) >= 3 and len(parts[2]) == 4:
+            dd, mm, yyyy = parts[0].zfill(2), parts[1].zfill(2), parts[2]
+            if yyyy.isdigit() and mm.isdigit() and dd.isdigit():
+                return f"{yyyy}-{mm}-{dd}"
+    return s
+
+
 def stable_fallback_id(job: dict) -> str:
     """Delegate to the canonical stable_job_id (ignores uuid/id fields)."""
     return stable_job_id(job)
@@ -198,7 +233,7 @@ def main():
 
         # --- Deadline filter: skip jobs where applicationDue is in the past ---
         if args.skip_expired_deadline:
-            due_raw = (row.get("applicationDue") or "").strip()
+            due_raw = _normalize_due((row.get("applicationDue") or "").strip())
             if due_raw and due_raw.lower() not in ("snarest", "asap", "fortløpende"):
                 due_dt = parse_iso(due_raw)
                 # parse_iso returns epoch if unparseable — treat epoch as unknown, don't skip
@@ -216,7 +251,7 @@ def main():
             "sourceurl": (row.get("sourceurl") or "").strip(),
             "link": (row.get("link") or "").strip(),
             "applicationUrl": (row.get("applicationUrl") or "").strip(),
-            "applicationDue": (row.get("applicationDue") or "").strip(),
+            "applicationDue": _normalize_due((row.get("applicationDue") or "").strip()),
             "work_city": (row.get("work_city") or "").strip(),
             "work_county": (row.get("work_county") or "").strip(),
             "sector": (row.get("sector") or "").strip(),
