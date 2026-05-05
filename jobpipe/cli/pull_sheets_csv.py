@@ -101,6 +101,17 @@ def parse_iso(dt: str) -> datetime:
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
+# Keywords that mean "open / rolling deadline" — never treated as a date or
+# used to determine expiry.  Matched case-insensitively via startswith so that
+# "snarest mulig", "snarest mulig oppstart", etc. are all caught.
+_OPEN_DEADLINE_PREFIXES = ("snarest", "asap", "fortløpende", "løpende", "rolling")
+
+
+def _is_open_deadline(s: str) -> bool:
+    """Return True if the value means 'open/rolling', not a specific date."""
+    return s.lower().startswith(_OPEN_DEADLINE_PREFIXES)
+
+
 def _normalize_due(s: str) -> str:
     """Normalise an applicationDue value to ISO YYYY-MM-DD at ingest time.
 
@@ -109,14 +120,13 @@ def _normalize_due(s: str) -> str:
     - Norwegian dot-format: DD.MM.YYYY               → YYYY-MM-DD
     - Norwegian slash-format: DD/MM/YYYY             → YYYY-MM-DD
     - Norwegian hyphen-format: DD-MM-YYYY            → YYYY-MM-DD
-    - Pass-through keywords: snarest / asap / etc.   → unchanged
+    - Open-deadline keywords (snarest, asap, …)      → unchanged
     - Anything else (typos, 5-digit year, …)         → unchanged (caller decides)
     """
     s = (s or "").strip()
     if not s:
         return s
-    lower = s.lower()
-    if lower in ("snarest", "asap", "fortløpende", "løpende"):
+    if _is_open_deadline(s):
         return s
     # ISO: YYYY-MM-DD (s[4]=='-' and s[7]=='-')
     if len(s) >= 10 and s[4] == "-" and s[7] == "-":
@@ -234,7 +244,7 @@ def main():
         # --- Deadline filter: skip jobs where applicationDue is in the past ---
         if args.skip_expired_deadline:
             due_raw = _normalize_due((row.get("applicationDue") or "").strip())
-            if due_raw and due_raw.lower() not in ("snarest", "asap", "fortløpende"):
+            if due_raw and not _is_open_deadline(due_raw):
                 due_dt = parse_iso(due_raw)
                 # parse_iso returns epoch if unparseable — treat epoch as unknown, don't skip
                 if due_dt.year > 1970 and due_dt < now_utc:

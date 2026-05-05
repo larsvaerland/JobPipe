@@ -9,7 +9,10 @@ _MONTHS_NO = [
     "", "januar", "februar", "mars", "april", "mai", "juni",
     "juli", "august", "september", "oktober", "november", "desember",
 ]
-_PASS_THROUGH = {"snarest", "asap", "fortløpende", "løpende"}
+# Open/rolling-deadline prefixes — matched case-insensitively via startswith
+# so "snarest mulig", "snarest mulig oppstart", etc. are all caught.
+_OPEN_DEADLINE_PREFIXES = ("snarest", "asap", "fortløpende", "løpende", "rolling")
+_PASS_THROUGH = _OPEN_DEADLINE_PREFIXES  # backward-compat alias
 
 
 def format_deadline(raw: str) -> str:
@@ -22,7 +25,7 @@ def format_deadline(raw: str) -> str:
     s = raw.strip()
     if not s:
         return s
-    if s.lower() in _PASS_THROUGH:
+    if s.lower().startswith(_OPEN_DEADLINE_PREFIXES):
         return s
     # Try ISO parse
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
