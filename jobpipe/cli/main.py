@@ -313,7 +313,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         )
 
     if args.dry_run:
-        print("[1/3] local dry-run queue ...")
+        print("[1/4] local dry-run queue ...")
         _process_local_delta_for_dry_run(
             delta_path,
             candidate_id=candidate_id,
@@ -323,7 +323,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
             max_jobs=max_jobs,
         )
     else:
-        print("[1/3] drain-queue ...")
+        print("[1/4] drain-queue ...")
         drain_argv = [
             "--env-file", str(env_file),
             "--candidate-id", candidate_id,
@@ -340,7 +340,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         _run_module("jobpipe.cli.drain_queue", drain_argv)
 
     print()
-    print("[2/3] sync-evaluations ...")
+    print("[2/4] sync-evaluations ...")
     _run_module(
         "jobpipe.cli.sync_evaluations",
         [
@@ -353,12 +353,24 @@ def _run_main_flow(args: argparse.Namespace) -> None:
     )
 
     print()
-    print("[3/3] export-dashboard ...")
+    print("[3/4] export-dashboard ...")
     _run_module(
         "jobpipe.cli.export_dashboard",
         [
             "--out-runs", str(artifacts_dir),
             "--out", str(dashboard_path),
+            "--db", str(db_path),
+            "--candidate-id", candidate_id,
+        ],
+    )
+
+    print()
+    print("[4/4] export-jobsync ...")
+    _run_module(
+        "jobpipe.cli.export_jobsync",
+        [
+            "--out", str(reports_dir / "jobsync_cases.json"),
+            "--artifacts", str(artifacts_dir),
             "--db", str(db_path),
             "--candidate-id", candidate_id,
         ],
