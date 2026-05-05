@@ -254,6 +254,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                 "--max",
                 str(len(batch)),
             ]
+            # Always forward the DB path so run_feed can load the candidate profile
+            run_cmd += ["--db", str(db_path)]
             if args.profile:
                 run_cmd += ["--profile", args.profile]
             if args.config:
