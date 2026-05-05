@@ -37,17 +37,27 @@ flowchart TD
 
 ## 3. Evaluation path
 
-Current default stage order from [configs/pipeline.v1.yaml](../configs/pipeline.v1.yaml):
+Current default stage order from [configs/pipeline.v1.yaml](../configs/pipeline.v1.yaml)
+and [`jobpipe/stages/pipeline.py`](../jobpipe/stages/pipeline.py) (`SUPPORTED_DEFAULT_STAGE_ORDER`):
 
-1. `triage`
-2. `parse`
-3. `profile_match`
-4. `pivot`
-5. `moderate`
-6. `application_pack`
+1. `triage` — LLM fast-filter; hard gates + semantic pre-filter; emits `TriageOut`
+2. `parsed` — structured job parse; emits `JobParse`
+3. `profile_match` — candidate-to-job fit dimensions; emits `ProfileMatchOut`
+4. `pivot` — career-pivot risk assessment; emits `PivotOut`
+5. `triage_features` — deterministic feature scoring (9 dimensions); emits `TriageFeatures`
+6. `triage_decision_v3` — weighted triage label from features; emits `TriageDecisionV3`
+7. `triage_ambiguity_v3` — second-pass for borderline cases; emits `TriageAmbiguityV3`
+8. `advantage_assessment_v3` — competitive positioning; emits `AdvantageAssessmentV3`
+9. `narrative_strategy_v3` — CV/cover-letter narrative plan; emits `NarrativeStrategyV3`
+10. `moderator` — final gating decision; emits `ModeratorOut`
+11. `application_pack` — full application materials (cover letter, CV highlights); emits `ApplicationPackOut`
 
-`reverse_triage` is still a supported optional stage in the runtime model, but
-it is disabled in the current default config path.
+`reverse_triage` is a supported optional stage (emits `ReverseTriageOut`) but is
+disabled in the current default config. It can be re-enabled by adding it to the
+`stages:` list in the YAML config.
+
+`build_stages` in `jobpipe/stages/pipeline.py` is the single source of truth for
+stage wiring. `run_feed.py` imports from it — do not add a local override there.
 
 Stage modules live under:
 

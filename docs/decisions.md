@@ -54,3 +54,27 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Option C (hybrid) for the author/revise layer. Deterministic contracts (`AuthoringCaseContext`, `GeneratedApplicationPackage`, `DocumentValidationResult`) stay JobPipe-native and must not import any agent framework. crewAI (if adopted later) enters only behind a JobPipe-owned adapter inside the author/revise module, which has a typed, framework-agnostic interface.
 - Why: Data is the product. JobPipe is the engine. Locking contracts to any one agent framework (crewAI or otherwise) would trade the product's differentiator for short-term velocity. Keeping the runtime layer swappable preserves the replaceability principle we apply to reactive-resume and jobsync.
 - Consequence: Any slice that imports `crewai` into the contract layer is a routing violation and must be rejected in review. The "no `crewai` import in contract modules or their tests" rule must appear as acceptance criteria on every T002 slice that touches contracts.
+
+- Date: 2026-05-06
+- Task: pipeline hardening / date normalisation
+- Decision: Normalise `applicationDue` to ISO `YYYY-MM-DD` at ingest in `pull_sheets_csv`, not only in the downstream sync tools.
+- Why: Multiple formats arrive from Google Sheets (`dd.mm.yyyy`, `dd/mm/yyyy`, `dd-mm-yyyy`). Normalising only in `sync_ledger` / `sync_evaluations` means raw connector JSONL files, the intake queue, and any consumer that reads `ctx.job["applicationDue"]` directly (triage prompt header, `application_pack`, `profile_match`) all see the un-normalised value. Root normalisation ensures every downstream consumer receives consistent ISO dates.
+- Consequence: `pull_sheets_csv._normalize_due()` is the canonical normalisation point. `sync_ledger._parse_date_maybe()` and `sync_evaluations._parse_date_maybe()` remain as safety nets for records already queued. Any future connector that writes `applicationDue` must normalise to ISO before appending to the connector JSONL.
+
+- Date: 2026-05-06
+- Task: pipeline hardening / date normalisation
+- Decision: Use `str.startswith(_OPEN_DEADLINE_PREFIXES)` (prefix match) rather than exact set membership for open-deadline keywords (`snarest`, `asap`, `fortløpende`, `løpende`, `rolling`).
+- Why: Real job postings use `snarest mulig`, `snarest mulig oppstart`, etc. An exact-match check silently misses multi-word variants, letting them reach `parse_iso()` which returns the epoch sentinel — effectively treating "rolling deadline" as an unknown that could be skipped by the expiry filter.
+- Consequence: `_OPEN_DEADLINE_PREFIXES` in `pull_sheets_csv` and `_common.py` are the two canonical locations. Any new open-deadline synonym must be added to both. The prefix approach means a value beginning with one of the prefixes is always treated as open regardless of what follows — this is intentional and acceptable.
+
+- Date: 2026-05-06
+- Task: pipeline hardening / schema validation
+- Decision: Use a Pydantic `before`-mode `field_validator` on `AdvantageAssessmentV3` to truncate long LLM-generated strings to 237 chars + "…" rather than raising `ValidationError`.
+- Why: LLMs occasionally produce strings slightly over the 240-char display limit. A hard `ValidationError` propagates as a `pipeline_error.json`, leaving the job with no `final_decision` in the ledger — silently losing a potentially good lead. Truncating is always preferable to losing the record; the display cap exists for UI density, not data integrity.
+- Consequence: The truncation applies to `recruiter_hook`, `applicant_pool_hypothesis`, and `summary` on `AdvantageAssessmentV3`. If other models show similar over-length failures, apply the same pattern. Do not raise `ValidationError` for cosmetic display-length limits.
+
+- Date: 2026-05-06
+- Task: pipeline hardening / code deduplication
+- Decision: `jobpipe/stages/pipeline.py::build_stages` is the single source of truth; `run_feed.py` imports from it.
+- Why: `run_feed.py` carried a ~160-line duplicate of `build_stages` that was missing `triage_profile_summary`, `targeting_title_patterns`, and all v3 `cache_key_fn` parameters. The live path always used `run_feed.py`'s version (which shadowed `pipeline.py`), so no behaviour changed, but the drift created a latent correctness risk and confused future contributors about which definition was authoritative.
+- Consequence: `pipeline.py::build_stages` must always be kept current. `run_feed.py` must never re-introduce a local `build_stages`. Any new stage added to the supported order must be wired in `pipeline.py`.
