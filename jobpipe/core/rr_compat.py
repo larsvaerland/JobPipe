@@ -13,11 +13,26 @@ _MONTH_MAP: dict[str, str] = {
 }
 
 
-def normalize_rr_to_jsonresume(data: dict[str, Any]) -> dict[str, Any]:
+def normalize_rr_to_jsonresume(
+    data: dict[str, Any],
+    *,
+    include_hidden_work: bool = False,
+) -> dict[str, Any]:
     """
     If data already has a top-level 'work' key, return as-is (JSON Resume).
     If data has 'sections', convert Reactive Resume format to JSON Resume shape.
     Always returns a dict safe to pass to derive_candidate_evidence_units().
+
+    include_hidden_work:
+        When False (default), hidden work/experience items are dropped — safe
+        for CV rendering and evidence derivation.
+        When True, hidden work items are included but tagged with
+        ``"_rr_hidden": True`` so callers can treat them differently (e.g. the
+        profile-layer builder creates RoleRecords for career context but skips
+        evidence-atom generation, preventing off-target roles from polluting the
+        triage/semantic-filter embedding).
+        Skills and projects are always filtered to visible-only regardless of
+        this flag — hidden skills/projects are typically off-target or stale.
     """
     if data.get("work") is not None:
         return data
@@ -25,17 +40,25 @@ def normalize_rr_to_jsonresume(data: dict[str, Any]) -> dict[str, Any]:
     if not sections:
         return data
     result = dict(data)
-    result["work"] = _rr_experience_to_work(sections.get("experience") or {})
+    result["work"] = _rr_experience_to_work(
+        sections.get("experience") or {},
+        include_hidden=include_hidden_work,
+    )
     result["education"] = _rr_education(sections.get("education") or {})
     result["skills"] = _rr_skills(sections.get("skills") or {})
     result["projects"] = _rr_projects(sections.get("projects") or {})
     return result
 
 
-def _rr_experience_to_work(section: dict[str, Any]) -> list[dict[str, Any]]:
+def _rr_experience_to_work(
+    section: dict[str, Any],
+    *,
+    include_hidden: bool = False,
+) -> list[dict[str, Any]]:
     result = []
     for item in section.get("items", []) or []:
-        if item.get("hidden"):
+        is_hidden = bool(item.get("hidden"))
+        if is_hidden and not include_hidden:
             continue
         company = str(item.get("company") or "").strip()
         position = str(item.get("position") or "").strip()
@@ -54,6 +77,8 @@ def _rr_experience_to_work(section: dict[str, Any]) -> list[dict[str, Any]]:
         }
         if item.get("location"):
             entry["location"] = str(item["location"]).strip()
+        if is_hidden:
+            entry["_rr_hidden"] = True
         result.append(entry)
     return result
 

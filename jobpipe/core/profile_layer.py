@@ -536,6 +536,11 @@ def _build_evidence_and_roles(
     for idx, item in enumerate(work_items):
         if not isinstance(item, dict):
             continue
+        # _rr_hidden items are included for career-context completeness (role records,
+        # authoring gap-handling) but must NOT generate evidence atoms — doing so would
+        # let off-target roles (e.g. student jobs) pollute the triage/semantic-filter
+        # embedding and cause the AI to surface irrelevant job ads.
+        is_hidden_role = bool(item.get("_rr_hidden"))
         company = str(item.get("name") or item.get("company") or "").strip()
         position = str(item.get("position") or "").strip()
         start = str(item.get("startDate") or "").strip()
@@ -545,20 +550,21 @@ def _build_evidence_and_roles(
         role_record_id = f"role:{_slug(company)}:{_slug(position)}:{_slug(start or str(idx))}"
         highlights = [str(h).strip() for h in (item.get("highlights") or []) if str(h).strip()]
         evidence_ids: List[str] = []
-        for h_idx, highlight in enumerate(highlights):
-            evidence_id = f"{role_record_id}:evidence:{h_idx + 1}"
-            evidence_atoms.append(
-                EvidenceAtom(
-                    evidence_atom_id=evidence_id,
-                    source_type="role",
-                    source_id=role_record_id,
-                    text=highlight,
-                    tags=[tag for tag in [company, position] if tag],
-                    seniority_signals=[position] if position else [],
-                    strength_score=80 if h_idx < 2 else 65,
+        if not is_hidden_role:
+            for h_idx, highlight in enumerate(highlights):
+                evidence_id = f"{role_record_id}:evidence:{h_idx + 1}"
+                evidence_atoms.append(
+                    EvidenceAtom(
+                        evidence_atom_id=evidence_id,
+                        source_type="role",
+                        source_id=role_record_id,
+                        text=highlight,
+                        tags=[tag for tag in [company, position] if tag],
+                        seniority_signals=[position] if position else [],
+                        strength_score=80 if h_idx < 2 else 65,
+                    )
                 )
-            )
-            evidence_ids.append(evidence_id)
+                evidence_ids.append(evidence_id)
         variant_id = f"{role_record_id}:variant:default"
         role_variants.append(
             RoleVariant(
@@ -591,16 +597,18 @@ def _build_evidence_and_roles(
                 tags=[tag for tag in [company, position] if tag],
             )
         )
-        work_entries.append(
-            {
-                "company": company,
-                "position": position,
-                "start": start,
-                "end": end,
-                "summary": summary,
-                "highlights": highlights,
-            }
-        )
+        if not is_hidden_role:
+            # work_entries feeds the CV/authoring view — only visible roles
+            work_entries.append(
+                {
+                    "company": company,
+                    "position": position,
+                    "start": start,
+                    "end": end,
+                    "summary": summary,
+                    "highlights": highlights,
+                }
+            )
     return role_records, role_variants, evidence_atoms, work_entries
 
 
@@ -1115,7 +1123,7 @@ def build_profile_layer(
 def load_profile_layer(profile_path: Path, resume_path: Path) -> ProfileLayerBundle:
     return build_profile_layer(
         _safe_read_text(profile_path),
-        normalize_rr_to_jsonresume(_safe_load_json(resume_path)),
+        normalize_rr_to_jsonresume(_safe_load_json(resume_path), include_hidden_work=True),
         source_files=[str(profile_path), str(resume_path)],
     )
 
@@ -1132,7 +1140,7 @@ def load_or_build_profile_layer_for_paths(
 ) -> ProfileLayerBundle:
     resume_path = paths.resume_json_path if paths.resume_json_path.exists() else paths.resume_fixed_json_path
     profile_text = _safe_read_text(paths.profile_pack_path)
-    resume_payload = normalize_rr_to_jsonresume(_safe_load_json(resume_path))
+    resume_payload = normalize_rr_to_jsonresume(_safe_load_json(resume_path), include_hidden_work=True)
     source_files = [str(paths.profile_pack_path), str(resume_path)]
     source_hash = _compute_source_hash(profile_text, resume_payload, source_files)
 
