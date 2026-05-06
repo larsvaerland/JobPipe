@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from jobpipe.core.paths import JobPipePaths
+from jobpipe.core.rr_compat import normalize_rr_to_jsonresume
 
 PROFILE_LAYER_SCHEMA_VERSION = "jobpipe.profile-layer.v2"
 
@@ -1114,7 +1115,7 @@ def build_profile_layer(
 def load_profile_layer(profile_path: Path, resume_path: Path) -> ProfileLayerBundle:
     return build_profile_layer(
         _safe_read_text(profile_path),
-        _safe_load_json(resume_path),
+        normalize_rr_to_jsonresume(_safe_load_json(resume_path)),
         source_files=[str(profile_path), str(resume_path)],
     )
 
@@ -1131,7 +1132,7 @@ def load_or_build_profile_layer_for_paths(
 ) -> ProfileLayerBundle:
     resume_path = paths.resume_json_path if paths.resume_json_path.exists() else paths.resume_fixed_json_path
     profile_text = _safe_read_text(paths.profile_pack_path)
-    resume_payload = _safe_load_json(resume_path)
+    resume_payload = normalize_rr_to_jsonresume(_safe_load_json(resume_path))
     source_files = [str(paths.profile_pack_path), str(resume_path)]
     source_hash = _compute_source_hash(profile_text, resume_payload, source_files)
 
