@@ -1293,8 +1293,8 @@ code {
         <button class="tab" data-tab="workspace">Application Workspace</button>
         <button class="tab" data-tab="debug">Debug / Data</button>
       </div>
-      <div class="shell-note">
-        Topic 16 uses this shell as a transition away from the legacy report-style dashboard while keeping the current local runtime intact.
+      <div class="shell-note" id="shellModeNote">
+        <!-- populated by renderStaticBanner / SERVER_MODE -->
       </div>
     </aside>
 
@@ -1305,6 +1305,8 @@ code {
           <p>Operate connectors one by one, inspect the merged queue, and keep intake and application work attached to the same local system state.</p>
         </div>
       </header>
+
+      <div id="static-mode-banner" style="display:none;"></div>
 
       <div class="tab-content active" id="tab-jobs">
     <div class="jobs-filter-row" id="jobsQuickFilters"></div>
@@ -1567,7 +1569,36 @@ async function loadData() {
   render();
 }
 
+function renderStaticBanner() {
+  const el = document.getElementById("static-mode-banner");
+  const noteEl = document.getElementById("shellModeNote");
+  if (SERVER_MODE) {
+    if (el) el.style.display = "none";
+    if (noteEl) noteEl.textContent = "Live server active — settings, generation, and automations are enabled.";
+    return;
+  }
+  if (noteEl) noteEl.innerHTML = 'Static snapshot. For interactive features run:<br><code>python -m jobpipe.cli.dashboard_server</code>';
+  if (!el) return;
+  el.style.display = "block";
+  el.innerHTML =
+    '<div style="background:var(--surface-b,#1c2230);border:1px solid var(--blue,#4a9eff);border-radius:8px;padding:12px 16px;margin:0 0 12px;display:flex;align-items:flex-start;gap:12px;">' +
+      '<span style="font-size:1.3em;line-height:1;">ℹ️</span>' +
+      '<div style="flex:1;">' +
+        '<strong>Static snapshot</strong> — you are viewing a read-only export of the dashboard. ' +
+        'Settings, application generation, and automation actions require the live server.<br>' +
+        '<span style="color:var(--text-soft,#8899aa);font-size:0.87em;">' +
+          'To start the live server: <code>python -m jobpipe.cli.dashboard_server</code> ' +
+          '&nbsp;or&nbsp; <code>.\\go.ps1 -NoRun</code> (if it shows in go.ps1)' +
+        '</span>' +
+      '</div>' +
+      '<button onclick="this.closest(\'#static-mode-banner\').style.display=\'none\'" ' +
+        'style="background:none;border:none;cursor:pointer;color:var(--text-soft,#8899aa);font-size:1.1em;padding:0;line-height:1;" ' +
+        'title="Dismiss">✕</button>' +
+    '</div>';
+}
+
 function render() {
+  renderStaticBanner();
   renderActionTable();
   renderMonitor();
   renderPipelineHealth();
@@ -3441,7 +3472,7 @@ function renderAutomations() {
           '<div class="detail-actions">' +
             (SERVER_MODE
               ? '<button class="action-btn primary" onclick="runAutomationAction(' + jsArg(action.key || "") + ')">Run now</button>'
-              : '<span class="action-btn primary disabled">Server mode required</span>') +
+              : '<span class="action-btn primary disabled" title="Run: python -m jobpipe.cli.dashboard_server">Server mode required</span>') +
           '</div>' +
         '</div>'
       ).join("")
