@@ -84,6 +84,9 @@ AUTHORING_STATE_VERSION = "jobpipe.authoring-state.v1"
 _gen_status: dict[str, str] = {}   # job_id → "running" | "done" | "error:<msg>"
 _gen_lock = threading.Lock()
 
+_prep_status: dict[str, dict] = {}  # job_id → {status, message, outputs}
+_prep_lock = threading.Lock()
+
 # ── Gmail OAuth setup tracker ──
 _gmail_setup_status: dict[str, Any] = {}  # keys: "status", "message", "started_at"
 _gmail_setup_lock = threading.Lock()
@@ -1326,6 +1329,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             job_id = path[len("/api/draft/"):].strip("/")
             self._get_draft(job_id)
 
+        elif path.startswith("/api/jobs/") and path.endswith("/authoring-session"):
+            job_id = path[len("/api/jobs/"):-len("/authoring-session")].strip("/")
+            self._get_authoring_session(job_id)
+
+        elif path.startswith("/api/jobs/") and path.endswith("/prepare-application/status"):
+            job_id = path[len("/api/jobs/"):-len("/prepare-application/status")].strip("/")
+            self._get_prepare_application_status(job_id)
+
         elif path == "/api/resume":
             self._get_resume()
 
@@ -1421,6 +1432,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._post_chat(body)
         elif path == "/api/gmail/authorize":
             self._post_gmail_authorize()
+        elif path.startswith("/api/jobs/") and path.endswith("/prepare-application"):
+            job_id = path[len("/api/jobs/"):-len("/prepare-application")].strip("/")
+            self._post_prepare_application(job_id, body)
+        elif path.startswith("/api/jobs/") and path.endswith("/authoring-chat"):
+            job_id = path[len("/api/jobs/"):-len("/authoring-chat")].strip("/")
+            self._post_authoring_chat(job_id, body)
+        elif path.startswith("/api/jobs/") and "/authoring-patch/" in path and path.endswith("/accept"):
+            parts = path[len("/api/jobs/"):].strip("/").split("/authoring-patch/")
+            job_id = parts[0].strip("/")
+            patch_id = parts[1].replace("/accept", "").strip("/") if len(parts) > 1 else ""
+            self._post_authoring_patch_accept(job_id, patch_id)
+        elif path.startswith("/api/jobs/") and "/authoring-patch/" in path and path.endswith("/reject"):
+            parts = path[len("/api/jobs/"):].strip("/").split("/authoring-patch/")
+            job_id = parts[0].strip("/")
+            patch_id = parts[1].replace("/reject", "").strip("/") if len(parts) > 1 else ""
+            self._post_authoring_patch_reject(job_id, patch_id)
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -1788,6 +1815,150 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
 
+    def _get_prepare_application_status(self, job_id: str):
+        with _prep_lock:
+            status = dict(_prep_status.get(job_id, {"status": "idle", "message": "", "outputs": {}}))
+        self._send_json(status)
+
+    def _post_prepare_application(self, job_id: str, body: dict):
+        model = body.get("model") or "gpt-4o-mini"
+        with _prep_lock:
+            if (_prep_status.get(job_id) or {}).get("status") == "running":
+                self._send_json({"ok": True, "status": "already_running"})
+                return
+            _prep_status[job_id] = {"status": "running", "message": "Starting...", "outputs": {}}
+        t = threading.Thread(target=_run_prepare_application, args=(job_id, model), daemon=True)
+        t.start()
+        self._send_json({"ok": True, "status": "started"})
+
+    def _get_authoring_session(self, job_id: str):
+        job_dir = _find_job_run_dir(job_id)
+        if not job_dir:
+            self._send_json({"error": "Job not found"}, 404)
+            return
+        from jobpipe.authoring.session_store import get_or_create_session
+        session = get_or_create_session(job_dir, job_id, "default")
+        self._send_json(session.model_dump(mode="json"))
+
+    def _post_authoring_chat(self, job_id: str, body: dict):
+        message = body.get("message", "").strip()
+        if not message:
+            self._send_json({"error": "message required"}, 400)
+            return
+        job_dir = _find_job_run_dir(job_id)
+        if not job_dir:
+            self._send_json({"error": "Job not found"}, 404)
+            return
+        try:
+            from jobpipe.authoring.session_store import (
+                add_suggested_patch,
+                append_chat_turn,
+                get_or_create_session,
+                save_session,
+            )
+            from jobpipe.model.schema import SuggestedPatch
+            import uuid as _uuid
+
+            session = get_or_create_session(job_dir, job_id, "default")
+            session = append_chat_turn(session, "user", message)
+
+            system = _build_chat_system_prompt(job_id)
+            messages_for_api = [{"role": "system", "content": system}]
+            for turn in session.chat_history[:-1]:  # exclude the turn we just added
+                messages_for_api.append({"role": turn["role"], "content": turn["content"]})
+            messages_for_api.append({"role": "user", "content": message})
+
+            from openai import OpenAI
+            from jobpipe.core.io import load_env_file
+            load_env_file(PATHS.env_file)
+            client = OpenAI()
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=messages_for_api,
+                temperature=0.7,
+                max_tokens=1200,
+            )
+            reply = response.choices[0].message.content or ""
+            session = append_chat_turn(session, "assistant", reply)
+
+            # Extract [PATCH: kind=..., section=...]...text...[/PATCH] markers, or wrap full reply
+            import re as _re
+            patch_re = _re.compile(
+                r"\[PATCH:\s*kind=(?P<kind>\w+)(?:,\s*section=(?P<section>[^\]]+))?\]"
+                r"(?P<text>.*?)\[/PATCH\]",
+                _re.DOTALL,
+            )
+            patches = []
+            for m in patch_re.finditer(reply):
+                kind = m.group("kind").strip()
+                if kind not in ("cover_letter", "summary", "headline", "section_bullet"):
+                    kind = "cover_letter"
+                patch = SuggestedPatch(
+                    patch_id=str(_uuid.uuid4()),
+                    kind=kind,
+                    section_ref=(m.group("section") or "").strip(),
+                    suggested_text=m.group("text").strip(),
+                    created_at=session.updated_at,
+                )
+                session = add_suggested_patch(session, patch)
+                patches.append(patch.model_dump(mode="json"))
+
+            save_session(job_dir, session)
+            self._send_json({"reply": reply, "patches": patches})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _post_authoring_patch_accept(self, job_id: str, patch_id: str):
+        if not patch_id:
+            self._send_json({"error": "patch_id required"}, 400)
+            return
+        job_dir = _find_job_run_dir(job_id)
+        if not job_dir:
+            self._send_json({"error": "Job not found"}, 404)
+            return
+        try:
+            from jobpipe.authoring.session_store import accept_patch, load_session, save_session
+            session = load_session(job_dir)
+            if not session:
+                self._send_json({"error": "No authoring session found"}, 404)
+                return
+            session = accept_patch(session, patch_id)
+            save_session(job_dir, session)
+            accepted = next(
+                (p for p in session.accepted_patches if p.patch_id == patch_id), None
+            )
+            # If a cover_letter patch is accepted, also write it to cover_letter_draft.txt
+            orig_patch = next(
+                (p for p in session.suggested_patches if p.patch_id == patch_id), None
+            )
+            if orig_patch and orig_patch.kind == "cover_letter" and accepted:
+                (job_dir / "cover_letter_draft.txt").write_text(
+                    accepted.accepted_text, encoding="utf-8"
+                )
+            self._send_json({"ok": True, "accepted_patch": accepted.model_dump(mode="json") if accepted else None})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
+    def _post_authoring_patch_reject(self, job_id: str, patch_id: str):
+        if not patch_id:
+            self._send_json({"error": "patch_id required"}, 400)
+            return
+        job_dir = _find_job_run_dir(job_id)
+        if not job_dir:
+            self._send_json({"error": "Job not found"}, 404)
+            return
+        try:
+            from jobpipe.authoring.session_store import load_session, reject_patch, save_session
+            session = load_session(job_dir)
+            if not session:
+                self._send_json({"error": "No authoring session found"}, 404)
+                return
+            session = reject_patch(session, patch_id)
+            save_session(job_dir, session)
+            self._send_json({"ok": True})
+        except Exception as e:
+            self._send_json({"error": str(e)}, 500)
+
     def _post_gmail_authorize(self):
         """Start Gmail OAuth setup in a background thread (opens browser consent)."""
         with _gmail_setup_lock:
@@ -1886,6 +2057,35 @@ def _read_stage_json(job_dir: Path, stage_name: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _run_prepare_application(job_id: str, model: str) -> None:
+    """Background worker: call prepare_application.main() in-process and record outputs."""
+    try:
+        from jobpipe.cli.prepare_application import main as _prep_main
+        argv = [
+            job_id,
+            "--runtime-profile", "live_local",
+            "--data-root", str(PATHS.data_root),
+            "--model", model,
+        ]
+        with _prep_lock:
+            _prep_status[job_id] = {"status": "running", "message": "Generating CV patch and cover letter...", "outputs": {}}
+        _prep_main(argv)
+        exports = PATHS.data_root / "exports"
+        outputs = {
+            "cv_path": str(exports / f"reactive_resume_patched_{job_id}.json"),
+            "letter_path": str(exports / f"cover_letter_{job_id}.md"),
+            "audit_path": str(exports / f"tailoring_audit_{job_id}.json"),
+        }
+        with _prep_lock:
+            _prep_status[job_id] = {"status": "done", "message": "Generation complete.", "outputs": outputs, "prepared_at": _utc_now_z()}
+    except SystemExit as e:
+        with _prep_lock:
+            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
+    except Exception as e:
+        with _prep_lock:
+            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
 
 
 def _stage_output_path(job_dir: Path, cfg, stage_name: str) -> Path:

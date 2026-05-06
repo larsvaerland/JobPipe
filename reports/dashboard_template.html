@@ -2845,7 +2845,13 @@ function renderDetailPane(j) {
         : '<span class="action-btn primary disabled">Open application</span>') +
       '<button class="action-btn" onclick=\'openAgentDraft(' + jsArg("cv") + ',' + jsArg(j.job_id || "") + ')\'>Generate CV</button>' +
       '<button class="action-btn" onclick=\'openAgentDraft(' + jsArg("application") + ',' + jsArg(j.job_id || "") + ')\'>Generate application</button>' +
+      (SERVER_MODE && (j.final_decision === "APPLY" || j.final_decision === "APPLY_STRONGLY")
+        ? '<button class="action-btn primary" id="prepareAppBtn" onclick=\'prepareApplication(' + jsArg(j.job_id || "") + ')\'>Prepare Application</button>'
+        : '') +
     '</div>' +
+    (SERVER_MODE && (j.final_decision === "APPLY" || j.final_decision === "APPLY_STRONGLY")
+      ? '<div id="prepareAppStatus" style="padding:6px 0;font-size:0.82em;color:#555"></div>'
+      : '') +
     '<div class="detail-grid">' +
       '<div class="detail-card">' +
         '<h5>Why</h5>' +
@@ -2893,8 +2899,167 @@ function renderDetailPane(j) {
       '<div class="detail-card">' +
         '<h5>Documents</h5>' +
         docItemsHtml +
+        (applicationUrl ? '<p style="margin-top:8px"><a class="action-link" href="' + esc(applicationUrl) + '" target="_blank">Apply at employer →</a></p>' : '') +
       '</div>' +
+      (SERVER_MODE
+        ? '<div class="detail-card" id="coverLetterPreview" style="grid-column:1/-1">' +
+            '<h5>Cover letter <span id="lastPreparedLabel" style="font-size:0.78em;font-weight:400;color:#888;margin-left:8px"></span></h5>' +
+            '<pre id="coverLetterText" style="white-space:pre-wrap;font-size:0.82em;max-height:260px;overflow-y:auto;background:#f8f8f8;padding:8px;border-radius:4px;border:1px solid var(--border,#ddd)">Loading...</pre>' +
+          '</div>'
+        : '') +
+      (SERVER_MODE
+        ? '<div class="detail-card" id="authoringChat" style="grid-column:1/-1">' +
+            '<h5>Authoring chat</h5>' +
+            '<div id="chatHistory" style="max-height:260px;overflow-y:auto;margin-bottom:8px;font-size:0.85em;display:flex;flex-direction:column;gap:6px"></div>' +
+            '<div id="pendingPatches" style="margin-bottom:8px"></div>' +
+            '<div style="display:flex;gap:6px">' +
+              '<textarea id="chatInput" rows="2" style="flex:1;resize:vertical;font-size:0.85em;padding:4px 6px;border:1px solid var(--border,#ddd);border-radius:4px" placeholder="Ask for a cover letter draft, rewrite a section, suggest improvements..."></textarea>' +
+              '<button class="action-btn primary" onclick=\'sendAuthoringChat(' + jsArg(j.job_id || "") + ')\'>Send</button>' +
+            '</div>' +
+          '</div>'
+        : '') +
     '</div>';
+  if (SERVER_MODE) {
+    var _jid = String(j.job_id || "");
+    loadAuthoringSession(_jid);
+    loadCoverLetterPreview(_jid);
+    loadLastPrepared(_jid);
+  }
+}
+
+function loadCoverLetterPreview(jobId) {
+  var el = document.getElementById("coverLetterText");
+  if (!el) return;
+  fetch(apiUrl("/api/draft/" + encodeURIComponent(jobId)))
+    .then(r => r.json())
+    .then(data => {
+      var text = (data && data.draft) ? data.draft.trim() : "";
+      el.textContent = text || "(No cover letter draft yet — use Prepare Application or the authoring chat to generate one.)";
+    })
+    .catch(() => { el.textContent = "(Could not load cover letter.)"; });
+}
+
+function loadLastPrepared(jobId) {
+  var labelEl = document.getElementById("lastPreparedLabel");
+  if (!labelEl) return;
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/prepare-application/status"))
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.status === "done" && data.outputs && data.outputs.audit_path) {
+        labelEl.textContent = "Last prepared: " + (data.prepared_at || "");
+      }
+    })
+    .catch(() => {});
+}
+
+function loadAuthoringSession(jobId) {
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/authoring-session"))
+    .then(r => r.ok ? r.json() : null)
+    .then(session => { if (session) renderAuthoringSession(session); })
+    .catch(() => {});
+}
+
+function renderAuthoringSession(session) {
+  const histEl = document.getElementById("chatHistory");
+  const patchEl = document.getElementById("pendingPatches");
+  if (!histEl || !patchEl) return;
+  histEl.innerHTML = (session.chat_history || []).map(t => {
+    const isUser = t.role === "user";
+    return '<div style="align-self:' + (isUser ? 'flex-end' : 'flex-start') + ';background:' + (isUser ? '#e8f0fe' : '#f3f3f3') + ';padding:4px 8px;border-radius:6px;max-width:85%;white-space:pre-wrap">' + esc(t.content) + '</div>';
+  }).join("");
+  histEl.scrollTop = histEl.scrollHeight;
+  const pending = (session.suggested_patches || []).filter(p => p.status === "pending");
+  patchEl.innerHTML = pending.length
+    ? '<p style="font-size:0.8em;margin:0 0 4px;color:#555">Suggested patches:</p>' +
+      pending.map(p =>
+        '<div style="border:1px solid var(--border,#ddd);border-radius:4px;padding:6px 8px;margin-bottom:4px;font-size:0.82em">' +
+          '<span style="font-weight:600">' + esc(p.kind) + (p.section_ref ? ' / ' + esc(p.section_ref) : '') + '</span>' +
+          '<pre style="white-space:pre-wrap;margin:4px 0">' + esc(p.suggested_text) + '</pre>' +
+          '<button class="action-btn" onclick=\'acceptAuthoringPatch(' + jsArg(session.job_id) + ',' + jsArg(p.patch_id) + ')\'>Accept</button> ' +
+          '<button class="action-btn" onclick=\'rejectAuthoringPatch(' + jsArg(session.job_id) + ',' + jsArg(p.patch_id) + ')\'>Reject</button>' +
+        '</div>'
+      ).join("")
+    : "";
+}
+
+function sendAuthoringChat(jobId) {
+  const inp = document.getElementById("chatInput");
+  if (!inp) return;
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = "";
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/authoring-chat"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({message: msg}),
+  })
+    .then(r => r.json())
+    .then(data => { if (data && !data.error) loadAuthoringSession(jobId); })
+    .catch(() => {});
+}
+
+function acceptAuthoringPatch(jobId, patchId) {
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/authoring-patch/" + encodeURIComponent(patchId) + "/accept"), {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"})
+    .then(() => loadAuthoringSession(jobId))
+    .catch(() => {});
+}
+
+function rejectAuthoringPatch(jobId, patchId) {
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/authoring-patch/" + encodeURIComponent(patchId) + "/reject"), {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"})
+    .then(() => loadAuthoringSession(jobId))
+    .catch(() => {});
+}
+
+function prepareApplication(jobId) {
+  const btn = document.getElementById("prepareAppBtn");
+  const statusEl = document.getElementById("prepareAppStatus");
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = "Starting...";
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/prepare-application"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.ok) _pollPrepareStatus(jobId, 0);
+      else if (statusEl) statusEl.textContent = "Error: " + (data.error || "unknown");
+    })
+    .catch(e => { if (statusEl) statusEl.textContent = "Error: " + e; });
+}
+
+function _pollPrepareStatus(jobId, attempts) {
+  if (attempts > 120) return;
+  setTimeout(function() {
+    fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/prepare-application/status"))
+      .then(r => r.json())
+      .then(function(data) {
+        const statusEl = document.getElementById("prepareAppStatus");
+        const btn = document.getElementById("prepareAppBtn");
+        if (!data) return;
+        if (data.status === "running") {
+          if (statusEl) statusEl.textContent = data.message || "Running...";
+          _pollPrepareStatus(jobId, attempts + 1);
+        } else if (data.status === "done") {
+          if (btn) btn.disabled = false;
+          const outputs = data.outputs || {};
+          if (statusEl) statusEl.innerHTML =
+            "Done. " +
+            Object.entries(outputs).map(([k, v]) => {
+              const parts = v.split(/[\\/]/);
+              const fname = parts[parts.length - 1] || v;
+              const href = apiUrl("/download/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(fname));
+              return '<a class="action-link" href="' + esc(href) + '" target="_blank">' + esc(fname) + '</a>';
+            }).join(" · ");
+        } else if (data.status === "error") {
+          if (btn) btn.disabled = false;
+          if (statusEl) statusEl.textContent = "Error: " + (data.message || "unknown");
+        } else {
+          if (statusEl) statusEl.textContent = "";
+        }
+      })
+      .catch(() => { _pollPrepareStatus(jobId, attempts + 1); });
+  }, 2000);
 }
 
 function renderMonitor() {

@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 from pathlib import Path
 from typing import List, Optional
 
+import uuid
+
 from jobpipe.authoring.cover_letter_generator import generate_cover_letter
 from jobpipe.authoring.validation import validate_authoring_context
 from jobpipe.cli.generate_cover_letter import build_authoring_context, _find_job_row
 from jobpipe.core.candidate_data import load_candidate_profile_pack, load_candidate_resume_json
-from jobpipe.core.io import load_env_file
+from jobpipe.core.io import load_env_file, now_iso
+from jobpipe.core.settings_state import load_settings_state
 from jobpipe.projections import build_tailored_cv_plan, build_tailored_cv_projection
 from jobpipe.projections.dashboard import build_payload
 from jobpipe.projections.rr_patch import build_rr_patch
@@ -111,6 +115,60 @@ def main(argv: Optional[List[str]] = None) -> None:
     cv_path.write_text(json.dumps(patched, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"  CV output:  {cv_path}")
 
+    audit_path = out_dir / f"tailoring_audit_{job_id}.json"
+    audit_path.write_text(
+        json.dumps(
+            plan.model_dump(mode="json") | {
+                "job_id": job_id,
+                "candidate_id": args.candidate_id,
+                "cv_output_path": str(cv_path),
+                "cover_letter_output_path": str(out_dir / f"cover_letter_{job_id}.md"),
+                "compiled_at": _dt.datetime.utcnow().isoformat() + "Z",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    print(f"  Audit:      {audit_path}")
+
+    # Write provenance to primary DB (best-effort — skip if DB is unavailable or wrong schema)
+    try:
+        from jobpipe.model import ReactiveResumeRenderedDocumentRef
+        from jobpipe.runtime.reactive_resume import record_reactive_resume_document_ref
+        ref = ReactiveResumeRenderedDocumentRef(
+            document_id=f"cv_{job_id}_{uuid.uuid4().hex[:8]}",
+            candidate_id=args.candidate_id,
+            job_id=job_id,
+            evaluation_id=str(row.get("run_id") or ""),
+            kind="tailored_cv",
+            producer="prepare_application",
+            status="draft",
+            storage_path=str(cv_path),
+            preview_text=(projection.summary_text or "")[:200],
+            document_json=patched,
+            updated_at=now_iso(),
+        )
+        record_reactive_resume_document_ref(db_path, ref)
+        print("  Provenance: written to DB")
+    except Exception as _e:
+        print(f"  Provenance: skipped ({_e})")
+
+    # Push to Reactive Resume if configured (best-effort)
+    _settings_path = runtime.data_root / "reports" / "settings_state.json"
+    try:
+        _settings = load_settings_state(_settings_path)
+        _rr = (_settings.get("integrations", {}) or {}).get("reactive_resume", {}) or {}
+        _rr_base = (_rr.get("base_url") or "").rstrip("/")
+        _rr_token = _rr.get("token") or ""
+        if _rr_base and _rr.get("enabled"):
+            from jobpipe.integrations.reactive_resume_client import get_resume_url, push_resume_to_rr
+            _created = push_resume_to_rr(_rr_base, patched, token=_rr_token)
+            _rr_id = _created.get("id") or (_created.get("data") or {}).get("id", "")
+            print(f"  RR push:    {get_resume_url(_rr_base, _rr_id)}")
+    except Exception as _e:
+        print(f"  RR push:    skipped ({_e})")
+
     # Step 3: generate cover letter with CV context
     print()
     print("[3/3] Generating cover letter ...")
@@ -144,6 +202,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print("=== Done ===")
     print(f"  CV patch:     {cv_path}")
     print(f"  Cover letter: {letter_path}")
+    print(f"  Audit:        {audit_path}")
     print()
     print("Import the CV patch into Reactive Resume via:")
     print("  Settings > Import Resume > JSON Resume / Reactive Resume")

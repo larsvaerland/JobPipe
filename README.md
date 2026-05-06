@@ -274,6 +274,18 @@ For this project, treat JobSync as a **separate codebase**:
 
 The official upstream quickstart is clone + compose. The maintainable local pattern is still separate from this repo.
 
+### Starting Reactive Resume (local)
+
+Reactive Resume requires Docker. Start it once and leave it running:
+
+```powershell
+docker compose -f <reactive-resume-dir>\docker-compose.yml up -d
+```
+
+Default URL: `http://localhost:3000`
+
+Once running, the JobPipe dashboard (Settings → Integrations → Reactive Resume) should already have this URL pre-filled. Enable the toggle and click "Prepare Application" on any APPLY job to push a tailored CV patch directly.
+
 ### Reactive Resume Installation
 
 Reactive Resume officially supports:

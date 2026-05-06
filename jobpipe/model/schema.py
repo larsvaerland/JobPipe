@@ -178,6 +178,38 @@ class ReactiveResumeRenderedDocumentRef(BaseModel):
     document_json: Dict[str, Any] = Field(default_factory=dict)
 
 
+# ── Authoring session models ──────────────────────────────────────────────────
+
+class SuggestedPatch(BaseModel):
+    patch_id: str
+    kind: Literal["cover_letter", "summary", "headline", "section_bullet"]
+    section_ref: str = ""
+    original_text: str = ""
+    suggested_text: str
+    rationale: str = ""
+    status: Literal["pending", "accepted", "rejected"] = "pending"
+    created_at: str = ""
+
+
+class AcceptedPatch(BaseModel):
+    patch_id: str
+    kind: str
+    section_ref: str = ""
+    accepted_text: str
+    accepted_at: str
+
+
+class AuthoringSession(BaseModel):
+    session_id: str
+    job_id: str
+    candidate_id: str
+    created_at: str
+    updated_at: str
+    chat_history: List[Dict[str, Any]] = Field(default_factory=list)
+    suggested_patches: List[SuggestedPatch] = Field(default_factory=list)
+    accepted_patches: List[AcceptedPatch] = Field(default_factory=list)
+
+
 __all__ = [
     # core re-exports
     "AdvantageAssessmentV3",
@@ -221,4 +253,7 @@ __all__ = [
     "ReactiveResumeTailoredCVPlan",
     "ReactiveResumeTailoredCVProjection",
     "ReactiveResumeRenderedDocumentRef",
+    "SuggestedPatch",
+    "AcceptedPatch",
+    "AuthoringSession",
 ]
