@@ -22,6 +22,27 @@ Regler:
 - Ikke ta med sted/dato, adresse eller hilsenfrase øverst — bare selve brevteksten.
 - Maks 350 ord.
 
+Hvis cover_letter_strategy er tilstede:
+- Følg den overordnede strategien beskrevet i cover_letter_strategy nøye.
+
+Hvis narrative_positioning_angle er tilstede:
+- La denne vinkelen prege åpningsavsnittet og tonen gjennom hele brevet.
+
+Hvis narrative_brand_frame er tilstede:
+- Bruk denne rammen til å posisjonere kandidatens profil konsistent.
+
+Hvis narrative_why_me_now er tilstede:
+- Sørg for at brevet svarer tydelig på dette spørsmålet, gjerne i motivasjonsavsnittet.
+
+Hvis differentiation_signals er tilstede:
+- Vev inn ett eller to av de sterkeste signalene naturlig i teksten — ikke som en liste.
+
+Hvis recruiter_hook er tilstede:
+- Bruk dette som inspirasjon til åpningssetningen eller første avsnitt.
+
+Hvis neutralizing_evidence er tilstede:
+- Brevet kan proaktivt adressere potensielle gap med disse bevisene — ærlig og uten unnskyldninger.
+
 Hvis artifact_plan er tilstede:
 - Brevet skal være konsistent med cv_headline og cv_summary.
 - cv_selected_bullets representerer det som allerede vises i CV-en — bekreft og utdyp, ikke bare gjenta.
@@ -54,7 +75,7 @@ def generate_cover_letter(
     model: str = "gpt-4o-mini",
 ) -> str:
     """Call the OpenAI API to write a Norwegian cover letter. Returns the letter text."""
-    payload = {
+    payload: dict = {
         "job_id": ctx.job_id,
         "job_summary": ctx.job_summary,
         "decision_brief": ctx.decision_brief,
@@ -62,6 +83,21 @@ def generate_cover_letter(
         "narrative_brief": ctx.narrative_brief,
         "artifact_plan": ctx.artifact_plan,
     }
+    # v3 signals — include only when present so the model isn't distracted by nulls
+    if ctx.cover_letter_strategy:
+        payload["cover_letter_strategy"] = ctx.cover_letter_strategy
+    if ctx.narrative_positioning_angle:
+        payload["narrative_positioning_angle"] = ctx.narrative_positioning_angle
+    if ctx.narrative_brand_frame:
+        payload["narrative_brand_frame"] = ctx.narrative_brand_frame
+    if ctx.narrative_why_me_now:
+        payload["narrative_why_me_now"] = ctx.narrative_why_me_now
+    if ctx.differentiation_signals:
+        payload["differentiation_signals"] = ctx.differentiation_signals
+    if ctx.recruiter_hook:
+        payload["recruiter_hook"] = ctx.recruiter_hook
+    if ctx.neutralizing_evidence:
+        payload["neutralizing_evidence"] = ctx.neutralizing_evidence
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     response = client.chat.completions.create(
         model=model,
