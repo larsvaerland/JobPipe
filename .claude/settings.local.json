@@ -5,5 +5,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "axon"
+  ],
+  "enableAllProjectMcpServers": true
 }

@@ -86,3 +86,7 @@ desktop.ini
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Claude Code runtime state (machine-local, not for repo)
+.claude/scheduled_tasks.lock
+.claude/worktrees/
