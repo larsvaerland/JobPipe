@@ -108,6 +108,12 @@ def build_authoring_context(
         selected_evidence=selected_evidence,
         narrative_brief=narrative_brief,
         artifact_plan=artifact_plan,
+        narrative_positioning_angle=str(row.get("narrative_positioning_angle") or "").strip() or None,
+        narrative_brand_frame=str(row.get("narrative_brand_frame") or "").strip() or None,
+        cover_letter_strategy=str(row.get("cover_letter_strategy") or "").strip() or None,
+        differentiation_signals=list(row.get("differentiation_signals") or []),
+        recruiter_hook=str(row.get("recruiter_hook") or "").strip() or None,
+        neutralizing_evidence=list(row.get("neutralizing_evidence") or []),
     )
 
 
