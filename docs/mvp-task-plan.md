@@ -2575,22 +2575,69 @@ Scope:
 - turn the new person/profile spine into a deterministic job-specific resume composition layer
 - prefer structured selection, visibility, and ordering over freeform rewriting
 
-Implementation targets:
-- define `TailoringPlan` as the bounded case-specific selection object
-- compile one deterministic tailored Reactive Resume JSON from:
-  - `ResumeMaster`
-  - approved content variants
-  - `SelectionRules`
-  - `LayoutProfile`
-- emit a sidecar audit artifact that records:
-  - selected variants
-  - hidden records/sections
-  - ordering choices
-  - layout profile used
+### Current state (as of 2026-05)
 
-Validation:
-- one live-like job can produce a deterministic `TailoringPlan`, tailored RR JSON, and sidecar audit without manual assembly
-- the compiled output is explainable and traceable to approved source content plus explicit layout choice
+Already implemented:
+- `jobpipe/model/schema.py`: `ReactiveResumeTailoredCVPlan`, `ReactiveResumeTailoredCVProjection`, `ReactiveResumeImportProjection`, `ReactiveResumeRenderedDocumentRef` models
+- `jobpipe/projections/reactive_resume.py`: `build_tailored_cv_plan()`, `build_tailored_cv_projection()`, `build_resume_import_projection()`
+- `jobpipe/projections/rr_patch.py`: `build_rr_patch()` — applies plan to RR JSON (headline, summary, section visibility, experience suppression)
+- `jobpipe/cli/prepare_application.py`: CLI that sequences plan → projection → rr_patch → cover letter → output files
+- `jobpipe/cli/export_reactive_resume_plan.py`: exports the plan as JSON
+- `jobpipe/cli/import_reactive_resume.py`: imports resume.json into primary DB
+- `C:\Users\larsv\JobpipeData\resume.json`: base resume in RR format exists
+
+Not yet done:
+- Sidecar audit artifact per job (per the scope)
+- End-to-end validation run on a live APPLY job
+
+### Implementation targets
+
+**1. Sidecar audit artifact** (new file per job)
+
+In `prepare_application.main()` after calling `build_rr_patch()`, write a sidecar JSON to
+`out_dir / f"tailoring_audit_{job_id}.json"` with this shape:
+
+```json
+{
+  "job_id": "...",
+  "candidate_id": "...",
+  "variant_strategy": "aggressive|balanced|conservative",
+  "selected_evidence_unit_ids": [...],
+  "selected_section_order": [...],
+  "suppressed_items": [...],
+  "summary_brief": "...",
+  "rewrite_constraints": [...],
+  "claim_targets": [...],
+  "cv_output_path": "...",
+  "cover_letter_output_path": "...",
+  "compiled_at": "<ISO timestamp>"
+}
+```
+
+This is a simple `json.dumps(plan.model_dump(mode="json") | {...})` call — no new model needed.
+
+**2. Validation run**
+
+Run on a real APPLY job from the ledger:
+```powershell
+cd C:\Users\larsv\Jobpipe
+.venv\Scripts\python.exe -m jobpipe.cli.prepare_application finn_459729044
+```
+
+Expected: `exports/reactive_resume_patched_finn_459729044.json` + `exports/cover_letter_finn_459729044.md` + `exports/tailoring_audit_finn_459729044.json` all written without error.
+
+**3. Minimal compile check**
+
+```powershell
+.venv\Scripts\python.exe compile_check.py
+```
+
+Validation criteria:
+- `prepare-application` CLI runs end-to-end on a live APPLY job with no exceptions
+- sidecar audit JSON is written and contains all required keys
+- cover letter is non-empty (>200 chars)
+- patched RR JSON has a modified `basics.headline` and non-empty `summary.content`
+- compile_check passes
 
 ## Topic 31. Authoring Session, Concurrent Chat, And Patch Tracking
 
@@ -2600,18 +2647,120 @@ Scope:
 - turn authoring from one broad draft blob into a case-scoped shared workspace where chat and manual editing can happen in parallel
 - keep agents bounded: suggestions should be attributable patches and alternatives, not silent whole-document rewrites
 
-Implementation targets:
-- define:
-  - `AuthoringSession`
-  - `SuggestedPatch`
-  - `AcceptedPatch`
-- persist case-scoped chat state that reads the same `jobSummary`, `DecisionBrief`, `NarrativeStrategy`, `TailoringPlan`, and save targets as the rest of the apply flow
-- let resume and cover-letter agents propose bounded section-level suggestions while external manual editing remains the human truth surface
-- keep applicant-facing artifacts clean; audit/provenance stays in sidecar state
+### Current state (as of 2026-05)
+
+Already in place:
+- `dashboard_server.py` has `GET /api/jobs/<job_id>/cover-letter-draft` and `POST /api/jobs/<job_id>/cover-letter-draft` for loading/saving cover letter text
+- `cover_letter_draft.txt` is persisted per job directory
+- Dashboard job detail panel has `authoring.coverLetter` state with `handoff_brief` text
+
+Not yet done:
+- No `AuthoringSession` / `SuggestedPatch` / `AcceptedPatch` models
+- No chat API endpoint in dashboard_server.py
+- No case-scoped chat history persisted to disk
+- No resume-section suggestion flow
+
+### Implementation targets
+
+**1. Models** — add to `jobpipe/model/schema.py` (after the ReactiveResume block):
+
+```python
+class SuggestedPatch(BaseModel):
+    patch_id: str                        # uuid4
+    kind: Literal["cover_letter", "summary", "headline", "section_bullet"]
+    section_ref: str = ""               # e.g. "work:Foo:Engineer:2"
+    original_text: str = ""
+    suggested_text: str
+    rationale: str = ""
+    status: Literal["pending", "accepted", "rejected"] = "pending"
+    created_at: str = ""
+
+class AcceptedPatch(BaseModel):
+    patch_id: str
+    kind: str
+    section_ref: str = ""
+    accepted_text: str
+    accepted_at: str
+
+class AuthoringSession(BaseModel):
+    session_id: str
+    job_id: str
+    candidate_id: str
+    created_at: str
+    updated_at: str
+    chat_history: List[Dict[str, Any]] = Field(default_factory=list)  # [{role, content, ts}]
+    suggested_patches: List[SuggestedPatch] = Field(default_factory=list)
+    accepted_patches: List[AcceptedPatch] = Field(default_factory=list)
+```
+
+Add to `__all__` in `schema.py`.
+
+**2. Persistence** — new file `jobpipe/authoring/session_store.py`:
+
+```python
+def session_path(job_dir: Path) -> Path:
+    return job_dir / "authoring_session.json"
+
+def load_session(job_dir: Path) -> AuthoringSession | None: ...
+def save_session(job_dir: Path, session: AuthoringSession) -> None: ...
+def get_or_create_session(job_dir: Path, job_id: str, candidate_id: str) -> AuthoringSession: ...
+def append_chat_turn(session: AuthoringSession, role: str, content: str) -> AuthoringSession: ...
+def add_suggested_patch(session: AuthoringSession, patch: SuggestedPatch) -> AuthoringSession: ...
+def accept_patch(session: AuthoringSession, patch_id: str) -> AuthoringSession: ...
+def reject_patch(session: AuthoringSession, patch_id: str) -> AuthoringSession: ...
+```
+
+Session JSON written to `<job_dir>/authoring_session.json`.
+
+**3. Dashboard server API endpoints** — add to `dashboard_server.py`:
+
+```
+GET  /api/jobs/<job_id>/authoring-session
+     → {session_id, chat_history, suggested_patches, accepted_patches}
+
+POST /api/jobs/<job_id>/authoring-chat
+     body: {message: str}
+     → {reply: str, patches: [SuggestedPatch]}
+     Sends chat turn to OpenAI with job context, extracts suggested patches from response
+
+POST /api/jobs/<job_id>/authoring-patch/<patch_id>/accept
+     → {ok: true, accepted_patch: AcceptedPatch}
+
+POST /api/jobs/<job_id>/authoring-patch/<patch_id>/reject
+     → {ok: true}
+```
+
+**4. Chat handler** — `_handle_authoring_chat(job_id, message)` in dashboard_server.py:
+- Loads job detail context (decision brief, cover letter draft, tailoring plan if present)
+- Builds system prompt from job context + profile summary
+- Calls OpenAI with chat history
+- Parses reply for suggested patches (look for `[PATCH: kind=..., section=...]...text...[/PATCH]` markers OR just return the full reply as a cover_letter patch)
+- Saves session, returns reply + patches
+
+**5. Dashboard UI** — minimal chat panel in job detail view (new `#authoringChat` div):
+- Text input + Send button
+- Renders chat history
+- For each pending suggested patch: Accept / Reject buttons
+- Accepting a cover_letter patch sets the cover letter draft
 
 Validation:
-- one case supports concurrent chat + manual editing without losing attribution for suggested vs accepted changes
-- the new authoring outputs remain explainable, case-scoped, and traceable to source content plus accepted patches
+- `authoring_session.json` is written to job dir after first chat message
+- Accept/reject patch endpoints update session file
+- Accepted cover_letter patch is reflected in `cover_letter_draft.txt`
+- compile_check passes
+
+### Transitional note
+
+The `dashboard_server.py` API endpoints built in this topic (`/authoring-session`,
+`/authoring-chat`, `/authoring-patch/*`) are **temporary**. They prove the workflow on the
+current stack and will be replaced by the cover letter panel in JobDesk (Topic 36), which
+reads from and writes to Supabase's `cover_letters` table instead of local session files.
+
+The **models** (`AuthoringSession`, `SuggestedPatch`, `AcceptedPatch` in `schema.py`) and
+the **session store** (`jobpipe/authoring/session_store.py`) are **permanent** — they map
+directly to the Supabase schema and will be reused in Topic 36 without changes.
+
+After Topic 36 lands, the authoring endpoints can be removed from `dashboard_server.py`.
 
 ## Topic 32. External Authoring Completion And Saveback Hardening
 
@@ -2621,37 +2770,1307 @@ Scope:
 - complete the current external authoring launch/saveback seam without collapsing external tools into JobPipe
 - make the Reactive Resume and document-authoring handoff operational enough that the user can finish a real application with minimal noise
 
-Implementation targets:
-- finish the operational Reactive Resume handoff around the compiled tailored JSON and final export/saveback
-- finish deterministic export capture for CV / cover letter / screening answers
-- capture provenance for:
-  - compiled tailored resume
-  - final exported resume JSON/PDF
-  - final cover-letter document
-  - layout profile
-  - accepted patch set or equivalent session refs
-- keep JobSync mirroring at the ref/provenance layer only
+### Current state (as of 2026-05)
+
+Already in place:
+- `prepare_application.py` generates `reactive_resume_patched_<job_id>.json` and `cover_letter_<job_id>.md` to `exports/`
+- `record_reactive_resume_document_ref()` in `jobpipe/runtime/reactive_resume.py` writes a `ReactiveResumeRenderedDocumentRef` to the primary DB `generated_documents` table
+- `dashboard_server.py` reads `reactive_resume_base_url` from settings and passes it to the job detail authoring brief
+- Settings panel has the Reactive Resume integration toggle + base URL field
+
+Not yet done:
+- No dashboard API endpoint to trigger `prepare-application` for a job
+- No Reactive Resume API client — the patched JSON must be manually imported via the RR UI
+- No saveback capture when RR exports the final PDF/JSON
+- `prepare_application.py` does not write a `ReactiveResumeRenderedDocumentRef` to the DB after generating the patch
+
+### Implementation targets
+
+**1. Dashboard trigger endpoint** — add to `dashboard_server.py`:
+
+```
+POST /api/jobs/<job_id>/prepare-application
+     body: {model: str = "gpt-4o-mini"}
+     → {ok: true, status: "started"|"already_running"}
+
+GET  /api/jobs/<job_id>/prepare-application/status
+     → {status: "idle"|"running"|"done"|"error", message: str, outputs: {cv_path, letter_path, audit_path}}
+```
+
+Transitional note: this endpoint triggers `prepare_application.py` (the pipeline-based CV
+composer). In Topic 36 (JobDesk), the same "Prepare Application" button triggers JobSane
+instead — the full AI crew approach that supersedes the pipeline-based generation. Both
+produce equivalent output files; the endpoint swap is transparent from the user's perspective.
+Keep the pipeline-based approach here as the working proof before the crew is ready.
+
+Implementation pattern (mirror the Gmail OAuth pattern already in place):
+- Module-level `_prep_status: dict[str, dict]` keyed by `job_id`
+- Module-level `_prep_lock: threading.Lock()`
+- Background thread calls `prepare_application.main([job_id])` via in-process import (not subprocess)
+- On completion writes status dict with output paths
+- Dashboard polls `GET status` every 2s and shows a spinner → done state
+
+**2. Write provenance to DB** — after `build_rr_patch()` in `prepare_application.main()`:
+
+```python
+from jobpipe.runtime.reactive_resume import record_reactive_resume_document_ref
+from jobpipe.model import ReactiveResumeRenderedDocumentRef
+import uuid
+
+ref = ReactiveResumeRenderedDocumentRef(
+    document_id=f"cv_{job_id}_{uuid.uuid4().hex[:8]}",
+    candidate_id=args.candidate_id,
+    job_id=job_id,
+    evaluation_id=str(row.get("run_id") or ""),
+    kind="tailored_cv",
+    producer="prepare_application",
+    status="draft",
+    storage_path=str(cv_path),
+    preview_text=projection.summary_text[:200] if projection.summary_text else "",
+    document_json=json.dumps(patched, ensure_ascii=False),
+    updated_at=now_iso(),
+)
+record_reactive_resume_document_ref(db_path, ref)
+```
+
+**3. RR API client** — new file `jobpipe/integrations/reactive_resume_client.py`:
+
+This is the **shared RR client** used by the entire stack. Once built here:
+- JobSane (Topic 33.5) imports it directly instead of duplicating the HTTP logic in
+  `tools/rr_tool.py` — the tool becomes a thin wrapper around this client
+- JobDesk (Topic 36) copies or re-exports it as `jobdesk/rr_client.py` when it becomes
+  a standalone repo
+
+For now it lives in `jobpipe/integrations/` — move it to a shared package only if the
+repo split makes co-location impractical.
+
+Reactive Resume (self-hosted) exposes a REST API. Key endpoints:
+- `POST /api/resume` — create a new resume, body is the RR JSON, returns `{id: "...", ...}`
+- `PATCH /api/resume/{id}` — update an existing resume
+
+```python
+def push_resume_to_rr(base_url: str, resume_json: dict) -> dict:
+    """Create a new resume in the running RR instance. Returns the created resume dict."""
+    url = f"{base_url.rstrip('/')}/api/resume"
+    resp = requests.post(url, json=resume_json, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+def get_resume_url(base_url: str, resume_id: str) -> str:
+    return f"{base_url.rstrip('/')}/resume/{resume_id}"
+```
+
+Note: RR API may require authentication. Check the running RR instance's auth config first.
+If auth is required, accept `token: str = ""` and pass `Authorization: Bearer <token>` header.
+
+**4. Integrate RR push** — in `prepare_application.main()`, after writing `cv_path`, if `reactive_resume_base_url` is set in settings:
+```python
+from jobpipe.integrations.reactive_resume_client import push_resume_to_rr
+settings = load_settings_state(SETTINGS_STATE_PATH)
+rr_base = settings["integrations"]["reactive_resume"]["base_url"]
+if rr_base and settings["integrations"]["reactive_resume"]["enabled"]:
+    try:
+        created = push_resume_to_rr(rr_base, patched)
+        rr_resume_id = created.get("id") or created.get("data", {}).get("id", "")
+        print(f"  Pushed to RR: {get_resume_url(rr_base, rr_resume_id)}")
+    except Exception as e:
+        print(f"  WARN: RR push failed: {e}")
+```
+
+**5. Dashboard UI** — add "Prepare Application" button to the job detail panel (visible only for APPLY / APPLY_STRONGLY jobs):
+```html
+<button id="prepareAppBtn" onclick="prepareApplication('${job.jobId}')">Prepare Application</button>
+<div id="prepareAppStatus"></div>
+```
+
+JS: `prepareApplication(jobId)` → POST trigger → poll status every 2s → on done, show links to CV and cover letter files.
+
+**6. Saveback capture** — When RR exports the final PDF/JSON, the user saves it manually to `<job_dir>/10_tailored_resume.pdf` (path already defined in the apply session manifest). No automation needed at this stage — just document the save target path clearly in the UI.
 
 Validation:
-- one full case can move from JobPipe shortlist to external authoring to saveback with deterministic refs and artifact outputs
-- no sibling repo absorbs JobPipe pipeline logic to make that happen
+- `POST /api/jobs/finn_459729044/prepare-application` triggers background generation
+- `GET status` returns `done` with output paths after completion
+- `generated_documents` table in `jobpipe.sqlite` has a row for the tailored CV
+- compile_check passes
+- RR push works when RR is running at `http://localhost:3000` (manual verification)
 
 ## Topic 33. Live Operator Flow And Real-Data Cutover
 
 Status: pending
 
 Scope:
-- prove that the refined JobPipe -> JobSync -> Reactive Resume / document workflow is actually easier to use on real jobs
+- prove that the refined JobPipe → Reactive Resume → document workflow is actually easier to use on real jobs
 - remove workflow noise only after the structured authoring and saveback path is stable on live data
 
-Implementation targets:
-- run the end-to-end flow on real shortlisted jobs
-- tighten naming, launch order, saveback behavior, and operator prompts based on real use
-- add one explicit operator checklist for sprint-close validation on live-like cases
+### Current state (as of 2026-05)
+
+Prereqs (Topics 30–32) must be done first. When they are:
+- `prepare-application` works end-to-end on a real APPLY job
+- Dashboard has a "Prepare Application" button that triggers generation + shows output paths
+- Reactive Resume can receive the patched CV via API push
+- Authoring chat is available for cover letter iteration
+
+### Implementation targets
+
+**1. Operator checklist** — add to `AGENT_STATUS.md` a "Live run checklist" section:
+
+```
+Live operator flow (Topic 33):
+1. Open dashboard at http://localhost:5100
+2. Go to Actionable Jobs → pick an APPLY or APPLY_STRONGLY job
+3. Click "Prepare Application" → wait for completion (CV patch + cover letter generated)
+4. Review cover_letter_<job_id>.md in exports/
+5. Iterate via authoring chat if needed
+6. Open Reactive Resume (http://localhost:3000), verify the imported CV looks correct
+7. Export PDF from RR, save to <job_dir>/10_tailored_resume.pdf
+8. Mark job as shortlisted: python -m jobpipe.cli.mark_status <job_id> shortlisted
+9. Submit application manually via the job's application_url
+10. Mark job as applied: python -m jobpipe.cli.mark_status <job_id> applied
+```
+
+**2. UX tightening** — after a real run, address the following known friction points:
+
+- Dashboard job detail: add direct link to `application_url` ("Apply at employer →") — visible only when url is present
+- Dashboard: cover letter preview in job detail panel (read from `cover_letter_draft.txt` if present, otherwise from `exports/cover_letter_<job_id>.md`)
+- Dashboard: show "Last prepared: <timestamp>" from `tailoring_audit_<job_id>.json` if it exists
+- Settings: Reactive Resume base URL field should pre-fill `http://localhost:3000`
+
+**3. Reactive Resume startup note** — add to README.md operator section:
+
+```
+## Starting Reactive Resume (local)
+
+Reactive Resume requires Docker. Start it once and leave it running:
+  docker compose -f <reactive-resume-dir>/docker-compose.yml up -d
+
+Default URL: http://localhost:3000
+```
+
+**4. AUDIT.md update** — document remaining friction explicitly after the live run:
+- What worked without friction
+- What required manual steps that could be automated later
+- What broke or was confusing
+
+**5. Compile check + smoke test**
+
+```powershell
+.venv\Scripts\python.exe compile_check.py
+.\go.ps1 -DryRun
+```
 
 Validation:
-- the user can move from shortlist to promoted case to polished artifacts to manual submission on live data with low noise
-- remaining friction is documented explicitly in `AUDIT.md` instead of carried as implicit tribal knowledge
+- User can complete one full application cycle (shortlist → CV patch → cover letter → submit → marked applied) with no more than 5 manual steps outside the dashboard
+- `AUDIT.md` updated with friction report
+- `AGENT_STATUS.md` updated with topic status and handoff notes
+
+## Topic 33.5. JobSane CrewAI Crew — Scaffold And Implementation
+
+Status: pending (prereq: Topic 33 done)
+
+Scope:
+- turn `C:\Users\larsv\jobsane\` (local clone of `unikill066/smart-agentic-ats-resume`) into a
+  standalone CrewAI application crew for Lars — `larsvaerland/JobSane`
+- replace the original flat `Crew.kickoff()` pattern with a `Flow[ApplicationState]` + individual
+  `Agent.kickoff()` calls, matching the proven JobVibe architecture
+- wire the crew to Jobpipe's `prepare_application.py` seam: input = `ApplicationCase` JSON,
+  output = `ApplicationResult` JSON written as `08_authoring_result.json`
+- integrate with Reactive Resume REST API and Supabase (or local SQLite fallback) for status updates
+- keep JobSane fully standalone — it does not import from `jobpipe.*`
+
+### What already exists in `C:\Users\larsv\jobsane\`
+
+The repo is a customised fork of the smart-agentic-ats-resume project. What is present:
+
+- `utils/crew.py` — full 4-agent + 4-task Crew implementation (researcher, profiler, resume_strategist,
+  interview_preparer). Uses `SerperDevTool`, `ScrapeWebsiteTool`, `FileReadTool`, `MDXSearchTool`.
+  Async execution on the first two tasks, sequential context chain on the last two.
+- `bin/crew_run.py` — CLI entry point that calls `job_application_crew.kickoff()` with hardcoded
+  example inputs. This becomes the starting point for the new `main.py` Flow entry point.
+- `streamlit_app.py` — skeleton UI referencing `db.connection`, `db.queries`, `utils.agents` (none
+  exist yet). Stub only; not the target interface for this topic.
+- `CLAUDE.md` — GitNexus code-intelligence configuration. Keep as-is.
+- `.gitnexus/` — already indexed. Keep as-is.
+
+What does **not** exist yet and must be built:
+- `Flow[ApplicationState]` orchestration replacing the flat Crew
+- Custom tools that connect to Jobpipe's data layer (profile, status, RR, artifact writer)
+- `ApplicationCase` input model and `ApplicationResult` output model
+- The `main.py` entry point that accepts a JSON file path and runs the flow
+- `db/` layer (SQLite or Supabase adapter — same seam pattern as Jobpipe's `db_adapter.py`)
+
+### Repo layout (target state after this topic)
+
+```
+jobsane/
+├── src/jobsane/
+│   ├── flow.py                  # Flow[ApplicationState] — main orchestrator
+│   ├── agents.py                # Agent factory functions (no YAML; inline definitions)
+│   ├── tools/
+│   │   ├── profile_tool.py      # SupabaseProfileTool — reads profile_pack or Supabase
+│   │   ├── rr_tool.py           # ReactiveResumeTool — calls RR REST API
+│   │   ├── status_tool.py       # StatusUpdateTool — writes status to Supabase/SQLite
+│   │   └── artifact_tool.py     # ArtifactWriterTool — writes output JSON to artifact dir
+│   ├── models.py                # ApplicationCase, ApplicationResult, ApplicationState
+│   └── main.py                  # CLI entry: accepts --case <path-to-json> [--dry-run]
+├── bin/crew_run.py              # keep — repurpose as dev test harness pointing at main.py
+├── utils/crew.py                # keep — reference implementation; do not delete yet
+├── streamlit_app.py             # keep skeleton; out of scope for this topic
+├── CLAUDE.md                    # keep — GitNexus config
+├── pyproject.toml               # update with new src layout + deps
+├── .env.example                 # OPENAI_API_KEY, SUPABASE_URL, SUPABASE_KEY, RR_BASE_URL
+└── README.md                    # update with new architecture and usage
+```
+
+> Note: do NOT use `crewai create flow` to scaffold — the repo already exists and has content.
+> Create `src/jobsane/` manually and wire `pyproject.toml` to point at it.
+
+### Data contracts
+
+#### Input: `ApplicationCase` (written by Jobpipe's `prepare_application.py`)
+
+```python
+# jobsane/src/jobsane/models.py
+class ApplicationCase(BaseModel):
+    job_id: str
+    job_title: str
+    employer: str
+    application_url: str
+    artifact_dir: str                  # absolute path to out_runs/<run_id>/<job_id>/
+    final_decision: str                # "APPLY" | "APPLY_STRONGLY"
+    job_requirements: dict             # from 03_parsed.json
+    profile_match: dict                # from 04_profile_match.json — fit_score, dimensions, notes
+    pivot_score: int                   # from 05_pivot.json
+    description_excerpt: str           # first 1000 chars of job description
+```
+
+This is read from `07_application_pack.json` (already written by Jobpipe's application_pack stage)
+or passed directly when calling JobSane from `prepare_application.py`.
+
+#### Output: `ApplicationResult` (written to `08_authoring_result.json`)
+
+```python
+class ApplicationResult(BaseModel):
+    job_id: str
+    status: str                        # "complete" | "partial" | "failed"
+    cv_patches: list[dict]             # structured changes applied to the CV
+    cover_letter_path: str             # absolute path to generated cover letter file
+    rr_resume_id: str                  # Reactive Resume document ID ("" if not pushed)
+    error: str | None = None
+    generated_at: str                  # ISO timestamp
+```
+
+#### Flow state: `ApplicationState`
+
+```python
+class ApplicationState(BaseModel):
+    # Inputs
+    case: ApplicationCase | None = None
+    dry_run: bool = False
+
+    # Intermediate
+    profile_text: str = ""             # full profile_pack.md contents
+    job_analysis: str = ""             # structured requirements from researcher agent
+    cv_patches: list[dict] = []        # CV patches from tailor agent (structured)
+    cover_letter: str = ""             # cover letter draft from writer agent
+
+    # Outputs
+    rr_resume_id: str = ""
+    cover_letter_path: str = ""
+    error: str = ""
+```
+
+### Flow architecture (`src/jobsane/flow.py`)
+
+Use `Flow[ApplicationState]` + `Agent.kickoff()` calls per step. Do NOT use `Crew.kickoff()` — the
+Flow IS the orchestrator and each step is a focused agent call.
+
+```python
+from crewai.flow.flow import Flow, listen, start, router
+from .models import ApplicationState, ApplicationCase, ApplicationResult
+from .agents import make_researcher, make_tailor, make_writer
+from .tools.profile_tool import SupabaseProfileTool
+from .tools.rr_tool import ReactiveResumeTool
+from .tools.artifact_tool import ArtifactWriterTool
+
+class JobSaneFlow(Flow[ApplicationState]):
+
+    @start()
+    def load_profile(self):
+        """Pure Python step: load candidate profile text."""
+        tool = SupabaseProfileTool()
+        self.state.profile_text = tool.run()   # reads from Supabase or profile_pack.md fallback
+
+    @listen(load_profile)
+    def analyse_job(self):
+        """Agent: extract structured requirements from the job case."""
+        agent = make_researcher()
+        result = agent.kickoff(
+            f"Analyse this job posting and extract structured requirements.\n\n"
+            f"Job title: {self.state.case.job_title}\n"
+            f"Employer: {self.state.case.employer}\n"
+            f"Requirements: {self.state.case.job_requirements}\n"
+            f"Description: {self.state.case.description_excerpt}"
+        )
+        self.state.job_analysis = result.raw
+
+    @listen(analyse_job)
+    def tailor_cv(self):
+        """Agent: produce structured CV patches aligned to job requirements."""
+        agent = make_tailor()
+        result = agent.kickoff(
+            f"Tailor this candidate's CV to the job requirements below.\n"
+            f"Output ONLY a JSON array of patch objects with keys: section, original, replacement, rationale.\n\n"
+            f"Profile:\n{self.state.profile_text}\n\n"
+            f"Job analysis:\n{self.state.job_analysis}\n\n"
+            f"Profile match score: {self.state.case.profile_match.get('fit_score')}/100",
+            response_format=CVPatchList,   # Pydantic model: list[CVPatch]
+        )
+        self.state.cv_patches = result.pydantic.patches
+
+    @listen(tailor_cv)
+    def write_cover_letter(self):
+        """Agent: write a cover letter using the CV patches and job analysis."""
+        agent = make_writer()
+        result = agent.kickoff(
+            f"Write a professional cover letter in Norwegian or English (match the job's language).\n\n"
+            f"Candidate profile:\n{self.state.profile_text}\n\n"
+            f"Job title: {self.state.case.job_title} at {self.state.case.employer}\n\n"
+            f"Key tailoring points:\n" +
+            "\n".join(f"- {p['rationale']}" for p in self.state.cv_patches[:5])
+        )
+        self.state.cover_letter = result.raw
+
+    @listen(write_cover_letter)
+    def push_to_rr(self):
+        """Pure Python step: push CV patches to Reactive Resume."""
+        if self.state.dry_run:
+            return
+        tool = ReactiveResumeTool()
+        rr_id = tool.run(patches=self.state.cv_patches)
+        self.state.rr_resume_id = rr_id
+
+    @listen(push_to_rr)
+    def save_artifacts(self):
+        """Pure Python step: write cover letter file + 08_authoring_result.json."""
+        tool = ArtifactWriterTool(artifact_dir=self.state.case.artifact_dir)
+        cl_path = tool.write_cover_letter(self.state.cover_letter, self.state.case.job_id)
+        self.state.cover_letter_path = cl_path
+        result = ApplicationResult(
+            job_id=self.state.case.job_id,
+            status="complete",
+            cv_patches=self.state.cv_patches,
+            cover_letter_path=cl_path,
+            rr_resume_id=self.state.rr_resume_id,
+        )
+        tool.write_result(result)
+```
+
+### Agents (`src/jobsane/agents.py`)
+
+Keep agent definitions inline (no YAML config files — jobsane is small enough and the
+original project didn't use YAML either).
+
+```python
+from crewai import Agent
+
+def make_researcher() -> Agent:
+    return Agent(
+        role="Job Requirements Analyst",
+        goal="Extract structured, actionable requirements from a job posting.",
+        backstory=(
+            "You are an expert at reading job postings and identifying the actual role "
+            "requirements, cutting through noise, seniority inflation, and nice-to-haves."
+        ),
+        llm="openai/gpt-4o-mini",     # cheap — structured extraction only
+        verbose=False,
+    )
+
+def make_tailor() -> Agent:
+    return Agent(
+        role="CV Tailoring Specialist",
+        goal="Produce specific, honest CV patches that highlight relevant experience.",
+        backstory=(
+            "You tailor CVs by making targeted, factual edits. You never invent experience. "
+            "Each patch includes the original text, the replacement, and a one-line rationale."
+        ),
+        llm="openai/gpt-4o",
+        verbose=False,
+    )
+
+def make_writer() -> Agent:
+    return Agent(
+        role="Application Writer",
+        goal="Write a compelling, authentic cover letter matched to the job and candidate.",
+        backstory=(
+            "You write cover letters that sound human, match the job's language and tone, "
+            "and highlight the candidate's most relevant experience without exaggeration."
+        ),
+        llm="openai/gpt-4o",
+        verbose=False,
+    )
+```
+
+Note: the original jobsane repo has a 4th agent (`interview_preparer`). That agent is
+**out of scope for this topic** — it stays in `utils/crew.py` as reference. Reintroduce it
+as a Flow step in a future topic when interview prep is part of the operator workflow.
+
+### Custom tools (`src/jobsane/tools/`)
+
+**`profile_tool.py` — SupabaseProfileTool**
+
+Returns a `CandidateProfile` dataclass with two fields:
+- `profile_md: str` — the narrative profile text (for AI context, cover letters, triage)
+- `resume_json: dict` — the full structured CV in RR format (for precise patch generation)
+
+The agents use `profile_md` for understanding and writing; `flow.py` passes `resume_json`
+to the tailor agent so it can reference exact sections when generating `CVPatch` objects.
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class CandidateProfile:
+    profile_md: str    # narrative text — AI context
+    resume_json: dict  # structured RR-format JSON — precise patch targets
+
+class SupabaseProfileTool(BaseTool):
+    name: str = "SupabaseProfileTool"
+    description: str = "Reads candidate profile and structured CV from Supabase or local fallback."
+
+    def _run(self) -> CandidateProfile:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        if supabase_url and supabase_key:
+            # SELECT profile_md, resume_json FROM candidate_profile ORDER BY version DESC LIMIT 1
+            row = ...  # Supabase query
+            return CandidateProfile(
+                profile_md=row["profile_md"],
+                resume_json=row["resume_json"],
+            )
+        else:
+            # Fallback: profile_md from profile_pack.md, resume_json from resume.json
+            data_root = Path(os.getenv("JOBPIPE_DATA_ROOT", str(Path.home() / "JobpipeData")))
+            profile_md = (data_root / "profile_pack.md").read_text(encoding="utf-8")
+            resume_json_path = data_root / "resume.json"
+            resume_json = json.loads(resume_json_path.read_text()) if resume_json_path.exists() else {}
+            return CandidateProfile(profile_md=profile_md, resume_json=resume_json)
+```
+
+**`rr_tool.py` — ReactiveResumeTool**
+
+```python
+class ReactiveResumeTool(BaseTool):
+    name: str = "ReactiveResumeTool"
+    description: str = "Pushes CV patches to Reactive Resume via REST API. Returns resume ID."
+
+    def _run(self, patches: list[dict]) -> str:
+        base_url = os.getenv("RR_BASE_URL", "http://localhost:3000")
+        # POST /api/resume with patch payload
+        # Returns the created/updated resume ID
+        ...
+```
+
+Implementation note: `POST /api/resume` on Reactive Resume (self-hosted) expects a JSON body
+matching the resume schema. For patches, the simplest approach is:
+1. `GET /api/resume/{id}` to fetch the current resume (if `RR_RESUME_ID` env var is set)
+2. Apply patches to the returned JSON
+3. `PUT /api/resume/{id}` (or `POST` to create a new one)
+4. Return the resume ID
+
+This mirrors what `jobpipe/integrations/reactive_resume_client.py` does (Topic 32). If that
+module exists when JobSane is implemented, import the client class from a shared location
+rather than duplicating the HTTP logic. If it does not yet exist, implement directly in
+`rr_tool.py` and note the duplication for cleanup.
+
+**`artifact_tool.py` — ArtifactWriterTool**
+
+```python
+class ArtifactWriterTool(BaseTool):
+    artifact_dir: str
+
+    def write_cover_letter(self, text: str, job_id: str) -> str:
+        path = Path(self.artifact_dir) / f"cover_letter_{job_id}.md"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def write_result(self, result: ApplicationResult) -> str:
+        path = Path(self.artifact_dir) / "08_authoring_result.json"
+        path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        return str(path)
+```
+
+**`status_tool.py` — StatusUpdateTool**
+
+```python
+class StatusUpdateTool(BaseTool):
+    name: str = "StatusUpdateTool"
+    description: str = "Updates job status and saves artifact refs to Supabase or local application_state.json."
+
+    def _run(self, job_id: str, status: str, artifact_refs: dict) -> str:
+        # If Supabase is configured → upsert into jobs/applications table
+        # Otherwise → update application_state.json in JOBPIPE_DATA_ROOT/reports/
+        ...
+```
+
+### CLI entry point (`src/jobsane/main.py`)
+
+```python
+import argparse, json
+from pathlib import Path
+from .flow import JobSaneFlow
+from .models import ApplicationCase, ApplicationState
+
+def main():
+    parser = argparse.ArgumentParser(description="JobSane — AI application authoring crew")
+    parser.add_argument("--case", required=True, help="Path to ApplicationCase JSON file")
+    parser.add_argument("--dry-run", action="store_true", help="Run without pushing to RR or DB")
+    args = parser.parse_args()
+
+    case_data = json.loads(Path(args.case).read_text())
+    case = ApplicationCase(**case_data)
+
+    flow = JobSaneFlow()
+    flow.kickoff(inputs={
+        "case": case.model_dump(),
+        "dry_run": args.dry_run,
+    })
+
+if __name__ == "__main__":
+    main()
+```
+
+`pyproject.toml` entry point:
+```toml
+[project.scripts]
+jobsane = "jobsane.main:main"
+```
+
+### Integration seam: Jobpipe → JobSane
+
+In `jobpipe/cli/prepare_application.py` (Topic 32 target), after generating the
+`07_application_pack.json`:
+
+```python
+import subprocess, json
+from pathlib import Path
+
+def call_jobsane(case_path: Path, dry_run: bool = False) -> dict:
+    """Invoke JobSane as a subprocess. Returns ApplicationResult dict."""
+    cmd = ["jobsane", "--case", str(case_path)]
+    if dry_run:
+        cmd.append("--dry-run")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    # 08_authoring_result.json is written by JobSane into the same artifact_dir
+    result_path = case_path.parent / "08_authoring_result.json"
+    return json.loads(result_path.read_text())
+```
+
+Alternative: if JobSane is installed in the same `.venv` as Jobpipe:
+```python
+from jobsane.flow import JobSaneFlow
+from jobsane.models import ApplicationCase
+```
+
+Both approaches are valid. Prefer subprocess for isolation; prefer direct import for speed.
+
+### Environment variables
+
+```
+# Required
+OPENAI_API_KEY=...
+
+# Optional — profile source (falls back to JOBPIPE_DATA_ROOT/profile_pack.md)
+SUPABASE_URL=https://...supabase.co
+SUPABASE_KEY=...
+
+# Optional — Reactive Resume integration (falls back to dry-run for push step)
+RR_BASE_URL=http://localhost:3000
+RR_RESUME_ID=...         # existing RR resume to patch (if blank, creates new)
+
+# Optional — shared data root override
+JOBPIPE_DATA_ROOT=~/JobpipeData
+```
+
+### JobVibe project tracking
+
+Add a `projects/jobsane/` folder in `C:\Users\larsv\JobVibe\projects\` mirroring the
+`projects/jobpipe/` structure:
+
+```
+projects/jobsane/
+├── project.yaml       # repo_path, github_project_number, default_issue
+├── conventions.md     # JobSane-specific crew conventions
+└── repo_map.md        # entry points, seams, what each module does
+```
+
+This allows the JobVibe crew (used by Lars + Claude for dev work) to be pointed at the
+JobSane repo when making changes, using the same audit/plan/implement/review workflow.
+
+`project.yaml` minimum content:
+```yaml
+project_name: jobsane
+repo_path: C:\Users\larsv\jobsane
+repo_full_name: larsvaerland/JobSane
+github_project_number: 6
+```
+
+### Implementation order within this topic
+
+1. Create `src/jobsane/` package structure and wire `pyproject.toml`
+2. Implement `models.py` — `ApplicationCase`, `ApplicationResult`, `ApplicationState`, `CVPatch`, `CVPatchList`
+3. Implement `agents.py` — 3 inline Agent factories (researcher, tailor, writer)
+4. Implement `tools/profile_tool.py` — local fallback first, Supabase optional
+5. Implement `tools/artifact_tool.py` — pure file writes
+6. Implement `tools/rr_tool.py` — RR REST API push (can stub for dry-run)
+7. Implement `tools/status_tool.py` — application_state.json write first, Supabase optional
+8. Implement `flow.py` — `JobSaneFlow` wiring all steps
+9. Implement `main.py` — CLI entry point
+10. Update `pyproject.toml` with new src layout and entry point
+11. Smoke-test: `jobsane --case <path-to-07_application_pack.json> --dry-run`
+12. Add `projects/jobsane/` to JobVibe
+13. Update `AGENT_STATUS.md` with handoff state
+
+### Validation
+
+```powershell
+# From C:\Users\larsv\jobsane\
+.venv\Scripts\python.exe -m jobsane.main --case <path-to-07_application_pack.json> --dry-run
+```
+
+Expected outcomes:
+- Flow runs without error
+- `08_authoring_result.json` is written to the job artifact directory
+- `cover_letter_<job_id>.md` is written to the job artifact directory
+- No writes to Reactive Resume or Supabase (dry-run)
+
+Full-run validation (after RR is running):
+- `rr_resume_id` is populated in `08_authoring_result.json`
+- The resume appears in Reactive Resume UI at `http://localhost:3000`
+
+### Architecture note: JobSane is headless
+
+JobSane has no UI of its own. It is triggered by JobDesk (Topic 36) via CLI subprocess or
+HTTP endpoint. All results are written to Supabase (or local artifact files as fallback) and
+surfaced back in the JobDesk unified dashboard. The operator never interacts with JobSane
+directly — they work in JobDesk, which calls JobSane and displays the results.
+
+`streamlit_app.py` in the jobsane repo is a design sketch from the original project. Do not
+wire it up and do not build a separate JobSane UI. That maintenance overhead is not worth it
+when JobDesk is the one control surface.
+
+### Not in scope for this topic
+
+- Any UI layer inside the jobsane repo — JobDesk owns the operator surface (Topic 36)
+- Interview prep agent — keep in `utils/crew.py` as reference; reintroduce in a later topic
+- Supabase DB backend — optional fallback; local file operations are sufficient to unblock testing
+- Batch mode (processing multiple jobs) — single-case execution only
+- Calibration tooling — own topic (Topic 37)
+
+## Topic 34. Supabase Intake Migration
+
+Status: pending (prereq: Topic 33 done)
+
+Scope:
+- replace the Google Apps Script + Google Sheet + pull_sheets_csv intake chain with a Supabase Edge Function
+- eliminate the three fragile links: Apps Script rate limits, Sheet quota, CSV round-trip
+- keep the pipeline stages unchanged — only the connector input source changes
+
+### Target repo structure
+
+| Repo | Role |
+|---|---|
+| `jobpipe` | Python pipeline engine — stays, reads from Supabase instead of JSONL |
+| `JobData` | Supabase project repo — schema migrations, Edge Functions, RLS policies |
+| `JobDesk` | Operator GUI — dashboard server evolved into a deployable web app (Topic 36) |
+
+### Current state (as of 2026-05)
+
+In place:
+- Apps Script polls NAV `pam-stilling-feed` API hourly, writes to Google Sheet `JobFeed` tab (~35,850 rows)
+- `pull_sheets_csv.py` pulls changed rows from the Sheet, writes `nav_connector.jsonl`
+- **`JobData` repo bootstrapped** — GitHub: `larsvaerland/JobData`, local: `C:\Users\larsv\supabase\`
+  - Working Edge Function at `functions/import-nav-jobs/index.ts` (chunked pagination, cursor state, retry handling)
+  - `config.toml` present
+  - Schema/seed incomplete — rebuild from migrations (see target 2 below)
+- **`JobpipeData` repo created** — GitHub: `larsvaerland/JobpipeData` (private), local: `C:\Users\larsv\JobpipeData\`
+  - Contains: profile_pack.md, resume.json, reports/ledger.sqlite (12MB), settings_state.json, application_state.json
+  - Excludes: db/jobpipe.sqlite (242MB primary DB — local only), artifacts/, out_runs/, .env, gmail tokens
+
+Not in place:
+- Supabase Postgres schema migrations (proper migration files)
+- Jobpipe connector that reads from Supabase instead of JSONL
+
+### Implementation targets
+
+**1. JobData repo — add migrations structure**
+
+The repo already exists. Add the migrations directory:
+```
+C:\Users\larsv\supabase\          ← local path (GitHub: larsvaerland/JobData)
+  config.toml                     ← already there
+  functions/
+    import-nav-jobs/              ← already there, working Edge Function
+      index.ts
+    nav-intake/                   ← new: rename/adapt for production use
+      index.ts
+  supabase/
+    migrations/
+      001_jobs_feed.sql           ← new
+      002_ledger.sql              ← new
+```
+
+**2. `jobs_feed` Postgres table** — `supabase/migrations/001_jobs_feed.sql`:
+
+```sql
+create table if not exists jobs_feed (
+    job_id text primary key,
+    source text not null default 'nav',
+    raw_json jsonb not null,
+    title text,
+    employer text,
+    work_city text,
+    work_postalcode text,
+    application_due timestamptz,
+    source_url text,
+    application_url text,
+    first_seen_at timestamptz default now(),
+    updated_at timestamptz default now(),
+    pulled_at timestamptz,
+    processed_at timestamptz,
+    status text default 'pending'   -- pending | queued | processed | skipped
+);
+create index if not exists jobs_feed_status_idx on jobs_feed(status);
+create index if not exists jobs_feed_updated_idx on jobs_feed(updated_at);
+```
+
+**3. NAV intake Edge Function** — `supabase/functions/nav-intake/index.ts`:
+
+Starting point: `JobData/functions/import-nav-jobs/` — this is working code with chunked pagination, cursor state, retry handling, and raw envelope storage. The function name changes from `import-nav-jobs` to `nav-intake` for clarity. **Important**: the database schema in the old hosted project was never properly finished — do not reuse `seed.sql` or assume any existing Postgres objects. Rebuild all schema from the migration files defined below. The edge function logic itself is reliable; only the schema layer needs a clean start. Adapt it to:
+- Accept a cron trigger (Supabase scheduled functions via `pg_cron` or Supabase Cron)
+- Poll `https://arbeidsplassen.nav.no/public-feed/api/v1/ads` with pagination
+- Upsert rows into `jobs_feed` with `status = 'pending'`
+- Log run stats to a `intake_runs` table
+
+Schedule: every 30 minutes (twice as frequent as Apps Script, no rate limit issues).
+
+**4. Jobpipe Supabase connector** — new file `jobpipe/connectors/supabase_nav.py`:
+
+```python
+def pull_supabase_nav_jobs(
+    supabase_url: str,
+    supabase_key: str,
+    limit: int = 200,
+    since: str = "",
+) -> list[dict]:
+    """Pull pending jobs from Supabase jobs_feed table, return as normalized dicts."""
+    ...
+
+def mark_jobs_queued(supabase_url: str, supabase_key: str, job_ids: list[str]) -> None:
+    """Mark pulled jobs as queued so they aren't re-pulled."""
+    ...
+```
+
+Uses `httpx` (already in deps) to call Supabase REST API directly — no heavy client library needed.
+
+**5. Connector env config** — add to `.env` (and `settings_state.py`):
+```
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_ANON_KEY=<anon key>
+```
+
+**6. `pull_sheets_csv.py` deprecation path**
+
+Do not delete yet. Add a `--source supabase` flag to the intake CLI that routes through the Supabase connector instead of the Sheet. Keep Sheet connector working as fallback. Remove Sheet connector in Topic 35.
+
+**7. Database adapter seam** — new file `jobpipe/core/db_adapter.py`:
+
+```python
+class DbBackend(Protocol):
+    def upsert_job(self, row: dict) -> None: ...
+    def get_pending_jobs(self, limit: int) -> list[dict]: ...
+    def mark_processed(self, job_id: str, status: str) -> None: ...
+
+class SqliteBackend:
+    """Current behavior — reads/writes JSONL + SQLite."""
+    ...
+
+class SupabaseBackend:
+    """New backend — reads/writes Supabase Postgres."""
+    ...
+```
+
+The pipeline instantiates the correct backend from env config. This is the seam the user described — switch from local SQLite to hosted Supabase by setting `DB_BACKEND=supabase` in `.env`.
+
+Validation:
+- `supabase db push` applies migrations cleanly
+- Edge Function deploys and upserts at least one NAV job into `jobs_feed`
+- `pull_supabase_nav_jobs()` returns rows from the table
+- `drain_queue --source supabase` processes jobs end-to-end without errors
+- Apps Script intake still works as fallback
+
+---
+
+## Topic 35. Supabase Data Layer (Ledger + Artifacts)
+
+Status: pending (prereq: Topic 34 done)
+
+Scope:
+- replace the SQLite ledger with Postgres as the authoritative job state store
+- keep the pipeline artifact files (per-job JSON in `out_runs/`) — they are the debug record, not the truth store
+- dashboard payload builds from Postgres, not SQLite
+
+### Implementation targets
+
+**1. Ledger table migration** — `C:\Users\larsv\supabase\supabase\migrations\002_ledger.sql` (JobData repo, local dir is `supabase/`):
+
+Mirror the current `ledger` table schema exactly, adding `user_id uuid references auth.users` for future multi-user support (nullable for now, single-user mode sets it to a fixed UUID).
+
+```sql
+create table if not exists ledger (
+    job_id text primary key,
+    user_id uuid,                    -- null = single-user mode
+    run_id text,
+    run_mtime real,
+    title text,
+    employer text,
+    final_decision text,
+    fit_score real,
+    pivot_score real,
+    triage_result text,
+    triage_signals jsonb,
+    skip_reason text,
+    source_url text,
+    application_url text,
+    job_source text,
+    application_status text,
+    application_status_updated_at text,
+    application_notes text,
+    -- ... all other ledger columns
+    updated_at timestamptz default now()
+);
+create index if not exists ledger_decision_idx on ledger(final_decision);
+create index if not exists ledger_fit_idx on ledger(fit_score desc);
+```
+
+**2. `sync_ledger.py` Supabase path**
+
+Add `--backend supabase` flag. When set, upserts go to Postgres instead of SQLite. Keep SQLite path working. Read `SUPABASE_URL` and `SUPABASE_ANON_KEY` from `.env`.
+
+**3. `build_payload()` Supabase path**
+
+In `jobpipe/projections/dashboard.py`, `build_payload()` currently queries SQLite. Add a `db_backend` parameter:
+- `backend="sqlite"` (default) — current behavior
+- `backend="supabase"` — queries Postgres via `httpx`
+
+Dashboard server reads the backend from settings.
+
+**4. Application state migration**
+
+`application_state.json` → `application_events` Postgres table:
+```sql
+create table if not exists application_events (
+    event_id uuid primary key default gen_random_uuid(),
+    job_id text not null,
+    user_id uuid,
+    status text not null,
+    notes text,
+    source text,          -- 'manual' | 'gmail_scan'
+    created_at timestamptz default now()
+);
+```
+
+`mark_status.py` writes to this table when `--backend supabase`.
+
+**5. OSS / private seam**
+
+The database adapter seam from Topic 34 (`DbBackend` protocol) is the split point:
+- OSS version: ships with `SqliteBackend` only. Works out of the box, zero config.
+- Private/hosted version: sets `DB_BACKEND=supabase` in `.env`, gets `SupabaseBackend` with full multi-user support.
+
+No code changes needed between OSS and private — only env config. The OSS repo does not include the Supabase key or project config. The `JobData` repo (private) contains the Supabase project, migrations, and RLS policies.
+
+Validation:
+- `sync_ledger --backend supabase` upserts all ledger rows to Postgres
+- `export_dashboard --backend supabase` builds correct payload from Postgres
+- Dashboard at `http://localhost:5100` shows same jobs whether SQLite or Supabase backend
+- `mark_status --backend supabase <job_id> applied` writes to `application_events` table
+- SQLite path still works unchanged (OSS mode)
+
+---
+
+## Topic 36. JobDesk — Unified Operator Dashboard
+
+Status: pending (prereq: Topics 33.5 and 35 done)
+
+Scope:
+- build `JobDesk` as the one control surface for the entire job hunting workflow
+- replace the static `dashboard.html` with a live FastAPI + Jinja2 server-rendered dashboard
+- wire JobDesk to JobSane (trigger application prep, display results)
+- wire JobDesk to Supabase as the data spine so everything lives in one place
+- define the OSS vs private split: one GUI codebase, adapter seam at the database layer
+
+### The unified dashboard vision
+
+JobDesk is the single place where Lars:
+- sees all scored jobs and filters/sorts them
+- triggers application preparation (calls JobSane as a background task)
+- views the generated CV patches and cover letter for a job
+- opens Reactive Resume to manually polish the CV
+- tracks application status through the full cycle
+- runs calibration to tune the triage scoring (Topic 37)
+
+JobSane has no UI of its own. It is a headless crew triggered from JobDesk.
+Reactive Resume handles manual CV editing. All data — scored jobs, CV versions, cover
+letters, application status — lives in Supabase so nothing is split across files.
+
+### Confirmed repo map (as of 2026-05)
+
+```
+larsvaerland/Jobpipe      local: C:\Users\larsv\Jobpipe\        pipeline engine, active
+larsvaerland/JobSane      local: C:\Users\larsv\jobsane\        AI application crew, built in Topic 33.5
+larsvaerland/JobVibe      local: C:\Users\larsv\JobVibe\        dev crew orchestrator, active
+larsvaerland/JobData      local: C:\Users\larsv\supabase\       Supabase project (note: local dir name differs)
+larsvaerland/JobpipeData  local: C:\Users\larsv\JobpipeData\    runtime state, private
+larsvaerland/JobDesk      local: C:\Users\larsv\JobDesk\        operator GUI, empty — built in this topic
+Gsync/jobsync             local: C:\Users\larsv\jobsync\        design reference only, MIT, read-only
+```
+
+### Tech stack
+
+**FastAPI + Jinja2** for the MVP:
+- Python throughout — no JS build toolchain, no new language
+- Jinja2 server-rendered HTML templates — evolves the current `dashboard_template.html` into
+  live pages with action buttons that POST to FastAPI endpoints
+- HTMX for partial-page updates (status badges, "Preparing…" → "Done" transitions) — one
+  `<script>` tag, no framework
+- Supabase Python client for data reads/writes + realtime subscriptions for live status updates
+- FastAPI background tasks for triggering JobSane without blocking the UI
+
+When the MVP is solid and the Supabase schema is stable, the frontend can be migrated to
+Next.js (Supabase has first-class Next.js support) without changing the backend or data model.
+That decision is deferred — do not start with Next.js.
+
+### Supabase schema (canonical data spine)
+
+This is the source of truth for all job hunting data. Defined in `JobData` migrations.
+
+```sql
+-- Core job record (synced from NAV intake)
+jobs (
+  id              text primary key,   -- NAV job_id
+  title           text,
+  employer        text,
+  application_url text,
+  final_decision  text,               -- SKIP / REVIEW_LOW / REVIEW_HIGH / APPLY / APPLY_STRONGLY
+  fit_score       int,
+  pivot_score     int,
+  artifact_dir    text,               -- path to out_runs/<run_id>/<job_id>/
+  ingested_at     timestamptz,
+  expires_at      timestamptz
+)
+
+-- Application lifecycle
+applications (
+  id              uuid primary key default gen_random_uuid(),
+  job_id          text references jobs(id),
+  status          text,               -- shortlisted / prepared / applied / interview / rejected / dismissed
+  notes           text,
+  status_updated_at timestamptz,
+  created_at      timestamptz default now()
+)
+
+-- JobSane output: generated CV patches per job
+cv_versions (
+  id              uuid primary key default gen_random_uuid(),
+  job_id          text references jobs(id),
+  rr_resume_id    text,               -- Reactive Resume document ID
+  patches         jsonb,              -- list of CVPatch objects
+  generated_at    timestamptz,
+  accepted        bool default false  -- did the user accept this version?
+)
+
+-- JobSane output: cover letters
+cover_letters (
+  id              uuid primary key default gen_random_uuid(),
+  job_id          text references jobs(id),
+  body            text,
+  version         int default 1,
+  generated_at    timestamptz,
+  final           bool default false  -- marked final by user after manual polish
+)
+
+-- Master CV and candidate profile — the AI reads from here, not from RR directly
+candidate_profile (
+  id              uuid primary key default gen_random_uuid(),
+  resume_json     jsonb,              -- full CV in Reactive Resume JSON format (structured, for precise patching)
+  profile_md      text,               -- profile_pack.md narrative (for AI context, cover letters, triage)
+  rr_resume_id    text,               -- RR resume ID this was imported from (onboarding reference)
+  version         int default 1,      -- increment on each manual update
+  updated_at      timestamptz default now(),
+  created_at      timestamptz default now()
+)
+-- One row per user. Both columns serve different AI jobs:
+--   resume_json → precise patch targets ("replace work[0].highlights[2]")
+--   profile_md  → narrative context for cover letters, triage calibration, scoring
+-- Onboarding: import from RR → populate resume_json → derive profile_md
+-- Sync: profile_pack.md in JobpipeData can be pulled from / pushed to profile_md
+-- RR role: onboarding importer + final visual polish + PDF export. Optional after onboarding.
+
+-- Calibration feedback (Topic 37)
+calibration_events (
+  id              uuid primary key default gen_random_uuid(),
+  job_id          text references jobs(id),
+  event_type      text,               -- 'dismissed' / 'applied' / 'rejected' / 'interview'
+  reason_tag      text,               -- 'wrong_domain' / 'overqualified' / 'salary' / 'commute' / etc.
+  ai_fit_score    int,                -- what the AI scored
+  created_at      timestamptz default now()
+)
+```
+
+### JobDesk project layout
+
+```
+JobDesk/
+  main.py                    # FastAPI app entry point
+  templates/
+    base.html                # shared layout, nav
+    dashboard.html           # job list — main view
+    job_detail.html          # single job: scoring, CV patches, cover letter, status
+    settings.html            # integrations, RR URL, profile
+  static/
+    htmx.min.js              # HTMX for partial updates (one file, no build step)
+    styles.css               # extracted from current dashboard_template.html
+  jobdesk/
+    api/
+      jobs.py                # GET /jobs, GET /jobs/{id}
+      applications.py        # POST /jobs/{id}/prepare, PATCH /jobs/{id}/status
+      cover_letters.py       # GET/PUT /jobs/{id}/cover-letter
+      cv_versions.py         # GET /jobs/{id}/cv-versions
+    db/
+      adapter.py             # DBAdapter interface
+      sqlite_backend.py      # reads from ledger.sqlite (OSS fallback)
+      supabase_backend.py    # reads/writes from Supabase (primary)
+    jobsane_client.py        # calls JobSane CLI or HTTP endpoint as background task
+    rr_client.py             # Reactive Resume REST client (shared with JobSane)
+  requirements.txt
+  .env.example               # JOBPIPE_DATA_ROOT, DB_BACKEND, SUPABASE_URL, SUPABASE_KEY,
+                             # OPENAI_API_KEY, RR_BASE_URL
+  README.md
+```
+
+### Implementation targets
+
+**1. Project bootstrap + static dashboard migration**
+
+- Init FastAPI app with Jinja2 templates
+- Port current `dashboard_template.html` into `templates/dashboard.html` — same visual,
+  now served live from Supabase/SQLite instead of embedded JSON
+- `GET /` renders the job list using the DB adapter
+- `GET /jobs/{id}` renders the job detail panel
+
+**2. Onboarding: import CV from Reactive Resume → Supabase**
+
+First-time setup step — done once, not per job:
+
+- `GET /onboarding` — setup page shown when `candidate_profile` table is empty
+- User enters their RR base URL + resume ID (or uploads `resume.json` directly)
+- `POST /onboarding/import-rr` — calls RR API `GET /api/resume/{id}`, stores result in
+  `candidate_profile.resume_json` + derives initial `profile_md` from the JSON
+- After import: user reviews the markdown narrative, edits if needed, saves
+- This is the only time RR is required as a dependency — everything else works without it
+- Re-import available from Settings if the canonical CV is updated in RR
+
+**3. Action buttons wired to JobSane**
+
+- `POST /jobs/{id}/prepare` — triggers `jobsane --case <path>` as a FastAPI background task,
+  reads `candidate_profile` from Supabase, updates application status to `prepared` when done
+- Dashboard job row shows live status badge: `shortlisted` → `preparing...` → `ready to review`
+- Job detail page shows CV patches and cover letter once prepared
+
+**4. CV patch review panel** (human-in-the-loop before anything goes to RR)
+
+This is the key step where the operator controls what the AI actually changes:
+
+- `GET /jobs/{id}/cv-patches` — renders the list of `CVPatch` objects from `cv_versions`
+- Each patch shows: section, original text, suggested replacement, rationale
+- Accept / Reject buttons per patch — saves decision to `cv_versions.patches[n].accepted`
+- "Apply accepted patches" button — composes final tailored `resume_json` from
+  `candidate_profile.resume_json` + accepted patches, pushes to RR for visual polish
+- User then opens RR to do final layout/formatting tweaks and export PDF
+- The AI never writes the final CV unilaterally — all patch decisions are the operator's
+
+**5. Cover letter panel**
+
+- `GET /jobs/{id}/cover-letter` — renders cover letter from `cover_letters` table
+- Editable textarea with `PUT /jobs/{id}/cover-letter` to save edits
+- "Mark as final" button sets `final=true`
+- For AI iteration: point the user to a Claude chat session with the cover letter as
+  context — no custom chat UI needed in JobDesk for the MVP
+
+**6. Status tracking**
+
+- `PATCH /jobs/{id}/status` — updates `applications` table status
+- Status buttons in job detail: Shortlist / Ready to review / Applied / Interview / Rejected / Dismiss
+- Same statuses as current `mark_status` CLI — backward compatible
+
+**7. Reactive Resume link**
+
+- Job detail shows "Open in Reactive Resume →" link to `RR_BASE_URL/resume/{rr_resume_id}`
+  after patches are applied and pushed
+- RR role: visual polish (fonts, layout, spacing) + PDF export only — not substantive editing
+- After PDF export, user saves to `<job_dir>/10_tailored_resume.pdf` and marks CV as `accepted`
+- RR is optional: if `RR_BASE_URL` is not set, the tailored JSON is saved locally and user
+  can use any renderer they prefer
+
+**6. OSS fallback (SQLite)**
+
+- `DB_BACKEND=sqlite` (default) → reads from `ledger.sqlite`, writes application status to
+  `application_state.json` — same as today, no Supabase required
+- `DB_BACKEND=supabase` → all reads/writes go to Supabase
+- No code difference between modes beyond the adapter
+
+**7. Single-user setup flow** (target: 5 minutes)
+
+```bash
+git clone https://github.com/larsvaerland/JobDesk
+cd JobDesk
+cp .env.example .env           # set OPENAI_API_KEY, JOBPIPE_DATA_ROOT
+pip install -r requirements.txt
+python main.py                 # http://localhost:5100
+```
+
+Validation:
+- Fresh clone + `.env` setup works without Supabase credentials
+- Dashboard shows jobs from SQLite ledger
+- "Prepare Application" button triggers JobSane and updates status live
+- Cover letter panel shows generated output, accepts manual edits
+- "Open in Reactive Resume" link works when `RR_BASE_URL` is set
+- `DB_BACKEND=supabase` switch works without code changes
+- `AGENT_STATUS.md` updated with final repo ownership map and handoff state
+
+## Topic 37. Triage Calibration
+
+Status: pending (prereq: Topic 36 done)
+
+Scope:
+- close the feedback loop between operator decisions and AI triage scoring
+- surface systematic scoring errors so the pipeline scores what Lars actually wants
+- keep the calibration mechanism transparent and operator-controlled — no silent auto-tuning
+
+### The problem this solves
+
+The AI scores jobs 0–100 for fit and pivot. But Lars dismisses some high-scoring jobs
+and applies for some lower-scoring ones. Without a feedback loop, the scoring drifts from
+reality and useful signal is wasted. Leads from recruiters also have a different quality
+profile than the broad NAV feed — this needs to be visible and adjustable.
+
+### Calibration data sources
+
+All decision data is already being written to Supabase (Topic 36) in `calibration_events`
+and `applications`. The calibration crew reads from these tables — no new data collection
+needed.
+
+### JobSane calibration mode
+
+JobSane gains a second Flow: `CalibrationFlow`.
+
+Triggered from JobDesk (or CLI: `jobsane calibrate`) — runs on demand, not per-job.
+
+```python
+class CalibrationFlow(Flow[CalibrationState]):
+
+    @start()
+    def load_decisions(self):
+        """Load all applications with outcomes + their AI scores."""
+        # reads calibration_events + applications + jobs from Supabase
+
+    @listen(load_decisions)
+    def analyse_mismatches(self):
+        """Agent: find systematic patterns in where AI scores diverged from decisions."""
+        # e.g. "12 jobs scored 70+ that were dismissed — 9 were 'wrong domain'"
+        # e.g. "lead-sourced jobs convert to applied at 3× the rate of NAV feed at same score"
+
+    @listen(analyse_mismatches)
+    def generate_recommendations(self):
+        """Agent: produce concrete, actionable recommendations."""
+        # e.g. "lower apply_fit threshold for lead connector from 67 to 58"
+        # e.g. "add 'konsulent' to hard_no_title_regex"
+        # e.g. "profile_pack.md undersells X skill — update section Y"
+
+    @listen(generate_recommendations)
+    def save_calibration_report(self):
+        """Pure Python: write calibration report + proposed config changes."""
+```
+
+### Calibration output
+
+`CalibrationReport`:
+```python
+class CalibrationReport(BaseModel):
+    run_date: str
+    decisions_analysed: int
+    mismatch_patterns: list[str]         # human-readable findings
+    threshold_suggestions: dict          # e.g. {"apply_fit": 63, "review_high_min_fit": 55}
+    hard_no_additions: list[str]         # suggested new title patterns to block
+    profile_notes: list[str]             # suggestions for profile_pack.md updates
+    connector_quality: dict              # lead vs NAV feed conversion rates
+```
+
+The report is shown in JobDesk's calibration view. The operator reviews it and applies
+changes manually — no automatic config mutation. Changes to `pipeline.v1.yaml` and
+`profile_pack.md` are always a deliberate operator action.
+
+### JobDesk calibration view
+
+- `GET /calibration` — renders the latest calibration report
+- `POST /calibration/run` — triggers `CalibrationFlow` as a background task
+- Shows: mismatch patterns, suggested threshold changes, connector quality breakdown
+- "Apply suggestion" buttons generate a diff preview — operator confirms before writing
+
+### Reason tags in the dismiss flow
+
+To make calibration useful, dismissals need a reason. JobDesk's dismiss action gets a
+reason selector:
+
+```
+Why are you dismissing this job?
+  ○ Wrong domain / not relevant
+  ○ Overqualified / too junior
+  ○ Salary / location
+  ○ Company culture / red flags
+  ○ Already applied elsewhere
+  ○ Other
+```
+
+This writes `reason_tag` to `calibration_events`. Without tags, the calibration crew can
+only see that dismissals happened — not why.
+
+### Connector quality tracking
+
+`calibration_events` records the connector source (`nav` vs `lead`). The calibration crew
+computes:
+- Lead conversion rate vs NAV feed conversion rate at equal fit scores
+- Whether the semantic pre-filter is over-filtering leads (leads bypass geo + semantic, but
+  the calibration should verify this is correct)
+- Distribution of dismiss reasons by connector
+
+### Implementation order
+
+1. Add reason-tag UI to JobDesk dismiss action (small JS change to status panel)
+2. Implement `CalibrationState`, `CalibrationReport` models in JobSane `models.py`
+3. Implement `CalibrationFlow` in `src/jobsane/calibration_flow.py`
+4. Wire `jobsane calibrate` CLI command in `main.py`
+5. Add `GET /calibration` + `POST /calibration/run` routes to JobDesk
+6. Build calibration view template in JobDesk
+7. Smoke-test with real decision history from `applications` + `calibration_events`
+
+Validation:
+- `jobsane calibrate --dry-run` produces a report without writing anything
+- Report surfaces at least one actionable finding from real decision history
+- JobDesk calibration view shows the report and the reason-tag breakdown
+- At least one threshold suggestion or hard-no addition is reviewed by operator
+
+---
 
 ## Sprint Operating Rule
 
@@ -2714,6 +4133,26 @@ Questions:
 
 Needed before:
 - any larger cleanup/rewrite effort that aims to reduce drift rather than add more layers
+
+### R6. OSS intake source — removing the Google dependency
+
+Context:
+- The OSS version of `jobpipe` + `JobDesk` currently inherits the Google Apps Script + Google Sheet intake chain as the only NAV feed source
+- This is not user-friendly for new OSS users: requires a Google Cloud project, Apps Script deployment, Sheet schema setup, and OAuth credentials — all before they can process a single job
+- The private setup solves this cleanly with the Supabase Edge Function (Topic 34), but that config is in the private `JobData` repo
+
+Questions:
+- Should the OSS version optionally support Supabase intake as well, so users can self-host the Edge Function instead of setting up Google infra?
+- Is there a simpler pure-Python scheduled intake path (e.g. a `pull_nav_direct.py` CLI script that polls NAV API directly on a schedule) that would work without any cloud service for single-user OSS?
+- Could the OSS `JobDesk` ship with a built-in lightweight scheduler (APScheduler or similar) so the user just sets a cron-like interval in `.env` and the server pulls NAV jobs itself — no external service required?
+
+The most user-friendly path is probably: OSS users get a built-in polling mode (Python scheduler, no Google, no Supabase required), with an optional Supabase Edge Function config for users who want cloud-hosted intake. The `JobData` Supabase project stays private but the OSS Supabase path just needs a `SUPABASE_URL` + key — the schema is open.
+
+Needed before:
+- any decision on OSS intake architecture
+- writing the `JobDesk` README "5-minute setup" guide
+
+Do not investigate until Topics 34–36 are complete and the private intake path is working end-to-end.
 
 ### R5. Prototype intake: CV tailoring + cover-letter generation
 
