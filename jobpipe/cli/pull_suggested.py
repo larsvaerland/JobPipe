@@ -42,9 +42,13 @@ from urllib.error import URLError, HTTPError
 from jobpipe.core.lead_intake import append_leads
 from jobpipe.core.paths import bootstrap_private_data, get_jobpipe_paths
 
-# Windows cp1252 consoles can't encode arbitrary Unicode — wrap stdout.
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _fix_windows_stdout() -> None:
+    """Wrap stdout with UTF-8 encoding on Windows to avoid cp1252 encode errors.
+
+    Called from main() only — not at module level so that pytest capture works.
+    """
+    if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # BeautifulSoup4 (required — in requirements.txt)
 try:
@@ -264,10 +268,62 @@ def _normalize_html_fallback(soup: "BeautifulSoup", finnkode: str, source_url: s
     }
 
 
-def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Optional[dict]:
-    """Fetch a FINN job ad. Returns normalized pipeline dict or None on failure.
+_FINN_FINNKODE_RE = re.compile(r"[?&]finnkode=(\d+)")
+_FINN_AD_PATH_RE = re.compile(r"/job/(?:fulltime|parttime|management)/ad\.html")
+
+
+def _extract_finn_related_finnkodes(soup: "BeautifulSoup", current_finnkode: str) -> List[str]:
+    """Extract finnkodes from the 'also suggested' / similar-jobs sidebar on a FINN job page.
+
+    FINN renders related job links as standard anchor tags pointing to
+    /job/fulltime/ad.html?finnkode=XXXXXX. They also appear in the Next.js
+    __NEXT_DATA__ blob under keys like 'recommendations', 'similarAds', or 'relatedAds'.
+
+    Returns a deduplicated list of finnkodes (excluding current_finnkode).
+    """
+    found: set[str] = set()
+
+    # --- Strategy A: scan all <a href> for FINN job ad URLs ---
+    for tag in soup.find_all("a", href=True):
+        href = str(tag.get("href") or "")
+        if _FINN_AD_PATH_RE.search(href):
+            m = _FINN_FINNKODE_RE.search(href)
+            if m:
+                found.add(m.group(1))
+
+    # --- Strategy B: Next.js __NEXT_DATA__ recommendations blob ---
+    script = soup.find("script", {"id": "__NEXT_DATA__"})
+    if script:
+        try:
+            next_data = json.loads(script.string or "")
+            # Walk the whole pageProps dict looking for recommendation-like keys
+            props = next_data.get("props", {}).get("pageProps", {})
+            for key in ("recommendations", "similarAds", "relatedAds", "moreAds", "suggestedAds"):
+                items = props.get(key)
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict):
+                            # Accept both 'finnkode' and 'id' as fallback
+                            fk = str(item.get("finnkode") or item.get("id") or "").strip()
+                            if fk.isdigit():
+                                found.add(fk)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    found.discard(current_finnkode)
+    return sorted(found)
+
+
+def fetch_finn_job(
+    finnkode: str,
+    delay: float,
+    verbose: bool = False,
+    capture_related: bool = True,
+) -> tuple[Optional[dict], List[str]]:
+    """Fetch a FINN job ad. Returns (normalized pipeline dict or None, related finnkodes).
 
     Tries extraction in order: JSON-LD → Next.js __NEXT_DATA__ → HTML title fallback.
+    If capture_related=True, also extracts related/similar job finnkodes from the page.
     """
     url = f"https://www.finn.no/job/fulltime/ad.html?finnkode={finnkode}"
 
@@ -277,36 +333,46 @@ def fetch_finn_job(finnkode: str, delay: float, verbose: bool = False) -> Option
 
     html = _fetch_html(url)
     if html is None:
-        return None
+        return None, []
 
     soup = BeautifulSoup(html, "lxml")
+
+    job: Optional[dict] = None
 
     # Strategy 1: JSON-LD structured data (most reliable)
     ld = _extract_finn_ld(soup)
     if ld:
-        job = _normalize_ld(ld, finnkode, url)
-        if job.get("title"):
+        candidate = _normalize_ld(ld, finnkode, url)
+        if candidate.get("title"):
             if verbose:
                 print(f"    Parsed via JSON-LD")
-            return job
+            job = candidate
 
     # Strategy 2: Next.js __NEXT_DATA__ (used by newer FINN pages)
-    ad_data = _extract_finn_next_data(soup)
-    if ad_data:
-        job = _normalize_next_data(ad_data, finnkode, url)
-        if job.get("title"):
-            if verbose:
-                print(f"    Parsed via Next.js data")
-            return job
+    if not job:
+        ad_data = _extract_finn_next_data(soup)
+        if ad_data:
+            candidate = _normalize_next_data(ad_data, finnkode, url)
+            if candidate.get("title"):
+                if verbose:
+                    print(f"    Parsed via Next.js data")
+                job = candidate
 
     # Strategy 3: HTML title + meta fallback (minimal but better than nothing)
-    job = _normalize_html_fallback(soup, finnkode, url)
-    if job:
-        if verbose:
-            print(f"    Parsed via HTML fallback (minimal data)")
-        return job
+    if not job:
+        candidate = _normalize_html_fallback(soup, finnkode, url)
+        if candidate:
+            if verbose:
+                print(f"    Parsed via HTML fallback (minimal data)")
+            job = candidate
 
-    return None
+    related: List[str] = []
+    if capture_related:
+        related = _extract_finn_related_finnkodes(soup, finnkode)
+        if verbose and related:
+            print(f"    Found {len(related)} related finnkodes: {related[:5]}")
+
+    return job, related
 
 
 # --- Ledger helpers ---
@@ -406,11 +472,16 @@ def process_suggested_queue(
     fetched: List[dict] = []
     fetched_finnkodes: set = set()
     failed_finnkodes: set = set()
+    # Track all known finnkodes (queue + ledger) to avoid queuing duplicates as related
+    known_finnkodes: set = {str(j.get("finnkode", "")) for j in queue} | {
+        fk.replace("finn_", "") for fk in ledger_ids if fk.startswith("finn_")
+    }
+    related_queued: int = 0
 
     for suggestion in batch:
         finnkode = suggestion["finnkode"]
         delay = random.uniform(min_delay, max_delay)
-        job = fetch_finn_job(finnkode, delay=delay, verbose=verbose)
+        job, related_fks = fetch_finn_job(finnkode, delay=delay, verbose=verbose)
         if job:
             job["suggested_at"] = suggestion.get("suggested_at", "")
             job["email_subject"] = suggestion.get("email_subject", "")
@@ -418,6 +489,31 @@ def process_suggested_queue(
             fetched_finnkodes.add(finnkode)
         else:
             failed_finnkodes.add(finnkode)
+
+        # Queue related/similar finnkodes found on the page (deduplicated)
+        if related_fks:
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            new_related = [fk for fk in related_fks if fk not in known_finnkodes]
+            if new_related:
+                related_lines = [
+                    json.dumps({
+                        "platform": "finn",
+                        "finnkode": fk,
+                        "source": "finn_related",
+                        "parent_finnkode": finnkode,
+                        "suggested_at": now_iso,
+                        "email_subject": "",
+                    }, ensure_ascii=False)
+                    for fk in new_related
+                ]
+                suggested_path.parent.mkdir(parents=True, exist_ok=True)
+                with suggested_path.open("a", encoding="utf-8") as fh:
+                    fh.write("\n".join(related_lines) + "\n")
+                for fk in new_related:
+                    known_finnkodes.add(fk)
+                related_queued += len(new_related)
+                if verbose:
+                    print(f"    Queued {len(new_related)} related finnkodes from {finnkode}")
 
     appended = append_leads(
         out_path,
@@ -447,6 +543,7 @@ def process_suggested_queue(
         "fetched": len(appended),
         "failed": len(failed_finnkodes),
         "remaining": remaining_after,
+        "related_queued": related_queued,
         "linkedin_pending": len(linkedin_pending),
     }
 
@@ -454,6 +551,7 @@ def process_suggested_queue(
 # --- Main ---
 
 def main(argv: Optional[List[str]] = None) -> None:
+    _fix_windows_stdout()
     ap = argparse.ArgumentParser(
         description=(
             "Fetch full job content for platform-suggested FINN jobs. "
@@ -568,10 +666,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         sys.exit(0)
 
+    related_queued = result.get("related_queued", 0)
     print(
         f"\nSummary:\n"
-        f"  Fetched:  {result['fetched']}\n"
-        f"  Failed:   {result['failed']}\n"
+        f"  Fetched:         {result['fetched']}\n"
+        f"  Failed:          {result['failed']}\n"
+        f"  Related queued:  {related_queued}  (similar jobs found on FINN pages, added to queue)\n"
         f"  Remaining in queue: {result['remaining']}\n"
     )
     if result["fetched"]:
