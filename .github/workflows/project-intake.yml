@@ -1,0 +1,16 @@
+name: Add issues to project board
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    steps:
+      - uses: actions/add-to-project@v1.0.1
+        with:
+          project-url: https://github.com/users/larsvaerland/projects/6
+          github-token: ${{ secrets.PROJECT_PAT }}
