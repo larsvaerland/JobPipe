@@ -135,6 +135,7 @@ _DOC_STATE_NEXT_ACTIONS: dict[str, str] = {
     "ready": "Review cover letter. Open Reactive Resume to export PDF, then mark as shortlisted.",
     "partial": "One or more output files are missing — re-run Prepare Application.",
     "error": "Generation failed — check the error message and retry.",
+    "final": "Application package finalised. Submit via the employer portal.",
 }
 
 
@@ -1486,6 +1487,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/jobs/") and path.endswith("/prepare-application"):
             job_id = path[len("/api/jobs/"):-len("/prepare-application")].strip("/")
             self._post_prepare_application(job_id, body)
+        elif path.startswith("/api/jobs/") and path.endswith("/save-final"):
+            job_id = path[len("/api/jobs/"):-len("/save-final")].strip("/")
+            self._post_save_final(job_id)
         elif path.startswith("/api/jobs/") and path.endswith("/authoring-chat"):
             job_id = path[len("/api/jobs/"):-len("/authoring-chat")].strip("/")
             self._post_authoring_chat(job_id, body)
@@ -1945,6 +1949,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
         t = threading.Thread(target=_run_prepare_application, args=(job_id, model), daemon=True)
         t.start()
         self._send_json({"ok": True, "status": "started"})
+
+    def _post_save_final(self, job_id: str):
+        """Mark documents as final: record a 'shortlisted' status event and update doc state."""
+        if not job_id:
+            self._send_json({"error": "job_id required"}, 400)
+            return
+        try:
+            from jobpipe.cli.mark_status import add_stage
+            add_stage(
+                job_id=job_id,
+                token="shortlisted",
+                state_path=STATE_PATH,
+                notes="Marked final via dashboard document controls",
+                source="manual",
+            )
+        except Exception as e:
+            self._send_json({"error": f"Status update failed: {e}"}, 500)
+            return
+        # Update in-memory doc state to "final" so the UI reflects the change immediately
+        with _prep_lock:
+            current = dict(_prep_status.get(job_id, {}))
+        current["document_state"] = "final"
+        current["next_action"] = "Application package finalised. Submit via the employer portal."
+        with _prep_lock:
+            _prep_status[job_id] = current
+        self._send_json({"ok": True, "job_id": job_id, "document_state": "final"})
 
     def _get_authoring_session(self, job_id: str):
         job_dir = _find_job_run_dir(job_id)

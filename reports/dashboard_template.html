@@ -2918,6 +2918,11 @@ function renderDetailPane(j) {
         ? '<div class="detail-card" id="coverLetterPreview" style="grid-column:1/-1">' +
             '<h5>Cover letter <span id="lastPreparedLabel" style="font-size:0.78em;font-weight:400;color:#888;margin-left:8px"></span></h5>' +
             '<pre id="coverLetterText" style="white-space:pre-wrap;font-size:0.82em;max-height:260px;overflow-y:auto;background:#f8f8f8;padding:8px;border-radius:4px;border:1px solid var(--border,#ddd)">Loading...</pre>' +
+            '<div style="margin-top:6px;display:flex;gap:6px;align-items:flex-start">' +
+              '<textarea id="refineInput" rows="2" style="flex:1;resize:vertical;font-size:0.82em;padding:4px 6px;border:1px solid var(--border,#ddd);border-radius:4px" placeholder="Describe what to change — e.g. shorten opening, emphasise SQL experience…"></textarea>' +
+              '<button class="action-btn" onclick=\'quickRefine(' + jsArg(j.job_id || "") + ')\'>Refine</button>' +
+            '</div>' +
+            '<div id="docControls" style="margin-top:6px;display:flex;gap:6px"></div>' +
           '</div>'
         : '') +
       (SERVER_MODE
@@ -2934,6 +2939,7 @@ function renderDetailPane(j) {
     '</div>';
   if (SERVER_MODE) {
     var _jid = String(j.job_id || "");
+    window._currentJobId = _jid;
     loadAuthoringSession(_jid);
     loadCoverLetterPreview(_jid);
     loadLastPrepared(_jid);
@@ -2990,6 +2996,76 @@ function _renderDocState(el, data) {
     parts.push('<span style="color:#555;font-size:0.82em;font-style:italic">' + esc(data.next_action) + '</span>');
   }
   el.innerHTML = parts.join('<br>');
+
+  // Re-label the prepare button to make regenerate explicit
+  var prepBtn = document.getElementById("prepareAppBtn");
+  if (prepBtn && docState !== "no-docs" && docState !== "generating") {
+    prepBtn.textContent = "Re-generate";
+    prepBtn.title = "Overwrite current documents with a fresh generation run";
+  }
+
+  // Show "Save as final" only when documents are ready
+  var ctrlEl = document.getElementById("docControls");
+  if (!ctrlEl) return;
+  if (docState === "ready") {
+    ctrlEl.innerHTML =
+      '<button class="action-btn primary" onclick=\'markDocFinal(_currentJobId)\' title="Mark application package as finalised and set status to shortlisted">Save as final</button>';
+  } else {
+    ctrlEl.innerHTML = "";
+  }
+}
+
+function quickRefine(jobId) {
+  var input = document.getElementById("refineInput");
+  var msg = input ? input.value.trim() : "";
+  if (!msg) { alert("Describe what to change before refining."); return; }
+  var btn = input ? input.nextElementSibling : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/authoring-session/chat"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({message: msg}),
+  })
+    .then(r => r.json())
+    .then(function(data) {
+      if (btn) { btn.disabled = false; btn.textContent = "Refine"; }
+      if (data && !data.error) {
+        if (input) input.value = "";
+        loadCoverLetterPreview(jobId);
+        loadAuthoringSession(jobId);
+      } else {
+        alert("Refine failed: " + (data.error || "unknown error"));
+      }
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Refine"; }
+      alert("Refine error: " + e);
+    });
+}
+
+function markDocFinal(jobId) {
+  if (!jobId) return;
+  var btn = event && event.target ? event.target : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  fetch(apiUrl("/api/jobs/" + encodeURIComponent(jobId) + "/save-final"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({}),
+  })
+    .then(r => r.json())
+    .then(function(data) {
+      if (data && data.ok) {
+        if (btn) { btn.textContent = "Saved ✓"; }
+        loadLastPrepared(jobId);
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = "Save as final"; }
+        alert("Save failed: " + (data.error || "unknown"));
+      }
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Save as final"; }
+      alert("Save error: " + e);
+    });
 }
 
 function loadAuthoringSession(jobId) {
