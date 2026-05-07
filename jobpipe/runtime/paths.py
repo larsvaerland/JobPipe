@@ -19,41 +19,40 @@ def _prefer_existing(*candidates: Path) -> Path:
     return candidates[0]
 
 
-def data_root() -> Path | None:
+def data_root() -> Path:
+    """Return the data root directory, never writing inside the repo.
+
+    Precedence: JOBPIPE_DATA_DIR env var → OS-appropriate user data root
+    (~/JobpipeData on Windows, ~/Library/Application Support/JobPipe on macOS,
+    $XDG_DATA_HOME/jobpipe on Linux).
+    """
     raw = (os.environ.get("JOBPIPE_DATA_DIR") or "").strip()
-    if not raw:
-        return None
-    return _expand_path(raw)
+    if raw:
+        return _expand_path(raw)
+    # Fall back to the same platform-aware default as jobpipe.core.paths
+    from jobpipe.core.paths import default_data_root
+    return default_data_root()
 
 
 def cache_root() -> Path:
     raw = (os.environ.get("JOBPIPE_CACHE_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "cache"
-    return repo_root() / "reports"
+    return data_root() / "cache"
 
 
 def secrets_root() -> Path:
     raw = (os.environ.get("JOBPIPE_SECRETS_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "secrets"
-    return repo_root() / "reports"
+    return data_root() / "secrets"
 
 
 def db_root() -> Path:
     raw = (os.environ.get("JOBPIPE_DB_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "db"
-    return repo_root() / "reports"
+    return data_root() / "db"
 
 
 def primary_db_path() -> Path:
@@ -67,130 +66,91 @@ def artifacts_root() -> Path:
     raw = (os.environ.get("JOBPIPE_ARTIFACT_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "artifacts"
-    return repo_root() / "out_runs"
+    return data_root() / "artifacts"
 
 
 def documents_root() -> Path:
     raw = (os.environ.get("JOBPIPE_DOCUMENTS_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "documents"
-    return repo_root() / "reports" / "documents"
+    return data_root() / "documents"
 
 
 def exports_root() -> Path:
     raw = (os.environ.get("JOBPIPE_EXPORT_DIR") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return root / "exports"
-    return repo_root() / "reports"
+    return data_root() / "exports"
 
 
 def profile_pack_path() -> Path:
     raw = (os.environ.get("JOBPIPE_PROFILE_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return _prefer_existing(documents_root() / "profile_pack.md", root / "profile_pack.md")
-    return repo_root() / "profile_pack.md"
+    return _prefer_existing(documents_root() / "profile_pack.md", data_root() / "profile_pack.md")
 
 
 def resume_json_path() -> Path:
     raw = (os.environ.get("JOBPIPE_RESUME_JSON") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return _prefer_existing(documents_root() / "resume.json", root / "resume.json")
-    return repo_root() / "reports" / "resume.json"
+    return _prefer_existing(documents_root() / "resume.json", data_root() / "resume.json")
 
 
 def application_state_path() -> Path:
     raw = (os.environ.get("JOBPIPE_APP_STATE_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return db_root() / "application_state.json"
-    return repo_root() / "reports" / "application_state.json"
+    return db_root() / "application_state.json"
 
 
 def gmail_token_path() -> Path:
     raw = (os.environ.get("JOBPIPE_GMAIL_TOKEN_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return _prefer_existing(secrets_root() / "gmail_token.json", root / "gmail_token.json")
-    return repo_root() / "reports" / "gmail_token.json"
+    return _prefer_existing(secrets_root() / "gmail_token.json", data_root() / "gmail_token.json")
 
 
 def gmail_credentials_path() -> Path:
     raw = (os.environ.get("JOBPIPE_GMAIL_CREDENTIALS_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return _prefer_existing(secrets_root() / "gmail_credentials.json", root / "gmail_credentials.json")
-    return repo_root() / "reports" / "gmail_credentials.json"
+    return _prefer_existing(secrets_root() / "gmail_credentials.json", data_root() / "gmail_credentials.json")
 
 
 def suggested_jobs_path() -> Path:
     raw = (os.environ.get("JOBPIPE_SUGGESTED_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return db_root() / "suggested_jobs.jsonl"
-    return repo_root() / "reports" / "suggested_jobs.jsonl"
+    return db_root() / "suggested_jobs.jsonl"
 
 
 def profile_embedding_cache_path() -> Path:
     raw = (os.environ.get("JOBPIPE_PROFILE_EMBEDDING_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return cache_root() / "profile_embedding.npy"
-    return repo_root() / "reports" / "profile_embedding.npy"
+    return cache_root() / "profile_embedding.npy"
 
 
 def jobs_state_path() -> Path:
     raw = (os.environ.get("JOBPIPE_JOBS_STATE_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return db_root() / "jobs_state.json"
-    return repo_root() / "jobs_state.json"
+    return db_root() / "jobs_state.json"
 
 
 def jobs_delta_path() -> Path:
     raw = (os.environ.get("JOBPIPE_JOBS_DELTA_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return db_root() / "jobs_delta.jsonl"
-    return repo_root() / "jobs_delta.jsonl"
+    return db_root() / "jobs_delta.jsonl"
 
 
 def jobs_expired_path() -> Path:
     raw = (os.environ.get("JOBPIPE_JOBS_EXPIRED_PATH") or "").strip()
     if raw:
         return _expand_path(raw)
-    root = data_root()
-    if root is not None:
-        return db_root() / "jobs_expired.jsonl"
-    return repo_root() / "jobs_expired.jsonl"
+    return db_root() / "jobs_expired.jsonl"
 
 
 __all__ = [
