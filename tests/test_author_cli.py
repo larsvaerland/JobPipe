@@ -121,11 +121,24 @@ def test_author_cli_validate_fails_exits_2(monkeypatch, capsys) -> None:
 
 
 def test_author_cli_no_crewai() -> None:
-    text = Path("jobpipe/authoring/author_cli.py").read_text(encoding="utf-8")
+    # Verify that author_cli.py does not statically import crewai/autogen/langchain.
+    # The string "crewai" is allowed as a CLI choice label — only import statements are banned.
+    import ast
 
-    assert "crewai" not in text
-    assert "autogen" not in text
-    assert "langchain" not in text
+    source = Path("jobpipe/authoring/author_cli.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    banned_modules = {"crewai", "autogen", "langchain"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name.split(".")[0] not in banned_modules, (
+                    f"Forbidden static import: {alias.name}"
+                )
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".")[0]
+            assert root not in banned_modules, (
+                f"Forbidden static import from: {node.module}"
+            )
 
 
 class _FakeConn:

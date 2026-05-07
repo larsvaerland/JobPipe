@@ -125,11 +125,10 @@ def build_tailored_cv_plan(
             *narrative_context.narrative_profile.tone_rules[:2],
         }
     )
-    summary_brief = (
-        narrative_context.job_narrative_assessment.motivation_brief
-        or decision_context.decision_table.table_reason
-        or _clean(row.get("recommendation_reason"))
-    )
+    # Do not use internal pipeline reasoning notes as CV summary text — they are English
+    # decision-support prose, not candidate-facing narrative. Leave summary_brief empty
+    # so _apply_summary() preserves the master resume's existing Norwegian summary.
+    summary_brief = ""
 
     return ReactiveResumeTailoredCVPlan(
         candidate_id=candidate_id,
@@ -174,9 +173,16 @@ def build_tailored_cv_projection(
         decision_table=decision_context.decision_table,
     )
 
+    # Use the candidate's own professional headline, not the job ad title.
+    # The job title belongs in the cover letter, not as the CV headline.
+    basics = resume_json.get("basics") or {}
+    candidate_headline = _clean(basics.get("headline")) or _clean(row.get("title")) or "Tailored CV"
+
     return ReactiveResumeTailoredCVProjection(
-        headline=_clean(row.get("title")) or "Tailored CV",
-        summary_text=plan.summary_brief or narrative_context.narrative_profile.narrative_summary,
+        headline=candidate_headline,
+        # Leave summary_text empty so _apply_summary preserves the master resume's
+        # existing Norwegian summary. Internal narrative_summary is English reasoning prose.
+        summary_text=plan.summary_brief or "",
         section_plan=[{"section": section, "mode": "selected"} for section in plan.selected_section_order],
         selected_bullets=[selection.canonical_text for selection in evidence_context.selected_evidence_units],
         provenance={

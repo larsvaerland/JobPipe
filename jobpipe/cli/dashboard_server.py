@@ -129,6 +129,98 @@ def _utc_now_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+_DOC_STATE_NEXT_ACTIONS: dict[str, str] = {
+    "no-docs": "Click Prepare Application to generate a tailored CV and cover letter.",
+    "generating": "Generation in progress — check back in a moment.",
+    "ready": "Review cover letter. Open Reactive Resume to export PDF, then mark as shortlisted.",
+    "partial": "One or more output files are missing — re-run Prepare Application.",
+    "error": "Generation failed — check the error message and retry.",
+    "final": "Application package finalised. Submit via the employer portal.",
+}
+
+
+def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
+    """Return an enriched status dict with document_state and next_action.
+
+    Reads the exports directory to determine current document state.
+    Called when no in-memory record exists (server restart or first load).
+    """
+    exports = PATHS.data_root / "exports"
+    audit_path = exports / f"tailoring_audit_{job_id}.json"
+    cv_path = exports / f"reactive_resume_patched_{job_id}.json"
+    letter_path = exports / f"cover_letter_{job_id}.md"
+
+    result = dict(base)
+    if not audit_path.exists():
+        result["document_state"] = "no-docs"
+        result["next_action"] = _DOC_STATE_NEXT_ACTIONS["no-docs"]
+        return result
+
+    # Audit exists — read prepared_at and validation from it
+    try:
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+        result["prepared_at"] = audit.get("compiled_at", "")
+        if "validation" in audit:
+            result["validation"] = audit["validation"]
+    except Exception:
+        audit = {}
+
+    cv_ok = cv_path.exists()
+    letter_ok = letter_path.exists()
+
+    # Only include paths for files that actually exist; list missing ones separately
+    outputs: dict = {"audit_path": str(audit_path)}
+    missing: list[str] = []
+    if cv_ok:
+        outputs["cv_path"] = str(cv_path)
+    else:
+        missing.append("reactive_resume_patched")
+    if letter_ok:
+        outputs["letter_path"] = str(letter_path)
+    else:
+        missing.append("cover_letter")
+    result["outputs"] = outputs
+    if missing:
+        result["missing_files"] = missing
+
+    if cv_ok and letter_ok:
+        doc_state = "ready"
+    else:
+        doc_state = "partial"
+
+    result["status"] = "done"
+    result["document_state"] = doc_state
+    result["next_action"] = _DOC_STATE_NEXT_ACTIONS[doc_state]
+    return result
+
+
+def _doc_state_for_job(job_id: str) -> str:
+    """Return the document_state string for a single job from disk or memory."""
+    with _prep_lock:
+        mem = dict(_prep_status.get(job_id, {}))
+    if mem.get("status") in ("running",):
+        return "generating"
+    if mem.get("document_state"):
+        return mem["document_state"]
+    exports = PATHS.data_root / "exports"
+    audit_path = exports / f"tailoring_audit_{job_id}.json"
+    if not audit_path.exists():
+        return "no-docs"
+    cv_ok = (exports / f"reactive_resume_patched_{job_id}.json").exists()
+    letter_ok = (exports / f"cover_letter_{job_id}.md").exists()
+    return "ready" if (cv_ok and letter_ok) else "partial"
+
+
+def _enrich_payload_with_doc_states(payload: dict) -> None:
+    """Add doc_state to each APPLY/APPLY_STRONGLY job in-place (fast disk scan)."""
+    actionable_decisions = {"APPLY", "APPLY_STRONGLY"}
+    for job in payload.get("jobs", []):
+        if job.get("final_decision") in actionable_decisions:
+            job_id = str(job.get("job_id") or "")
+            if job_id:
+                job["doc_state"] = _doc_state_for_job(job_id)
+
+
 def _clean_profile_draft(draft: Dict[str, Any]) -> Dict[str, str]:
     clean: Dict[str, str] = {}
     for key, value in draft.items():
@@ -1392,6 +1484,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 profile_draft_path=PROFILE_DRAFT_PATH,
                 settings_path=SETTINGS_STATE_PATH,
             )
+            _enrich_payload_with_doc_states(payload)
             self._send_json(payload)
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
@@ -1435,6 +1528,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/jobs/") and path.endswith("/prepare-application"):
             job_id = path[len("/api/jobs/"):-len("/prepare-application")].strip("/")
             self._post_prepare_application(job_id, body)
+        elif path.startswith("/api/jobs/") and path.endswith("/save-final"):
+            job_id = path[len("/api/jobs/"):-len("/save-final")].strip("/")
+            self._post_save_final(job_id)
         elif path.startswith("/api/jobs/") and path.endswith("/authoring-chat"):
             job_id = path[len("/api/jobs/"):-len("/authoring-chat")].strip("/")
             self._post_authoring_chat(job_id, body)
@@ -1756,18 +1852,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def _download_file(self, job_id: str, filename: str):
-        """Serve a binary file from the job's run directory."""
+        """Serve a binary file from the job's run directory or exports directory."""
         # Safety: only allow specific file types
-        allowed = {".docx", ".pdf", ".txt", ".json"}
+        allowed = {".docx", ".pdf", ".txt", ".json", ".md"}
         if not any(filename.endswith(ext) for ext in allowed):
             self._send_json({"error": "File type not allowed"}, 403)
             return
         job_dir = _find_job_run_dir(job_id)
-        if not job_dir:
-            self._send_json({"error": "Job not found"}, 404)
-            return
-        fpath = job_dir / filename
-        if not fpath.exists():
+        exports_dir = PATHS.data_root / "exports"
+        # Check job_dir first, then exports/ as fallback
+        fpath = (job_dir / filename) if job_dir else None
+        if fpath is None or not fpath.exists():
+            fpath = exports_dir / filename
+        if not fpath or not fpath.exists():
+            # Last-chance fallback for .docx: serve as plain text
+            if filename == "08_cover_letter.docx" and job_dir:
+                txt_path = job_dir / "cover_letter_draft.txt"
+                if txt_path.exists():
+                    data = txt_path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Content-Disposition", 'attachment; filename="cover_letter.txt"')
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
             self._send_json({"error": f"{filename} not found for this job"}, 404)
             return
         try:
@@ -1776,6 +1886,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 ".pdf": "application/pdf",
                 ".txt": "text/plain; charset=utf-8",
+                ".md": "text/markdown; charset=utf-8",
                 ".json": "application/json; charset=utf-8",
             }.get(fpath.suffix, "application/octet-stream")
             self.send_response(200)
@@ -1790,12 +1901,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _post_chat(self, body: dict):
         """Proxy chat messages to OpenAI with job context as system prompt."""
+        from jobpipe.authoring.cover_letter_generator import _banned_violations
         job_id = body.get("job_id", "")
         messages = body.get("messages", [])  # [{role, content}, ...]
         if not messages:
             self._send_json({"error": "messages required"}, 400)
             return
         try:
+            last_user_msg = messages[-1].get("content", "") if messages else ""
+            prior_msgs = messages[:-1]
+
+            # Gate: if this is a first-turn cover letter request and we have no
+            # narrative_why_me_now, return the motivation question directly —
+            # never let the LLM embed instruction text in the letter body.
+            if _is_cover_letter_request(last_user_msg) and not prior_msgs:
+                has_narrative = bool(_read_narrative_why_me_now(job_id))
+                if not has_narrative:
+                    self._send_json({
+                        "reply": (
+                            "Hva er det ved akkurat denne rollen og denne arbeidsgiveren "
+                            "som motiverer deg nå? Og hvorfor søker du akkurat nå — "
+                            "hva skjedde eller endret seg for deg i det siste?"
+                        )
+                    })
+                    return
+
             # Load job context for system prompt
             system = _build_chat_system_prompt(job_id)
 
@@ -1804,13 +1934,41 @@ class DashboardHandler(BaseHTTPRequestHandler):
             load_env_file(PATHS.env_file)
             client = OpenAI()
 
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[{"role": "system", "content": system}] + messages,
-                temperature=0.7,
-                max_tokens=1200,
-            )
-            reply = response.choices[0].message.content
+            api_messages = [{"role": "system", "content": system}] + messages
+
+            # Chain-of-thought pass: only when prior conversation exists
+            if _is_cover_letter_request(last_user_msg) and prior_msgs:
+                cot = _run_cot_pass(client, system, prior_msgs)
+                if cot:
+                    api_messages.append({"role": "assistant", "content": cot})
+                    api_messages.append({
+                        "role": "user",
+                        "content": (
+                            "Skriv nå motivasjonsbrevet basert på verdivurderingen over og "
+                            "kandidatens svar i samtalen. Følg alle regler i systempromptet."
+                        ),
+                    })
+
+            reply = ""
+            for _attempt in range(3):
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=api_messages,
+                    temperature=0.4,
+                    max_tokens=1200,
+                )
+                reply = response.choices[0].message.content or ""
+                violations = _banned_violations(reply)
+                if not violations:
+                    break
+                correction = (
+                    f"Svaret ditt inneholdt disse totalforbudte frasene: {violations}. "
+                    "Disse er forbudt selv om de finnes i evidensdata. Skriv om uten dem — "
+                    "bruk konkrete selskaps-, team- eller prosjektnavn i stedet."
+                )
+                api_messages.append({"role": "assistant", "content": reply})
+                api_messages.append({"role": "user", "content": correction})
+
             self._send_json({"reply": reply})
         except Exception as e:
             self._send_json({"error": str(e)}, 500)
@@ -1818,10 +1976,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _get_prepare_application_status(self, job_id: str):
         with _prep_lock:
             status = dict(_prep_status.get(job_id, {"status": "idle", "message": "", "outputs": {}}))
+        # When idle (no in-memory record), check filesystem for existing artefacts
+        # so the state survives server restarts.
+        if status.get("status") == "idle":
+            status = _compute_doc_state_from_disk(job_id, status)
         self._send_json(status)
 
     def _post_prepare_application(self, job_id: str, body: dict):
-        model = body.get("model") or "gpt-4o-mini"
+        model = body.get("model") or "gpt-4o"
         with _prep_lock:
             if (_prep_status.get(job_id) or {}).get("status") == "running":
                 self._send_json({"ok": True, "status": "already_running"})
@@ -1830,6 +1992,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
         t = threading.Thread(target=_run_prepare_application, args=(job_id, model), daemon=True)
         t.start()
         self._send_json({"ok": True, "status": "started"})
+
+    def _post_save_final(self, job_id: str):
+        """Mark documents as final: record a 'shortlisted' status event and update doc state."""
+        if not job_id:
+            self._send_json({"error": "job_id required"}, 400)
+            return
+        try:
+            from jobpipe.cli.mark_status import add_stage
+            add_stage(
+                job_id=job_id,
+                token="shortlisted",
+                state_path=STATE_PATH,
+                notes="Marked final via dashboard document controls",
+                source="manual",
+            )
+        except Exception as e:
+            self._send_json({"error": f"Status update failed: {e}"}, 500)
+            return
+        # Update in-memory doc state to "final" so the UI reflects the change immediately
+        with _prep_lock:
+            current = dict(_prep_status.get(job_id, {}))
+        current["document_state"] = "final"
+        current["next_action"] = "Application package finalised. Submit via the employer portal."
+        with _prep_lock:
+            _prep_status[job_id] = current
+        self._send_json({"ok": True, "job_id": job_id, "document_state": "final"})
 
     def _get_authoring_session(self, job_id: str):
         job_dir = _find_job_run_dir(job_id)
@@ -1860,6 +2048,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             import uuid as _uuid
 
             session = get_or_create_session(job_dir, job_id, "default")
+
+            # Gate: first-turn cover letter request with no narrative → return question directly
+            is_first_turn = not any(
+                t.get("role") == "assistant" for t in session.chat_history
+            )
+            if _is_cover_letter_request(message) and is_first_turn:
+                has_narrative = bool(_read_narrative_why_me_now(job_id))
+                if not has_narrative:
+                    q = (
+                        "Hva er det ved akkurat denne rollen og denne arbeidsgiveren "
+                        "som motiverer deg nå? Og hvorfor søker du akkurat nå — "
+                        "hva skjedde eller endret seg for deg i det siste?"
+                    )
+                    session = append_chat_turn(session, "user", message)
+                    session = append_chat_turn(session, "assistant", q)
+                    save_session(job_dir, session)
+                    self._send_json({"reply": q, "patches": []})
+                    return
+
             session = append_chat_turn(session, "user", message)
 
             system = _build_chat_system_prompt(job_id)
@@ -1870,15 +2077,43 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
             from openai import OpenAI
             from jobpipe.core.io import load_env_file
+            from jobpipe.authoring.cover_letter_generator import _banned_violations
             load_env_file(PATHS.env_file)
             client = OpenAI()
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=messages_for_api,
-                temperature=0.7,
-                max_tokens=1200,
-            )
-            reply = response.choices[0].message.content or ""
+
+            # Chain-of-thought pass: only when prior conversation exists
+            prior_turns = messages_for_api[1:-1]  # between system and last user msg
+            if _is_cover_letter_request(message) and prior_turns:
+                cot = _run_cot_pass(client, system, prior_turns)
+                if cot:
+                    messages_for_api.append({"role": "assistant", "content": cot})
+                    messages_for_api.append({
+                        "role": "user",
+                        "content": (
+                            "Skriv nå motivasjonsbrevet basert på verdivurderingen over og "
+                            "kandidatens svar i samtalen. Følg alle regler i systempromptet."
+                        ),
+                    })
+
+            reply = ""
+            for _attempt in range(3):
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages_for_api,
+                    temperature=0.4,
+                    max_tokens=1200,
+                )
+                reply = response.choices[0].message.content or ""
+                violations = _banned_violations(reply)
+                if not violations:
+                    break
+                correction = (
+                    f"Svaret ditt inneholdt disse totalforbudte frasene: {violations}. "
+                    "Disse er forbudt selv om de finnes i evidensdata. Skriv om uten dem — "
+                    "bruk konkrete selskaps-, team- eller prosjektnavn i stedet."
+                )
+                messages_for_api.append({"role": "assistant", "content": reply})
+                messages_for_api.append({"role": "user", "content": correction})
             session = append_chat_turn(session, "assistant", reply)
 
             # Extract [PATCH: kind=..., section=...]...text...[/PATCH] markers, or wrap full reply
@@ -2068,6 +2303,7 @@ def _run_prepare_application(job_id: str, model: str) -> None:
             "--runtime-profile", "live_local",
             "--data-root", str(PATHS.data_root),
             "--model", model,
+            "--ledger-sqlite", str(SQLITE_PATH),
         ]
         with _prep_lock:
             _prep_status[job_id] = {"status": "running", "message": "Generating CV patch and cover letter...", "outputs": {}}
@@ -2078,14 +2314,68 @@ def _run_prepare_application(job_id: str, model: str) -> None:
             "letter_path": str(exports / f"cover_letter_{job_id}.md"),
             "audit_path": str(exports / f"tailoring_audit_{job_id}.json"),
         }
+        cv_ok = Path(outputs["cv_path"]).exists()
+        letter_ok = Path(outputs["letter_path"]).exists()
+        doc_state = "ready" if (cv_ok and letter_ok) else "partial"
+
+        # Run document validation on the cover letter and persist results into audit JSON
+        validation: dict = {"failures": [], "warnings": [], "score": 1.0, "language": "no"}
+        letter_p = Path(outputs["letter_path"])
+        if letter_p.exists():
+            try:
+                from jobpipe.authoring.language_routing import detect_job_language
+                from jobpipe.authoring.validation import validate_document_content
+                letter_text = letter_p.read_text(encoding="utf-8")
+                lang = detect_job_language("", letter_text[:600])
+                vr = validate_document_content(letter_text, lang, [], "cover_letter")
+                validation = {
+                    "failures": vr.failures,
+                    "warnings": vr.warnings,
+                    "score": round(vr.score, 3),
+                    "language": lang,
+                }
+                audit_p = Path(outputs["audit_path"])
+                if audit_p.exists():
+                    try:
+                        audit_data = json.loads(audit_p.read_text(encoding="utf-8"))
+                        audit_data["validation"] = validation
+                        audit_p.write_text(
+                            json.dumps(audit_data, indent=2, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         with _prep_lock:
-            _prep_status[job_id] = {"status": "done", "message": "Generation complete.", "outputs": outputs, "prepared_at": _utc_now_z()}
+            _prep_status[job_id] = {
+                "status": "done",
+                "message": "Generation complete.",
+                "outputs": outputs,
+                "prepared_at": _utc_now_z(),
+                "document_state": doc_state,
+                "next_action": _DOC_STATE_NEXT_ACTIONS[doc_state],
+                "validation": validation,
+            }
     except SystemExit as e:
         with _prep_lock:
-            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
+            _prep_status[job_id] = {
+                "status": "error",
+                "message": str(e),
+                "outputs": {},
+                "document_state": "error",
+                "next_action": _DOC_STATE_NEXT_ACTIONS["error"],
+            }
     except Exception as e:
         with _prep_lock:
-            _prep_status[job_id] = {"status": "error", "message": str(e), "outputs": {}}
+            _prep_status[job_id] = {
+                "status": "error",
+                "message": str(e),
+                "outputs": {},
+                "document_state": "error",
+                "next_action": _DOC_STATE_NEXT_ACTIONS["error"],
+            }
 
 
 def _stage_output_path(job_dir: Path, cfg, stage_name: str) -> Path:
@@ -2097,15 +2387,150 @@ def _stage_output_path(job_dir: Path, cfg, stage_name: str) -> Path:
     return job_dir / f"{order.index(canonical_name) + 1:02d}_{canonical_name}.json"
 
 
+_COT_PROMPT_CHAT = """Du er en søknadsekspert. Du skal IKKE skrive et brev. Du skal gjøre en intern verdivurdering i punktform.
+
+Svar KUN med korte analytiske punkter — ikke avsnitt, ikke brevtekst.
+
+1. UTFORDRING: [én setning om arbeidsgiverens egentlige problem/veikryss]
+2. VERDIFRAME:
+   - [selskap/prosjekt A] → [hva arbeidsgiveren konkret får]
+   - [selskap/prosjekt B] → [hva arbeidsgiveren konkret får]
+   - [utdanning/modul] → [hva arbeidsgiveren konkret får]
+3. POSISJONERING: [én setning om hva denne kandidaten har som de fleste søkere mangler]
+4. ÅPNER: [én setning som åpner brevet med arbeidsgiverens situasjon — ingen «Jeg», ingen kandidatønske]
+5. HVA ARBEIDSGIVEREN FÅR (oppsummert): [én setning]
+
+Maks 150 ord totalt. Bare punkter."""
+
+_COVER_LETTER_TRIGGERS = ("motivasjonsbrev", "søknadsbrev", "skriv brev", "skriv søknad")
+
+
+def _read_narrative_why_me_now(job_id: str) -> str:
+    """Return the narrative_why_me_now for a job if it looks like a real narrative, else ''."""
+    try:
+        job_dir = _find_job_run_dir(job_id)
+        if not job_dir:
+            return ""
+        for fname in ("09_narrative_strategy_v3.json", "09_narrative_strategy.json"):
+            nf = job_dir / fname
+            if nf.exists():
+                nd = json.loads(nf.read_text(encoding="utf-8"))
+                val = str(nd.get("why_me_now") or "").strip()
+                if len(val) >= 200 and val[-1] in ".!?»":
+                    return val
+                break
+        for pfname in ("11_application_pack.json", "07_application_pack.json"):
+            pf = job_dir / pfname
+            if pf.exists():
+                pd = json.loads(pf.read_text(encoding="utf-8"))
+                val = str(pd.get("narrative_why_me_now") or "").strip()
+                if len(val) >= 200 and val[-1] in ".!?»":
+                    return val
+                break
+    except Exception:
+        pass
+    return ""
+
+
+def _is_cover_letter_request(message: str) -> bool:
+    """True when the user message is asking for a cover letter."""
+    m = message.lower()
+    return any(t in m for t in _COVER_LETTER_TRIGGERS)
+
+
+def _run_cot_pass(client, system_prompt: str, messages_so_far: list) -> str:
+    """
+    Run a silent chain-of-thought value-reasoning pass before cover letter generation.
+    Returns the reasoning text, or "" on failure.
+    """
+    try:
+        cot_messages = [{"role": "system", "content": _COT_PROMPT_CHAT}]
+        # Include the job context from the system prompt as a user turn
+        cot_messages.append({"role": "user", "content": system_prompt})
+        # Include any prior conversation (e.g. the user's why-now answer)
+        for m in messages_so_far:
+            if m.get("role") in ("user", "assistant"):
+                cot_messages.append(m)
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=cot_messages,
+            temperature=0.3,
+            max_tokens=500,
+        )
+        return (response.choices[0].message.content or "").strip()
+    except Exception:
+        return ""
+
+
 def _build_chat_system_prompt(job_id: str) -> str:
     """Build a rich system prompt for the AI chat using the job's pipeline context."""
     base = (
-        "Du er en norsk søknadsassistent for Lars Værland, en erfaren produkt- og "
-        "tjenesteeier med bakgrunn fra digitalisering, offentlig sektor og produktledelse. "
-        "Du hjelper Lars med å skrive og spisse søknadsbrev og CV-punkter på norsk. "
-        "Skriv handlingsorientert, konkret og uten klisjeer. Unngå overtydelig selvskryt. "
-        "Aldri bruk tankestrek (—). Søknadsbrev skal være 230–260 ord.\n\n"
+        "Du er en norsk søknadsassistent. Du hjelper kandidaten med å skrive motivasjonsbrev og spisse CV-punkter.\n\n"
+        "CV-en gjør den faktamessige tunge løftingen. Brevets oppgave er å svare på tre spørsmål rekrutterer har:\n"
+        "1. Hvorfor vil du ha akkurat denne jobben?\n"
+        "2. Hva er det ved denne rollen/arbeidsgiveren som treffer deg spesifikt?\n"
+        "3. Hvorfor nå?\n\n"
+        "Struktur (språklig bue — hvert avsnitt svarer på neste spørsmål rekrutterer stiller):\n"
+        "- Avsnitt 1: Ramm inn ARBEIDSGIVERENS utfordring og hva rollen faktisk sitter i. "
+        "IKKE begynn med «Jeg», IKKE begynn med kandidatens ønske eller motivasjon. "
+        "Ikke «Å ha X som ønsket arbeidsgiver...». Vis at du forstår HVA JOBBEN ER.\n"
+        "- Avsnitt 2: Operasjonelt bevis — navngi selskaper, prosjekter, verktøy. "
+        "Minimum 3 konkrete navn. Vis at du KAN gjøre jobben.\n"
+        "- Avsnitt 3 (hjerteavsnittet): Motivasjon — HVORFOR akkurat denne jobben, HVORFOR nå. "
+        "Bruk kandidatens egne ord fra narrative_why_me_now om tilgjengelig. "
+        "Koble BI-studier (modulnavn, prosjektnavn) til det arbeidsgiveren etterspør. Gap maks én setning.\n"
+        "- Avsnitt 4 (valgfritt, maks 2 setninger): Ekte lokal eller personlig kontekst.\n\n"
+        "AVSLUTNINGSFORBUD: Brevet skal IKKE ha en generisk avslutningssetning. "
+        "Ingen «ser frem til», ingen «bidra til [selskapets] mål», ingen «kombinere erfaring med innsikt». "
+        "Avslutt på noe konkret og initiativtakende — eller ikke avslutt med en egen avslutningssetning i det hele tatt.\n\n"
+        "Absolutte regler:\n"
+        "- BARE brevteksten. Ingen «Til [selskap]», ingen «Med vennlig hilsen», ingen [Navn]. 3–4 avsnitt.\n"
+        "- Verdiframe: Hvert punkt svarer på «hva får arbeidsgiveren?», ikke «hva har jeg gjort?». "
+        "Setninger starter ikke med «Jeg» — arbeidsgiveren er protagonisten. "
+        "Snu fra selvbeskrivelse til levert verdi: ikke «Jeg har erfaring med X» men "
+        "«X på tvers av Y markeder gir [arbeidsgiver] en kandidat som ikke trenger onboarding på Z». "
+        "«Jeg» er tillatt som grammatisk lim midt i en setning, aldri som åpningsord.\n"
+        "- Skriv bare fakta som finnes i CV-bevisene. Oppfinn ingenting. Kurs er ikke arbeidserfaring. "
+        "BI Executive Master-moduler med prosjektnavn er substansiell evidens.\n"
+        "- Hvert avsnitt MÅ inneholde minst 2–3 konkrete navn (selskap, prosjekt, verktøy) fra CV-bevisene.\n"
+        "- HARD BLOCK — disse frasene er totalforbudt, selv om de finnes i job description eller evidence:\n"
+        "  «tverrfaglige team», «tverrfaglig team», «tverrfaglig samarbeid», «kontinuerlig forbedring»,\n"
+        "  «praktisk og resultatorientert», «skape verdi», «reell verdi», «brukervennlige løsninger»,\n"
+        "  «interessenter», «endringsprosesser», «engasjert», «motivert for å bidra», «cross-functional»,\n"
+        "  «offentlig sektor», «brenner for», «sterk kommunikator», «sterk teknisk forståelse»,\n"
+        "  «sterk teknisk», «sterk forståelse», «sterke resultater», «sterk faglig»,\n"
+        "  «helhetlige løsninger», «brukeren i sentrum», «brukerfokus»,\n"
+        "  «robuste og fleksible løsninger», «ser frem til å bidra med min kompetanse»,\n"
+        "  «ser frem til muligheten til å», «ser frem til å kunne», «ser frem til å bringe»,\n"
+        "  «anvende min kompetanse», «bringe min kompetanse», «solid fundament for å bidra»,\n"
+        "  «bidra til utviklingen av», «bidra til bane nors», «bidra til deres»,\n"
+        "  «i en ny kontekst», «støtte deres mål om», «i deres mål om»,\n"
+        "  «en spennende mulighet for meg», «kombinere min praktiske erfaring med»,\n"
+        "  «selv om jeg ikke har eksplisitt erfaring», «selv om jeg ikke har direkte erfaring»,\n"
+        "  «selv om jeg mangler direkte erfaring», «selv om jeg mangler eksplisitt erfaring»,\n"
+        "  «rask til å tilpasse meg», «raskt å tilpasse meg», «raskt tilpasse meg»,\n"
+        "  «bygge nødvendig domenekunnskap», «bygge nødvendig kunnskap»,\n"
+        "  «tilegne meg ny domenekunnskap», «tilegne meg kunnskap om».\n"
+        "  Skriv aldri disse ordene/frasene — bruk konkrete navn og fakta i stedet.\n"
+        "- Aldri oppgi karakterer eller grades — nevn prosjektnavn og tema, ikke resultatet.\n"
+        "- Gap nevnes maks én gang, i én setning, aldri i åpningen og aldri som eget avsnitt.\n"
+        "- 3–4 avsnitt, 300–400 ord totalt. Cool professional register.\n\n"
     )
+
+    # Load supplementary profile files if they exist alongside profile_pack
+    _voice_guide = None
+    _motivation_context = None
+    try:
+        from pathlib import Path as _Path
+        _profile_dir = _Path(str(PROFILE_PATH)).parent
+        _vg = _profile_dir / "cover_letter_voice.md"
+        _mc = _profile_dir / "motivation.md"
+        if _vg.exists():
+            _voice_guide = _vg.read_text(encoding="utf-8")
+        if _mc.exists():
+            _motivation_context = _mc.read_text(encoding="utf-8")
+    except Exception:
+        pass
     ctx = _load_workspace_context(job_id)
     if not ctx:
         return base
@@ -2135,12 +2560,12 @@ def _build_chat_system_prompt(job_id: str) -> str:
         context_parts.append(f"**Posisjoneringsoverskrift:** {positioning_headline}")
     cover_letter_angle = pack.get("cover_letter_angle") or decision_brief.get("cover_letter_angle", "")
     if cover_letter_angle:
-        context_parts.append(f"**Søknadsvinkel (AI-generert):** {cover_letter_angle}")
+        context_parts.append(f"**Søknadsvinkel:** {cover_letter_angle}")
     top_value_props = pack.get("top_value_props") or decision_brief.get("top_value_props") or []
     if top_value_props:
         context_parts.append("**Toppverdier:**\n" + "\n".join(f"- {v}" for v in top_value_props))
     if pack.get("evidence_map"):
-        context_parts.append("**Bevis-kart (jobbkrav → Lars sin erfaring):**\n" + "\n".join(f"- {e}" for e in pack["evidence_map"]))
+        context_parts.append("**Bevis-kart:**\n" + "\n".join(f"- {e}" for e in pack["evidence_map"]))
     if pack.get("gap_mitigations"):
         context_parts.append("**Gap-håndtering:**\n" + "\n".join(f"- {g}" for g in pack["gap_mitigations"]))
     if overlaps:
@@ -2148,7 +2573,100 @@ def _build_chat_system_prompt(job_id: str) -> str:
     if gaps:
         context_parts.append("**Gaps:** " + ", ".join(str(item) for item in gaps[:4]))
     if pack.get("cv_highlights"):
-        context_parts.append("**CV-highlights (tilpasset denne jobben):**\n" + "\n".join(f"- {h}" for h in pack["cv_highlights"]))
+        context_parts.append("**CV-highlights:**\n" + "\n".join(f"- {h}" for h in pack["cv_highlights"]))
+
+    # --- narrative_why_me_now: read directly from artifact JSON (fail-safe) ---
+    _narrative_why_me_now: Optional[str] = None
+    try:
+        _job_dir = _find_job_run_dir(job_id)
+        if _job_dir:
+            # Primary source: 09_narrative_strategy_v3.json → why_me_now
+            for _fname in ("09_narrative_strategy_v3.json", "09_narrative_strategy.json"):
+                _nf = _job_dir / _fname
+                if _nf.exists():
+                    _nd = json.loads(_nf.read_text(encoding="utf-8"))
+                    _val = str(_nd.get("why_me_now") or "").strip()
+                    # Only use if it looks like a real narrative: ≥200 chars and ends on punctuation
+                    _is_real_narrative = len(_val) >= 200 and _val[-1] in ".!?»"
+                    _narrative_why_me_now = _val if _is_real_narrative else None
+                    break
+            # Fallback: application pack may carry it directly
+            if not _narrative_why_me_now:
+                for _pfname in ("11_application_pack.json", "07_application_pack.json"):
+                    _pf = _job_dir / _pfname
+                    if _pf.exists():
+                        _pd = json.loads(_pf.read_text(encoding="utf-8"))
+                        _val = str(_pd.get("narrative_why_me_now") or "").strip()
+                        _is_real_narrative = len(_val) >= 200 and _val[-1] in ".!?»"
+                        _narrative_why_me_now = _val if _is_real_narrative else None
+                        break
+    except Exception:
+        pass
+
+    if _narrative_why_me_now:
+        context_parts.append(
+            "**NARRATIVE — hvorfor denne jobben, hvorfor nå (hjerteavsnittet — bruk dette direkte):**\n"
+            + _narrative_why_me_now[:600]
+        )
+    else:
+        context_parts.append(
+            "**MOTIVASJON (avsnitt 3):** Kandidaten har oppgitt sin motivasjon i samtalen over. "
+            "Bruk den eksplisitt og konkret i hjerteavsnittet. "
+            "Ikke oppfinn generisk motivasjon — bruk ordene kandidaten selv brukte."
+        )
+
+    # Load actual CV evidence units so the model has specific company/project facts
+    try:
+        import sqlite3 as _sqlite3
+        from jobpipe.core.candidate_data import (
+            load_candidate_profile_pack as _load_pp,
+            load_candidate_resume_json as _load_rj,
+        )
+        from jobpipe.cli.generate_cover_letter import build_authoring_context as _bac
+
+        _db = _sqlite3.connect(str(SQLITE_PATH))
+        _db.row_factory = _sqlite3.Row
+        _row = _db.execute("SELECT * FROM ledger WHERE job_id = ?", (job_id,)).fetchone()
+        if _row:
+            _profile = _load_pp(str(PROFILE_PATH))
+            _resume = _load_rj(str(RESUME_PATH)) or {}
+            _auth = _bac(dict(_row), _profile, _resume, "default")
+
+            evidence_lines = []
+            for ev in _auth.selected_evidence[:6]:
+                src = ev.get("source_ref", "")
+                text = (ev.get("canonical_text") or "")[:180]
+                if text:
+                    evidence_lines.append(f"- [{src}] {text}")
+            if evidence_lines:
+                context_parts.append(
+                    "**CV-bevis (bruk disse fakta direkte — selskapsnavn, prosjektnavn, verktøy MÅ med i brevet):**\n"
+                    + "\n".join(evidence_lines)
+                )
+
+            if _auth.cover_letter_strategy:
+                context_parts.append(f"**Søknadsvinkel (følg denne nøye):** {_auth.cover_letter_strategy[:300]}")
+            if _auth.recruiter_hook:
+                context_parts.append(f"**Åpningsinspirasjon:** {_auth.recruiter_hook[:200]}")
+            if _auth.differentiation_signals:
+                context_parts.append(
+                    "**Differensieringssignaler (vev 1–2 inn naturlig):** "
+                    + "; ".join(_auth.differentiation_signals[:3])
+                )
+    except Exception:
+        pass  # Evidence enrichment is best-effort — fall back to pack context
+
+    # Inject supplementary profile files
+    if _voice_guide:
+        context_parts.append(
+            "**Stilguide (voice_guide) — følg disse reglene for register, åpninger og avslutninger:**\n"
+            + _voice_guide[:3000]
+        )
+    if _motivation_context:
+        context_parts.append(
+            "**Kandidatens faktabase (motivation_context) — bruk kun det som er relevant for stillingen:**\n"
+            + _motivation_context[:2000]
+        )
 
     return "\n\n".join(context_parts)
 
