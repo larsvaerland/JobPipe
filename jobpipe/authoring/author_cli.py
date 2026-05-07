@@ -26,7 +26,7 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--author",
         default="simple",
-        choices=["simple", "crew" + "ai"],
+        choices=["simple", "crewai"],
         help="Author implementation (default: simple)",
     )
 
