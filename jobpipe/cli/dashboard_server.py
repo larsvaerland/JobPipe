@@ -165,6 +165,8 @@ def _compute_doc_state_from_disk(job_id: str, base: dict) -> dict:
             "letter_path": str(letter_path),
             "audit_path": str(audit_path),
         }
+        if "validation" in audit:
+            result["validation"] = audit["validation"]
     except Exception:
         audit = {}
 
@@ -1811,31 +1813,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 500)
 
     def _download_file(self, job_id: str, filename: str):
-        """Serve a binary file from the job's run directory."""
+        """Serve a binary file from the job's run directory or exports directory."""
         # Safety: only allow specific file types
-        allowed = {".docx", ".pdf", ".txt", ".json"}
+        allowed = {".docx", ".pdf", ".txt", ".json", ".md"}
         if not any(filename.endswith(ext) for ext in allowed):
             self._send_json({"error": "File type not allowed"}, 403)
             return
         job_dir = _find_job_run_dir(job_id)
-        if not job_dir:
-            self._send_json({"error": "Job not found"}, 404)
-            return
-        fpath = job_dir / filename
-        # If a .docx is requested but doesn't exist, fall back to cover_letter_draft.txt
-        if not fpath.exists() and filename == "08_cover_letter.docx":
-            txt_path = job_dir / "cover_letter_draft.txt"
-            if txt_path.exists():
-                data = txt_path.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.send_header("Content-Length", str(len(data)))
-                self.send_header("Content-Disposition", 'attachment; filename="cover_letter.txt"')
-                self._cors()
-                self.end_headers()
-                self.wfile.write(data)
-                return
-        if not fpath.exists():
+        exports_dir = PATHS.data_root / "exports"
+        # Check job_dir first, then exports/ as fallback
+        fpath = (job_dir / filename) if job_dir else None
+        if fpath is None or not fpath.exists():
+            fpath = exports_dir / filename
+        if not fpath or not fpath.exists():
+            # Last-chance fallback for .docx: serve as plain text
+            if filename == "08_cover_letter.docx" and job_dir:
+                txt_path = job_dir / "cover_letter_draft.txt"
+                if txt_path.exists():
+                    data = txt_path.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Content-Disposition", 'attachment; filename="cover_letter.txt"')
+                    self._cors()
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
             self._send_json({"error": f"{filename} not found for this job"}, 404)
             return
         try:
@@ -1844,6 +1847,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 ".pdf": "application/pdf",
                 ".txt": "text/plain; charset=utf-8",
+                ".md": "text/markdown; charset=utf-8",
                 ".json": "application/json; charset=utf-8",
             }.get(fpath.suffix, "application/octet-stream")
             self.send_response(200)
@@ -2274,6 +2278,37 @@ def _run_prepare_application(job_id: str, model: str) -> None:
         cv_ok = Path(outputs["cv_path"]).exists()
         letter_ok = Path(outputs["letter_path"]).exists()
         doc_state = "ready" if (cv_ok and letter_ok) else "partial"
+
+        # Run document validation on the cover letter and persist results into audit JSON
+        validation: dict = {"failures": [], "warnings": [], "score": 1.0, "language": "no"}
+        letter_p = Path(outputs["letter_path"])
+        if letter_p.exists():
+            try:
+                from jobpipe.authoring.language_routing import detect_job_language
+                from jobpipe.authoring.validation import validate_document_content
+                letter_text = letter_p.read_text(encoding="utf-8")
+                lang = detect_job_language("", letter_text[:600])
+                vr = validate_document_content(letter_text, lang, [], "cover_letter")
+                validation = {
+                    "failures": vr.failures,
+                    "warnings": vr.warnings,
+                    "score": round(vr.score, 3),
+                    "language": lang,
+                }
+                audit_p = Path(outputs["audit_path"])
+                if audit_p.exists():
+                    try:
+                        audit_data = json.loads(audit_p.read_text(encoding="utf-8"))
+                        audit_data["validation"] = validation
+                        audit_p.write_text(
+                            json.dumps(audit_data, indent=2, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         with _prep_lock:
             _prep_status[job_id] = {
                 "status": "done",
@@ -2282,6 +2317,7 @@ def _run_prepare_application(job_id: str, model: str) -> None:
                 "prepared_at": _utc_now_z(),
                 "document_state": doc_state,
                 "next_action": _DOC_STATE_NEXT_ACTIONS[doc_state],
+                "validation": validation,
             }
     except SystemExit as e:
         with _prep_lock:

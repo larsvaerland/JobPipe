@@ -2964,6 +2964,7 @@ var _DOC_STATE_LABEL = {
   "ready":     {text: "Ready",          cls: "doc-state-ready"},
   "partial":   {text: "Incomplete",     cls: "doc-state-partial"},
   "error":     {text: "Error",          cls: "doc-state-error"},
+  "final":     {text: "Finalised",      cls: "doc-state-ready"},
 };
 
 function loadLastPrepared(jobId) {
@@ -2990,6 +2991,29 @@ function _renderDocState(el, data) {
   // Error detail
   if (data.status === "error" && data.message) {
     parts.push('<span style="color:#c0392b;font-size:0.82em">' + esc(data.message.slice(0, 120)) + '</span>');
+  }
+  // Validation failures
+  var val = data.validation || {};
+  var failures = val.failures || [];
+  var warnings = val.warnings || [];
+  if (failures.length) {
+    parts.push('<span style="color:#c0392b;font-size:0.82em;font-weight:600">Validation issues (' + failures.length + '):</span>');
+    failures.forEach(function(f) {
+      parts.push('<span style="color:#c0392b;font-size:0.80em;margin-left:8px">✗ ' + esc(f) + '</span>');
+    });
+  }
+  if (warnings.length) {
+    parts.push('<span style="color:#856404;font-size:0.82em;font-weight:600">Warnings (' + warnings.length + '):</span>');
+    warnings.forEach(function(w) {
+      parts.push('<span style="color:#856404;font-size:0.80em;margin-left:8px">⚠ ' + esc(w) + '</span>');
+    });
+  }
+  // Document download link (cover letter)
+  var jobId = window._currentJobId;
+  if (jobId && (docState === "ready" || docState === "final" || docState === "partial") && data.outputs && data.outputs.letter_path) {
+    var fname = "cover_letter_" + jobId + ".md";
+    var dlUrl = apiUrl("/download/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(fname));
+    parts.push('<a href="' + dlUrl + '" download="' + esc(fname) + '" style="font-size:0.82em;color:#1a6dbf;text-decoration:underline">⬇ Download cover letter (.md)</a>');
   }
   // Next action
   if (data.next_action) {
