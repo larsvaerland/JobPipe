@@ -1,0 +1,86 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "showLineNumbers": true,
+    "copyToClipboard": false
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "out_runs/**",
+      "reports/**",
+      "archive/**",
+      "tmp-*/**",
+      ".jobpipe_tmp/**",
+      ".pytest_cache/**",
+      ".venv/**",
+      ".axon/**",
+      ".codex/**",
+      ".agents/**",
+      "jobpipe.egg-info/**",
+      "**/__pycache__/**",
+      "**/*.pkl",
+      "**/*.pyc",
+      "**/*.log",
+      "specs/**",
+      "profile/**"
+    ]
+  },
+  "profiles": {
+    "core": {
+      "description": "Core pipeline logic only — stages, runtime, model, decision",
+      "include": [
+        "jobpipe/core/**",
+        "jobpipe/stages/**",
+        "jobpipe/runtime/**",
+        "jobpipe/model/**",
+        "jobpipe/decision/**"
+      ]
+    },
+    "crewai": {
+      "description": "CrewAI crews, agents, tasks and orchestration",
+      "include": [
+        "jobpipe_crewai/**",
+        "jobpipe/orchestration-prompts/**"
+      ]
+    },
+    "cli": {
+      "description": "CLI entry points and connectors",
+      "include": [
+        "jobpipe/cli/**",
+        "jobpipe/connectors/**",
+        "jobpipe/integrations/**"
+      ]
+    },
+    "tests": {
+      "description": "Test suite — unit and crewai tests",
+      "include": [
+        "tests/**",
+        "tests_crewai/**"
+      ]
+    },
+    "configs": {
+      "description": "Configuration files and specs",
+      "include": [
+        "configs/**",
+        "specs/**",
+        "*.toml",
+        "*.cfg",
+        "*.ini"
+      ]
+    },
+    "docs": {
+      "description": "Documentation and audits",
+      "include": [
+        "docs/**",
+        ".agents/**",
+        "audits/**"
+      ],
+      "ignore": {
+        "customPatterns": []
+      }
+    }
+  }
+}

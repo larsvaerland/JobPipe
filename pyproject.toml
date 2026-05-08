@@ -27,6 +27,7 @@ dependencies = [
     # Gmail connectors
     "google-auth-oauthlib>=1.2.0",
     "google-api-python-client>=2.0.0",
+    "fastmcp>=2.0",
 ]
 
 [project.optional-dependencies]

@@ -31,6 +31,7 @@
       ]
     }
   },
+  "enabledMcpjsonServers": ["repomix", "codebase-index"],
   "env": {
     "PROJECT_PLAYBOOK": "docs/ai-playbook.md",
     "PROJECT_VISION": "docs/vision.md"

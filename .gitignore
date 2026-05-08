@@ -97,3 +97,6 @@ htmlcov/
 # Claude Code runtime state (machine-local, not for repo)
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# mcp-codebase-index cache
+.codebase-index-cache.pkl

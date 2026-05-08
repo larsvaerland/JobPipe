@@ -3,11 +3,27 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(axon analyze *)",
+      "Bash(gh project *)",
+      "Bash(python3 -c ' *)",
+      "mcp__axon__axon_context",
+      "Read(//c/Users/larsv/JobpipeData/reports/**)",
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(gh pr *)",
+      "Bash(git check-ignore *)",
+      "Bash(OPENAI_AGENTS_DISABLE_TRACING=1 powershell.exe -Command \".\\\\go.ps1 -DryRun\")",
+      "Bash(OPENAI_AGENTS_DISABLE_TRACING=1 .venv/Scripts/python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 2)",
+      "Bash(OPENAI_AGENTS_DISABLE_TRACING=1 .venv/Scripts/python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 2 --skip-companion-check)",
+      "Bash(OPENAI_AGENTS_DISABLE_TRACING=1 .venv/Scripts/python.exe -m jobpipe.cli.run_scheduled_flow --max-jobs 2 --allow-companion-drift)",
+      "Bash(gh issue *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d['title']\\); print\\(\\); print\\(d['body'][:2000]\\)\")",
+      "Bash(OPENAI_AGENTS_DISABLE_TRACING=1 .venv/Scripts/python.exe *)",
+      "Bash(grep -i \"dir\\\\|folder\\\\|path\\\\|location\\\\|install\\\\|clone\\\\|C:\\\\\\\\\\\\\\\\\")"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "axon"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
