@@ -90,3 +90,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Place the initial hub contract skeleton in `jobpipe.workspace`, with storage-agnostic value objects in `jobpipe.workspace.contracts` and capability protocols in `jobpipe.workspace.hub`.
 - Why: The contracts need a neutral package that is not tied to the old dashboard, CLI server, storage adapter, API transport, or any single companion project.
 - Consequence: Future storage adapters, API/MCP wrappers, and JobDesk-facing projections must depend on `jobpipe.workspace` contracts instead of importing dashboard-era payloads.
+
+- Date: 2026-05-08
+- Task: S5-SB-01
+- Decision: Treat hosted JobData Supabase as a NAV intake source only, feeding the existing JobPipe connector staging seam through `pull_supabase_jobs.py` and `drain_queue.py`.
+- Why: Supabase already contains NAV-ingested rows, but JobDesk's case read model is owned by JobDeskIntegrationGateway/ApplicationWorkspaceHub. The smallest safe integration is to map Supabase NAV rows into existing JobPipe intake records, then let the normal JobPipe run, catalog, SQLite, and artifact path own downstream outputs.
+- Consequence: Supabase NAV intake must not become a direct JobDesk dependency, ApplicationWorkspaceHub storage adapter, old-dashboard dependency, or write-back path. Future work should harden the existing puller and tests before adding any Supabase output/status adapter.
