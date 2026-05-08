@@ -114,3 +114,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Implement the first ApplicationWorkspaceHub cases adapter over JobPipe run artifacts, not the old dashboard, SQLite, or Supabase.
 - Why: The validated Supabase NAV path now produces normal JobPipe artifacts. Reading those artifacts gives JobDesk a real read model source while preserving Supabase as intake-only and keeping transport/storage migration behind the hub.
 - Consequence: `jobpipe.workspace.artifact_cases` is the first concrete cases capability. It must emit path-safe contracts, tolerate partial artifacts, skip failed pipeline jobs, and remain free of dashboard, Supabase, SQLite, API, and MCP dependencies.
+
+- Date: 2026-05-08
+- Task: S5-HUB-03
+- Decision: Add `ArtifactRunSource` as the local read-only run selector for artifact-backed workspace cases.
+- Why: The single-run adapter is correct for explicit tests, but operators and future wrappers need a safe way to select the newest valid JobPipe artifact run without depending on dashboard state or exposing local paths.
+- Consequence: `ArtifactRunSource` lists opaque run IDs from directory names, ignores invalid/all-failed runs, and feeds `build_latest_artifact_workspace_hub(out_root)`. API/MCP/JobDesk wiring remains out of scope.

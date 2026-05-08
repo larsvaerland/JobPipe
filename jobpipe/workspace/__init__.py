@@ -14,6 +14,7 @@ from .contracts import (
     WorkMode,
 )
 from .artifact_cases import ArtifactCasesCapability, ArtifactWorkspaceHub, build_artifact_workspace_hub
+from .artifact_runs import ArtifactRunRef, ArtifactRunSource, build_latest_artifact_workspace_hub
 from .hub import ApplicationWorkspaceHub, CasesCapability
 
 __all__ = [
@@ -22,6 +23,8 @@ __all__ = [
     "ApplicationWorkspaceHub",
     "ArtifactCasesCapability",
     "ArtifactRef",
+    "ArtifactRunRef",
+    "ArtifactRunSource",
     "ArtifactWorkspaceHub",
     "CaseListItem",
     "CasesCapability",
@@ -33,4 +36,5 @@ __all__ = [
     "TailoringEffort",
     "WorkMode",
     "build_artifact_workspace_hub",
+    "build_latest_artifact_workspace_hub",
 ]

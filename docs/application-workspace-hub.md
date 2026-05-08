@@ -203,6 +203,20 @@ First adapter:
   not expose raw local filesystem paths, old dashboard payloads, Supabase rows,
   SQLite handles, or transport-specific objects.
 
+Run source:
+
+- `jobpipe.workspace.artifact_runs.ArtifactRunSource` discovers valid run
+  directories under an out-runs root.
+- `ArtifactRunSource.list_runs()` returns opaque run refs using directory names
+  as run IDs.
+- `ArtifactRunSource.latest_run()` and `resolve(run_id=None)` select the newest
+  valid run without exposing absolute local paths in public payloads.
+- A valid run has `index.jsonl` and either at least one index row or at least one
+  job artifact directory. Runs where every job directory has
+  `pipeline_error.json` are ignored.
+- `build_latest_artifact_workspace_hub(out_root)` is the convenience entrypoint
+  for local artifact-backed cases when the caller wants the newest valid run.
+
 ## Second Implementation Slice
 
 Second slice: **documents and value draft contract**.
