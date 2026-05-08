@@ -47,6 +47,7 @@ MODULE_COMMANDS = {
     "run-feed": "jobpipe.cli.run_feed",
     "scan-gmail": "jobpipe.cli.scan_gmail",
     "sync-evaluations": "jobpipe.cli.sync_evaluations",
+    "workspace-cases": "jobpipe.cli.workspace_cases",
 }
 
 

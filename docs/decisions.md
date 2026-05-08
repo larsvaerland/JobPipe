@@ -120,3 +120,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Add `ArtifactRunSource` as the local read-only run selector for artifact-backed workspace cases.
 - Why: The single-run adapter is correct for explicit tests, but operators and future wrappers need a safe way to select the newest valid JobPipe artifact run without depending on dashboard state or exposing local paths.
 - Consequence: `ArtifactRunSource` lists opaque run IDs from directory names, ignores invalid/all-failed runs, and feeds `build_latest_artifact_workspace_hub(out_root)`. API/MCP/JobDesk wiring remains out of scope.
+
+- Date: 2026-05-08
+- Task: S5-HUB-04
+- Decision: Add `jobpipe.cli.workspace_cases` as a local redacted preview command for ApplicationWorkspaceHub cases.
+- Why: Operators need a supported way to inspect artifact-backed hub cases before API/MCP/JobDesk wiring, without dumping full job descriptions, paths, dashboard payloads, or private storage details.
+- Consequence: Workspace case preview remains read-only and local. It may summarize newest or selected artifact runs, but it must not become an API wrapper, dashboard dependency, Supabase adapter, or frontend integration.

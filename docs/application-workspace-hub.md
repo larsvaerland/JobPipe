@@ -217,6 +217,16 @@ Run source:
 - `build_latest_artifact_workspace_hub(out_root)` is the convenience entrypoint
   for local artifact-backed cases when the caller wants the newest valid run.
 
+Local preview CLI:
+
+- `python -m jobpipe.cli.workspace_cases --out-root <runs-root>` previews the
+  newest valid run as compact redacted case summaries.
+- `--run-id <opaque-run-id>` selects one run by directory-name ID.
+- `--case-id <case-id>` prints a detail preview for one case.
+- `--json` emits the same redacted preview fields as JSON.
+- The command is read-only. It does not expose raw filesystem paths, full job
+  descriptions, Supabase rows, dashboard payloads, endpoints, or secret values.
+
 ## Second Implementation Slice
 
 Second slice: **documents and value draft contract**.
