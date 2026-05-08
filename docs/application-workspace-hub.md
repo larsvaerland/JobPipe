@@ -535,6 +535,19 @@ When implemented, wrapper tests must cover:
 - no dashboard, Supabase, SQLite, or MCP imports;
 - no writes and no pipeline execution.
 
+S5-HUB-06 implementation:
+
+- `python -m jobpipe.cli.workspace_server --out-root <runs-root>` starts the
+  local read-only cases wrapper.
+- `jobpipe workspace-server -- --out-root <runs-root>` is the main CLI proxy.
+- The wrapper uses stdlib HTTP and exposes only `GET /healthz`, `GET /cases`,
+  `GET /cases?run_id=<opaque-run-id>`, `GET /cases/<case_id>`, and
+  `GET /cases/<case_id>?run_id=<opaque-run-id>`.
+- It reads artifact-backed `ApplicationWorkspaceHub` cases through
+  `ArtifactRunSource` and `ArtifactWorkspaceHub`.
+- It does not implement writes, JobDesk wiring, MCP, Supabase access, SQLite
+  access, dashboard imports, or artifact file serving.
+
 ## Agent Guardrails
 
 Future agents must follow these rules:

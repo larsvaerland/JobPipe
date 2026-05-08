@@ -132,3 +132,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Use a local read-only HTTP wrapper as the first JobDesk-facing transport boundary for ApplicationWorkspaceHub cases.
 - Why: JobDesk is a frontend app and should consume a stable backend adapter over HTTP instead of importing JobPipe packages, shelling out to CLI, or depending on MCP as app runtime. CLI remains useful for smoke tests; MCP can be added later for agent/tool workflows.
 - Consequence: The first wrapper implementation should expose only `cases.list` and `cases.get`, resolve `out_root`/optional `run_id` server-side, emit path-safe JSON responses, and keep Supabase, dashboard, SQLite, API writes, MCP tools, and JobDesk frontend wiring out of scope until explicitly approved.
+
+- Date: 2026-05-08
+- Task: S5-HUB-06
+- Decision: Implement the first workspace cases transport as `jobpipe.cli.workspace_server` using Python stdlib HTTP.
+- Why: The repository does not need a new framework dependency for a local read-only cases wrapper, and stdlib HTTP keeps the boundary small while the contract stabilizes.
+- Consequence: The server is local, read-only, and cases-only. It may be consumed later by JobDesk's HTTP backend adapter, but it must not grow into MCP, Supabase access, dashboard dependency, write persistence, or direct frontend wiring without a new task.
