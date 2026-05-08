@@ -126,3 +126,9 @@ Durable decisions and rationale live here. Live task state belongs in
 - Decision: Add `jobpipe.cli.workspace_cases` as a local redacted preview command for ApplicationWorkspaceHub cases.
 - Why: Operators need a supported way to inspect artifact-backed hub cases before API/MCP/JobDesk wiring, without dumping full job descriptions, paths, dashboard payloads, or private storage details.
 - Consequence: Workspace case preview remains read-only and local. It may summarize newest or selected artifact runs, but it must not become an API wrapper, dashboard dependency, Supabase adapter, or frontend integration.
+
+- Date: 2026-05-08
+- Task: S5-HUB-05
+- Decision: Use a local read-only HTTP wrapper as the first JobDesk-facing transport boundary for ApplicationWorkspaceHub cases.
+- Why: JobDesk is a frontend app and should consume a stable backend adapter over HTTP instead of importing JobPipe packages, shelling out to CLI, or depending on MCP as app runtime. CLI remains useful for smoke tests; MCP can be added later for agent/tool workflows.
+- Consequence: The first wrapper implementation should expose only `cases.list` and `cases.get`, resolve `out_root`/optional `run_id` server-side, emit path-safe JSON responses, and keep Supabase, dashboard, SQLite, API writes, MCP tools, and JobDesk frontend wiring out of scope until explicitly approved.

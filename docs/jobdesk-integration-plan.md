@@ -156,6 +156,37 @@ storage adapters behind ApplicationWorkspaceHub.
   hub-owned command store?
 - What audit record is required for manual override, accept/reject, and lock?
 
+## Read-Only Wrapper Boundary
+
+S5-HUB-05 recommends **local HTTP** as the first JobDesk-facing wrapper around
+ApplicationWorkspaceHub cases.
+
+Transport candidates:
+
+- local HTTP for JobDesk runtime consumption;
+- MCP for later agent/tool workflows;
+- CLI bridge for local operator smoke tests only.
+
+The first wrapper should be read-only and expose only:
+
+- `cases.list`
+- `cases.get`
+
+Initial runtime configuration:
+
+- `out_root`: server-side JobPipe artifact run root;
+- optional `run_id`: opaque run directory ID;
+- optional `candidate_id`: retained for hub signature compatibility.
+
+JobDesk should consume this through its existing `JobDeskIntegrationGateway`
+backend adapter. JobDesk components must not import JobPipe code, read artifact
+paths, connect to Supabase, or call MCP tools directly.
+
+The wrapper must not expose raw local paths, `.env` values, private data roots,
+full job descriptions, dashboard payloads, Supabase rows, or artifact file
+contents. Errors must be JSON-shaped and use stable codes such as
+`run_not_found`, `case_not_found`, `invalid_config`, and `contract_violation`.
+
 ## Next Implementation Task
 
 `S5-HUB-01 — Define ApplicationWorkspaceHub Contracts`
@@ -181,4 +212,3 @@ Not allowed:
 - no Reactive Resume execution;
 - no MCP implementation;
 - no JobDesk frontend changes.
-

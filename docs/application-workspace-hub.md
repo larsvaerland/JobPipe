@@ -307,6 +307,234 @@ They should not:
 - expose raw storage paths;
 - bypass approval/audit boundaries for write commands.
 
+## Read-Only Local Wrapper Boundary
+
+S5-HUB-05 locks the first wrapper boundary for exposing cases to JobDesk later.
+This is a planning boundary only; no wrapper is implemented in this slice.
+
+### Transport Candidates
+
+Candidates:
+
+- **Local HTTP**: small read-only localhost service exposing JSON endpoints.
+- **MCP**: tool surface for agents and connector-driven workflows.
+- **CLI bridge**: subprocess wrapper around `jobpipe.cli.workspace_cases`.
+
+Recommended first wrapper: **local HTTP**.
+
+Why:
+
+- JobDesk is a frontend app and can consume HTTP through its existing backend
+  adapter seam without importing JobPipe code.
+- HTTP request/response contracts are straightforward to test with fixture
+  artifact roots.
+- The wrapper can remain read-only, local-only, and replaceable by MCP later.
+- MCP is better as a second transport for agents after the hub response shape is
+  stable.
+- CLI bridge remains useful for operator smoke tests, but it is not the clean
+  app runtime boundary.
+
+### Startup And Runtime
+
+The local HTTP wrapper should:
+
+- start only when explicitly launched by the operator or dev tooling;
+- bind to localhost by default;
+- accept configuration for `out_root` and optional `run_id`;
+- initialize `ArtifactRunSource` and `ArtifactWorkspaceHub` through the hub
+  constructors;
+- serve read-only requests;
+- perform no source pulling, Supabase access, pipeline run, dashboard import,
+  SQLite access, or write persistence.
+
+### Configuration Model
+
+Configuration inputs:
+
+- `out_root`: required path to a JobPipe out-runs root.
+- `run_id`: optional opaque run directory ID. When omitted, newest valid run is
+  selected.
+- `candidate_id`: optional and currently ignored by artifact cases; retained so
+  the transport contract can match hub capability signatures later.
+- `readonly`: implicit true for the first wrapper.
+
+Configuration must remain server-side. JobDesk should never receive absolute
+local paths in responses.
+
+### cases.list Shape
+
+Request:
+
+```json
+{
+  "candidateId": "default",
+  "runId": "jobpipe_v1_5a3da9e5"
+}
+```
+
+`runId` is optional. If omitted, the wrapper resolves the newest valid run from
+configured `out_root`.
+
+Response:
+
+```json
+{
+  "schemaVersion": "jobpipe.workspace.cases.list.v1",
+  "runId": "jobpipe_v1_5a3da9e5",
+  "cases": [
+    {
+      "id": "opaque-case-id",
+      "company": "Example AS",
+      "role": "Product Manager",
+      "location": "Oslo",
+      "workMode": "hybrid",
+      "deadline": "2026-06-01",
+      "score": 82,
+      "recommendation": "apply",
+      "applicationStatus": "drafting",
+      "mainStrength": "Strong product overlap",
+      "mainGap": "Legacy burden needs framing",
+      "tailoringEffort": "medium",
+      "nextAction": "Open review"
+    }
+  ]
+}
+```
+
+### cases.get Shape
+
+Request:
+
+```json
+{
+  "caseId": "opaque-case-id",
+  "candidateId": "default",
+  "runId": "jobpipe_v1_5a3da9e5"
+}
+```
+
+Response:
+
+```json
+{
+  "schemaVersion": "jobpipe.workspace.cases.get.v1",
+  "runId": "jobpipe_v1_5a3da9e5",
+  "case": {
+    "id": "opaque-case-id",
+    "company": "Example AS",
+    "role": "Product Manager",
+    "score": 82,
+    "recommendation": "apply",
+    "decisionSignals": [
+      {
+        "key": "should_want",
+        "label": "Should want",
+        "score": 82,
+        "band": "strong",
+        "rationale": "Short rationale",
+        "confidence": "medium",
+        "evidenceIds": []
+      }
+    ],
+    "strengths": ["Strong product overlap"],
+    "gaps": ["Legacy burden needs framing"],
+    "evidence": [],
+    "artifacts": [
+      {
+        "id": "artifact:opaque-case-id:bridge_triage_decision_v3",
+        "kind": "bridge_triage_decision_v3",
+        "status": "available"
+      }
+    ]
+  }
+}
+```
+
+The wrapper may reuse the dataclass `to_dict()` shape internally, but transport
+field casing should be explicitly decided in implementation. JobDesk can map
+camelCase transport fields into its `JobDeskIntegrationGateway` types.
+
+### Privacy And Redaction Rules
+
+The wrapper must not emit:
+
+- absolute filesystem paths;
+- `.env` values;
+- private data roots;
+- `storage_path`;
+- raw `out_runs` paths;
+- raw Supabase rows;
+- full job descriptions;
+- dashboard payloads;
+- local artifact file contents.
+
+It may emit:
+
+- opaque run IDs;
+- opaque case IDs;
+- safe artifact IDs;
+- short summaries/rationales already present in hub models;
+- decision signal keys/scores/rationales;
+- evidence excerpts only when already sanitized by hub contracts.
+
+### Error Model
+
+Errors should be stable and JSON-shaped:
+
+```json
+{
+  "error": {
+    "code": "run_not_found",
+    "message": "No valid artifact run found.",
+    "retryable": false
+  }
+}
+```
+
+Initial error codes:
+
+- `invalid_config`
+- `run_not_found`
+- `case_not_found`
+- `artifact_unavailable`
+- `contract_violation`
+- `internal_error`
+
+Errors must not include local paths, env values, stack traces, or raw artifact
+payloads.
+
+### JobDesk Consumption Later
+
+JobDesk should consume the wrapper only through its existing
+`JobDeskIntegrationGateway` backend adapter seam:
+
+```text
+JobDesk UI
+-> JobDesk app services/hooks
+-> JobDeskIntegrationGateway
+-> HTTP backend adapter
+-> local read-only wrapper
+-> ApplicationWorkspaceHub
+```
+
+JobDesk must not import JobPipe packages, read local artifact paths, connect to
+Supabase, or call MCP tools directly from UI components.
+
+### Required Implementation Tests
+
+When implemented, wrapper tests must cover:
+
+- latest-run `cases.list`;
+- explicit-run `cases.list`;
+- `cases.get` success;
+- `case_not_found`;
+- `run_not_found`;
+- invalid `out_root` config;
+- no raw path markers in success payloads;
+- no raw path markers in error payloads;
+- no dashboard, Supabase, SQLite, or MCP imports;
+- no writes and no pipeline execution.
+
 ## Agent Guardrails
 
 Future agents must follow these rules:
