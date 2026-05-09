@@ -170,11 +170,50 @@ def test_workspace_server_gets_case_detail(tmp_path: Path) -> None:
     assert "https://example.test" not in serialized
 
 
+def test_workspace_server_gets_case_materials(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    server, base_url = _start_server(tmp_path)
+    try:
+        payload = _get_json(f"{base_url}/cases/job-1/materials")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert payload["schemaVersion"] == "jobpipe.workspace.materials.v1"
+    assert payload["runId"] == "jobpipe_v1_server"
+    assert payload["caseId"] == "job-1"
+    assert payload["resume"]["status"] == "missing"
+    assert payload["valueDraft"]["status"] == "missing"
+    assert payload["finalReadiness"]["status"] == "blocked"
+    assert payload["finalReadiness"]["blockers"]
+    assert {ref["kind"] for ref in payload["finalReadiness"]["artifactRefs"]} == {
+        "10_moderator",
+        "bridge_triage_decision_v3",
+        "bridge_triage_features",
+    }
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert str(tmp_path) not in serialized
+    assert "description_html" not in serialized
+
+
 def test_workspace_server_case_not_found(tmp_path: Path) -> None:
     _write_run(tmp_path)
     server, base_url = _start_server(tmp_path)
     try:
         status, payload = _get_error(f"{base_url}/cases/missing")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert status == 404
+    assert payload["error"]["code"] == "case_not_found"
+
+
+def test_workspace_server_materials_case_not_found(tmp_path: Path) -> None:
+    _write_run(tmp_path)
+    server, base_url = _start_server(tmp_path)
+    try:
+        status, payload = _get_error(f"{base_url}/cases/missing/materials")
     finally:
         server.shutdown()
         server.server_close()

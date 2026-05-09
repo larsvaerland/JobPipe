@@ -16,6 +16,7 @@ from jobpipe.workspace.contracts import ApplicationCaseReadModel, CaseListItem, 
 
 LIST_SCHEMA_VERSION = "jobpipe.workspace.cases.list.v1"
 GET_SCHEMA_VERSION = "jobpipe.workspace.cases.get.v1"
+MATERIALS_SCHEMA_VERSION = "jobpipe.workspace.materials.v1"
 HEALTH_SCHEMA_VERSION = "jobpipe.workspace.health.v1"
 
 
@@ -62,6 +63,29 @@ def _handle_get(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) 
                 handler,
                 HTTPStatus.OK,
                 {"schemaVersion": LIST_SCHEMA_VERSION, "runId": run_id, "cases": cases},
+            )
+            return
+
+        if parsed.path.startswith("/cases/") and parsed.path.endswith("/materials"):
+            raw_case_id = parsed.path.removeprefix("/cases/").removesuffix("/materials")
+            case_id = unquote(raw_case_id).strip().strip("/")
+            if not case_id or "/" in case_id:
+                _write_error(handler, HTTPStatus.NOT_FOUND, "case_not_found", "Case not found.")
+                return
+            run_id, hub = _resolve_hub(config, parse_qs(parsed.query))
+            case = hub.cases.get(case_id)
+            if case is None:
+                _write_error(handler, HTTPStatus.NOT_FOUND, "case_not_found", "Case not found.")
+                return
+            _write_json(
+                handler,
+                HTTPStatus.OK,
+                {
+                    "schemaVersion": MATERIALS_SCHEMA_VERSION,
+                    "runId": run_id,
+                    "caseId": case.id,
+                    **_case_materials(case),
+                },
             )
             return
 
@@ -195,6 +219,77 @@ def _case_detail(case: ApplicationCaseReadModel) -> dict[str, Any]:
             }
             for artifact in case.artifacts
         ],
+    }
+
+
+def _case_materials(case: ApplicationCaseReadModel) -> dict[str, Any]:
+    resume_refs = _matching_artifacts(
+        case,
+        ("resume", "cv", "reactive_resume", "pdf", "screenshot"),
+    )
+    value_refs = _matching_artifacts(
+        case,
+        ("value", "proposition", "cover_letter", "application_message"),
+    )
+    final_source_refs = _matching_artifacts(
+        case,
+        ("10_moderator", "bridge_triage_decision_v3", "bridge_triage_features"),
+    )
+
+    blockers: list[str] = []
+    if not resume_refs:
+        blockers.append("Resume variant artifact is not available in this run.")
+    if not value_refs:
+        blockers.append("Value proposition draft artifact is not available in this run.")
+    if case.gaps:
+        blockers.append("Open risk points should be reviewed before marking ready.")
+
+    return {
+        "resume": {
+            "status": "available" if resume_refs else "missing",
+            "summary": "Resume artifact is available." if resume_refs else "Resume variant is not prepared yet.",
+            "artifactRefs": [_artifact_payload(ref) for ref in resume_refs],
+        },
+        "valueDraft": {
+            "status": "available" if value_refs else "missing",
+            "summary": "Value proposition draft is available."
+            if value_refs
+            else "Value proposition draft is not prepared yet.",
+            "artifactRefs": [_artifact_payload(ref) for ref in value_refs],
+        },
+        "finalReadiness": {
+            "status": "available" if not blockers else "blocked",
+            "summary": "Ready for final review." if not blockers else "Readiness is blocked by missing downstream materials.",
+            "blockers": blockers,
+            "artifactRefs": [_artifact_payload(ref) for ref in final_source_refs],
+        },
+    }
+
+
+def _matching_artifacts(
+    case: ApplicationCaseReadModel,
+    needles: tuple[str, ...],
+) -> list[Any]:
+    matches = []
+    for artifact in case.artifacts:
+        haystack = " ".join(
+            [
+                artifact.id,
+                artifact.kind,
+                artifact.label,
+            ]
+        ).lower()
+        if any(needle in haystack for needle in needles):
+            matches.append(artifact)
+    return matches
+
+
+def _artifact_payload(artifact: Any) -> dict[str, Any]:
+    return {
+        "id": artifact.id,
+        "kind": artifact.kind,
+        "status": artifact.status,
+        "label": artifact.label,
     }
 
 
