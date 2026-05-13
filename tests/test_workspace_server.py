@@ -458,6 +458,65 @@ def test_tailoring_plan_does_not_expose_filesystem_paths(tmp_path: Path) -> None
         assert "C:\\" not in serialized
 
 
+# ----- run-id pinning + exclusive bind regressions -----------------------
+
+
+def test_workspace_server_run_id_flag_pins_default(tmp_path: Path) -> None:
+    """Starting the hub with ``--run-id`` makes that the default run.
+
+    Regression: during Phase 5 smoke a stale second hub process (allowed by
+    Windows port double-bind) intercepted requests, making it look like the
+    flag wasn't honored. The exclusive-bind fix removes the masking; this
+    test pins the actual flag behavior so any future regression in
+    ``build_server(run_id=...)`` -> ``WorkspaceServerConfig.default_run_id``
+    -> ``_resolve_hub`` flow fails loudly.
+    """
+
+    _write_run(tmp_path, "jobpipe_v1_aaaa1111")
+    _write_run(tmp_path, "jobpipe_v1_bbbb2222")
+    # Pin the OLDER run as the default. Without the flag, "newest" wins —
+    # the test would see jobpipe_v1_bbbb2222.
+    server = build_server(out_root=tmp_path, run_id="jobpipe_v1_aaaa1111", host="127.0.0.1", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address[:2]
+    try:
+        payload = _get_json(f"http://{host}:{port}/cases")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert payload["runId"] == "jobpipe_v1_aaaa1111"
+
+
+def test_workspace_server_refuses_to_double_bind_same_port(tmp_path: Path) -> None:
+    """Second ``build_server(...)`` on the same ``host:port`` must fail fast.
+
+    Regression: Windows ``SO_REUSEADDR`` semantics let two hub processes
+    bind to the same port silently, producing confusing round-robin
+    routing. ``_ExclusiveBindThreadingHTTPServer`` sets
+    ``SO_EXCLUSIVEADDRUSE`` on Windows and leaves ``allow_reuse_address``
+    at ``False`` everywhere; both lead to the second bind raising
+    ``OSError`` instead.
+    """
+
+    _write_run(tmp_path)
+    first = build_server(out_root=tmp_path, host="127.0.0.1", port=0)
+    host, port = first.server_address[:2]
+    try:
+        try:
+            build_server(out_root=tmp_path, host="127.0.0.1", port=port)
+        except OSError:
+            pass  # Expected — second bind refused.
+        else:
+            raise AssertionError(
+                f"Second build_server bind to {host}:{port} succeeded; "
+                f"exclusive-bind guard regressed."
+            )
+    finally:
+        first.server_close()
+
+
 def test_workspace_server_does_not_import_forbidden_sources() -> None:
     source = Path("jobpipe/cli/workspace_server.py").read_text(encoding="utf-8")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sys
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -54,6 +55,34 @@ class WorkspaceServerConfig:
     state_root: Path | None = None
 
 
+class _ExclusiveBindThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that refuses to share its port with another process.
+
+    By default Python's ``socketserver`` does NOT set ``SO_REUSEADDR``, but
+    Windows' default socket behavior still allows a second process to bind
+    to the same ``host:port`` in some configurations. The result we saw in
+    Phase 5: starting a second hub on :8765 succeeded silently, both
+    processes received traffic in round-robin fashion, and stale code in
+    the older process produced confusing 404s.
+
+    On Windows, ``SO_EXCLUSIVEADDRUSE`` makes the second bind fail with
+    ``WinError 10048`` instead, which is the behavior we want — a second
+    hub on the same port should refuse to start so the operator notices.
+    On non-Windows platforms ``SO_REUSEADDR`` is left at its default
+    (``False`` per Python's TCPServer), which already gives "address in
+    use" for an active listener.
+    """
+
+    allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        if sys.platform == "win32":
+            exclusive_opt = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive_opt is not None:
+                self.socket.setsockopt(socket.SOL_SOCKET, exclusive_opt, 1)
+        super().server_bind()
+
+
 def build_server(
     *,
     out_root: str | Path,
@@ -68,6 +97,11 @@ def build_server(
     decision state (under ``state_root``), with per-case JSON records keyed
     by case id. State is global to the user — independent of which pipeline
     run surfaced the case.
+
+    The returned server refuses to share its port with another process
+    (see ``_ExclusiveBindThreadingHTTPServer``); starting a second hub on
+    the same port fails fast with a clear OSError instead of silently
+    racing with the existing listener.
     """
 
     config = WorkspaceServerConfig(
@@ -88,7 +122,7 @@ def build_server(
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), format % args))
 
-    return ThreadingHTTPServer((host, port), WorkspaceCasesHandler)
+    return _ExclusiveBindThreadingHTTPServer((host, port), WorkspaceCasesHandler)
 
 
 def _handle_get(handler: BaseHTTPRequestHandler, config: WorkspaceServerConfig) -> None:
@@ -780,13 +814,28 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
-    server = build_server(
-        out_root=args.out_root,
-        run_id=args.run_id,
-        host=args.host,
-        port=args.port,
-        state_root=args.state_root or None,
-    )
+    try:
+        server = build_server(
+            out_root=args.out_root,
+            run_id=args.run_id,
+            host=args.host,
+            port=args.port,
+            state_root=args.state_root or None,
+        )
+    except OSError as exc:
+        # Most commonly: port already bound by another hub. With Phase 5's
+        # SO_EXCLUSIVEADDRUSE fix the second bind fails fast — surface it
+        # readably so the operator doesn't chase phantom routing bugs.
+        if getattr(exc, "errno", None) in (10048, 10013, 98) or "address" in str(exc).lower():
+            print(
+                f"[error] Cannot bind {args.host}:{args.port} — another "
+                f"workspace_server is already running on this port. Stop "
+                f"it before starting a new one (or pass --port).",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit(2) from exc
+        raise
     host, port = server.server_address[:2]
     print(f"Serving workspace cases on http://{host}:{port}", flush=True)
     try:
