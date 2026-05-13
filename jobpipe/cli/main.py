@@ -324,16 +324,18 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         )
     else:
         print("[1/3] drain-queue ...")
+        # drain_queue is candidate-agnostic: it only produces the delta queue
+        # from connector feeds. Downstream stages handle per-candidate work.
+        # Ledger SQLite is named --ledger-sqlite here (not --db).
         drain_argv = [
             "--env-file", str(env_file),
-            "--candidate-id", candidate_id,
             "--config", args.config,
             "--out", str(artifacts_dir),
             "--reports", str(reports_dir),
             "--state", str(state_path),
             "--batch-size", str(max_jobs),
             "--overwrite",
-            "--db", str(db_path),
+            "--ledger-sqlite", str(db_path),
         ]
         if profile_path:
             drain_argv += ["--profile", profile_path]
@@ -359,8 +361,7 @@ def _run_main_flow(args: argparse.Namespace) -> None:
         [
             "--out-runs", str(artifacts_dir),
             "--out", str(dashboard_path),
-            "--db", str(db_path),
-            "--candidate-id", candidate_id,
+            "--sqlite", str(db_path),
         ],
     )
 
