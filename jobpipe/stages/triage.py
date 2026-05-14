@@ -165,9 +165,15 @@ Svar KUN som gyldig JSON iht output_type.
 """.strip()
 
 
-def _extract_profile_summary(profile_pack: str, max_chars: int = 900) -> str:
+def _extract_profile_summary(profile_pack: str, max_chars: int = 3000) -> str:
     """Extract sections 0 + 1 from profile_pack.md as a compact summary for instructions.
-    Falls back to first max_chars if section markers not found."""
+    Falls back to first max_chars if section markers not found.
+
+    Cap calibration 2026-05-14: raised default 900 → 3000. The previous cap was
+    truncating most profile_pack.md files mid-section, so the LLM never saw the
+    Target roles list (section 1). With gpt-4.1-nano input pricing at ~$0.10/1M
+    tokens, 3000 chars ≈ 750 tokens = ~$0.00007 per triage call — negligible.
+    """
     lines = profile_pack.split("\n")
     capture: list[str] = []
     in_section = False

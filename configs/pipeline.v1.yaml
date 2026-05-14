@@ -73,12 +73,35 @@ safety_rules:
 
   very_strong_positive_regex: '(?i)\b(tjenesteeier|service\s+owner|tjenesteleder|services?\s*manager|systemeier|systemansvar|plattform(ansvar(lig)?|eier|leder|forvalt(ning|er))|applikasjonsforvalt(ning|er)|systemforvalt(ning|er)|itsm|itil|servicenow|cmdb|incident\s+management|problem\s+management|change\s+management|service\s+catalog|sla|crm[-\s]?(ansvarlig|forvalt(ning|er)|administrator|admin|manager)|salesforce(\s+administrator|\s+admin)?|dynamics\s*365(\s+crm)?|microsoft\s*dynamics(\s*365)?|hubspot(\s+(admin|administrator|ops|operations))?|endringsledelse|organisasjonsutvikling)\b'
 
-  # Weak positives (lower precision) — only override SKIP when combined
-  weak_positive_regex: '(?i)\b(backlog|roadmap|prioriter(ing|e)|mvp|hypotes(e|er)|gevinstrealisering|produktstrategi|product\s+discovery|tverrfag(lig|lige)|stakeholder(s)?|interessent(er)?|forvalt(ning|er)|governance|porteføljestyr(ing)?|tjenesteportefølje|leverandørstyring|leverandøroppfølging|kontraktsforvaltning|endringsledelse|smidig|scrum|kanban|prosesseier|prosessledelse|prosessforbedring|integrasjon(er)?|api(er)?|datakvalitet|masterdata|data\s+governance|\bmdm\b|compliance|gdpr|risiko|sikkerhet|iam|tilgangsstyring|azure\s*ad|e-?commerce|netthandel|cro|a\/?b-?test(ing)?|konvertering|heatmap(s)?|power\s*bi|tableau|looker|google\s*analytics|ga4|rapportering|dashbord|marketing\s+automation|jira|confluence|zendesk|videreutvikling|plattformdrift|plattformforvaltning|kravhåndtering|behovsavklaring)\b'
+  # Weak positives (lower precision) — only override SKIP when combined.
+  #
+  # CALIBRATION 2026-05-14: broadened to catch HR-speak phrasing common in Norwegian
+  # public-sector + NGO ads. The original list required role-specific vocabulary
+  # like "tjenesteeier" / "endringsledelse" / "backlog", but many real ads write
+  # around it: "transformasjon", "forbedringsarbeid", "digital utvikling",
+  # "modernisering", "IT-ledelse", "drift". These should count as weak signals
+  # of role-relevance for the SKIP-override gate. The override still needs at
+  # least min_hits matches to fire, so adding broader terms doesn't blow up
+  # false-positives — it just makes the safety net respond to body content,
+  # not vocabulary preferences.
+  weak_positive_regex: '(?i)\b(backlog|roadmap|prioriter(ing|e)|mvp|hypotes(e|er)|gevinst(realisering|forst[åa]else)?|produktstrategi|product\s+discovery|tverrfag(lig|lige)|stakeholder(s)?|interessent(er)?|forvalt(ning|er|ningsansvar)?|governance|porteføljestyr(ing)?|portefølje|tjenesteportefølje|leverandørstyring|leverandøroppfølging|kontraktsforvaltning|endringsledelse|endring(s|sarbeid|sprosess(er)?)?|transformasjon|transformation|modernisering|fornyelse|smidig|scrum|kanban|prosesseier|prosessledelse|prosessforbedring|forbedring(sarbeid)?|integrasjon(er)?|api(er)?|datakvalitet|masterdata|data\s+governance|\bmdm\b|compliance|gdpr|risiko|sikkerhet|iam|tilgangsstyring|azure\s*ad|e-?commerce|netthandel|cro|a\/?b-?test(ing)?|konvertering|heatmap(s)?|power\s*bi|tableau|looker|google\s*analytics|ga4|rapportering|dashbord|marketing\s+automation|jira|confluence|zendesk|videreutvikling|plattformdrift|plattformforvaltning|kravhåndtering|behovsavklaring|digital(e|t)?\s+(tjenest(er)?|utvikling|fellesskap|løsning(er)?|prosess(er)?)|tjenest(er|eutvikling|edesign|eutvikler|edesigner)|brukerinnsikt|brukerreis(er)?|brukeropplevels(e|er)?|UX\s+research|driftsansvar|drifts?ledelse|forretning(s|skritisk)|IT-?ledelse|IT-?leder|IT\s+leadership|teknologistrategi|digitaliserings(strategi|tiltak|prosjekt)|systeml[åa]ndskap)\b'
 
-  # Gating for weak override
-  weak_override_max_skip_confidence: 0.40
-  weak_override_min_hits: 4
+  # Gating for weak override.
+  #
+  # CALIBRATION 2026-05-14: lifted from 0.40 → 1.0. The previous gate only fired
+  # when the LLM was already uncertain about its SKIP. That meant high-confidence
+  # SKIPs (the LLM scoring 0.95 on a vague-titled ad) could never be rescued even
+  # when the body had 4+ relevant keywords. Several jobs the user is qualified for
+  # (Bane NOR digital rådgiver, Reflekt IT systemforvaltning role, etc.) had
+  # LLM rationales that literally said "fits well" / "aligns with candidate's
+  # expertise" but were still SKIPped because the LLM bound it to 0.95 confidence.
+  # Letting the weak-positive override fire at any confidence level lets body
+  # content speak even when the LLM was too narrow on title/intro.
+  weak_override_max_skip_confidence: 1.0
+  # CALIBRATION 2026-05-14: lowered min_hits 4→2. With the broadened weak_positive_regex
+  # above, 2 in-body matches is enough evidence to bump a SKIP to REVIEW for downstream
+  # profile_match to evaluate. Anchor path stays at 2 (now 1 anchor + 2 weak hits = lift).
+  weak_override_min_hits: 2
   weak_override_min_hits_with_anchor: 2
   weak_anchor_regex: '(?i)\b(tjenesteeier|service\s+owner|systemeier|applikasjonsforvalt|systemforvalt|plattform(ansvar(lig)?|eier|leder|forvalt)|itsm|itil|servicenow|cmdb|crm|salesforce|dynamics\s*365|hubspot|integrasjon|api|data\s+governance|masterdata|gdpr|compliance|endringsledelse)\b'
 
