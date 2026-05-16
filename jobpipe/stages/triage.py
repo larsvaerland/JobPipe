@@ -165,14 +165,14 @@ Svar KUN som gyldig JSON iht output_type.
 """.strip()
 
 
-def _extract_profile_summary(profile_pack: str, max_chars: int = 3000) -> str:
+def _extract_profile_summary(profile_pack: str, max_chars: int = 900) -> str:
     """Extract sections 0 + 1 from profile_pack.md as a compact summary for instructions.
     Falls back to first max_chars if section markers not found.
 
-    Cap calibration 2026-05-14: raised default 900 → 3000. The previous cap was
-    truncating most profile_pack.md files mid-section, so the LLM never saw the
-    Target roles list (section 1). With gpt-4.1-nano input pricing at ~$0.10/1M
-    tokens, 3000 chars ≈ 750 tokens = ~$0.00007 per triage call — negligible.
+    NOTE 2026-05-16: reverted cap 3000 → 900 (pre-a2de259 default). The 2026-05-14
+    raise was made before profile_pack.md was tightened, and 3000 chars now bleeds
+    target-role list into the LLM's instruction window every call. Awaiting new
+    calibration cycle aligned with the upcoming profile rewrite.
     """
     lines = profile_pack.split("\n")
     capture: list[str] = []
