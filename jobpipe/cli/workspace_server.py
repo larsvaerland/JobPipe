@@ -842,7 +842,7 @@ def _read_post_body(
 
 def _resolve_tailoring_plan(
     config: WorkspaceServerConfig,
-    hub: "ArtifactWorkspaceHub",
+    hub: "ArtifactWorkspaceHub | Any",
     case_id: str,
 ) -> dict[str, Any] | None:
     """Return the merged tailoring-plan payload for ``case_id``.
@@ -851,10 +851,18 @@ def _resolve_tailoring_plan(
     is merged on top via shallow-merge so partial refinements work. Returns
     ``None`` when neither layer has content (i.e. case has no application_pack
     AND no JobSane write-back yet).
+
+    In Supabase mode the hub doesn't expose `.tailoring` — tailoring projections
+    live in per-run artifacts which aren't the canonical store. The endpoint
+    degrades to "override-only" until tailoring_plan gets its own Supabase
+    capability (tracked as a Phase 5 follow-up to the canonical-state stitch).
     """
 
-    pipeline = hub.tailoring.get(case_id)
-    pipeline_dict = pipeline.to_dict() if pipeline is not None else None
+    if hasattr(hub, "tailoring"):
+        pipeline = hub.tailoring.get(case_id)
+        pipeline_dict = pipeline.to_dict() if pipeline is not None else None
+    else:
+        pipeline_dict = None
     override = _load_tailoring_override(config, case_id)
 
     if pipeline_dict is None and override is None:
