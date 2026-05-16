@@ -109,6 +109,33 @@ class NarrativeStrategyV3(BaseModel):
     confidence: int = Field(ge=0, le=100)
     summary: str = Field(min_length=1, max_length=240)
 
+    @field_validator(
+        "positioning_angle",
+        "why_me_now",
+        "cover_letter_strategy",
+        "summary",
+        mode="before",
+    )
+    @classmethod
+    def _truncate_240(cls, v: Any) -> Any:
+        """Truncate LLM or template strings that exceed the 240-char display cap.
+
+        Without this, a long employer + title combo in the
+        ``narrative_strategy_v3.build_narrative_strategy`` f-strings can
+        overflow and Pydantic refuses to parse — silently losing the entire
+        case from the shortlist (see 2026-05-16 c968ed47 incident).
+        """
+        if isinstance(v, str) and len(v) > 240:
+            return v[:237] + "..."
+        return v
+
+    @field_validator("brand_frame", mode="before")
+    @classmethod
+    def _truncate_180(cls, v: Any) -> Any:
+        if isinstance(v, str) and len(v) > 180:
+            return v[:177] + "..."
+        return v
+
 class TriageOut(BaseModel):
     triage_decision: TriageDecision
     confidence: float = Field(ge=0, le=1)

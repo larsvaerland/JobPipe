@@ -78,12 +78,35 @@ def moderate_stage_factory(thresholds: Dict[str, Any]):
             if triage_decision_v3.needs_ambiguity_pass is False and ctx.triage_ambiguity_v3:
                 persist_triage_ambiguity_v3(job_dir, ctx.triage_ambiguity_v3)
 
+        # ── v3-veto guard (added 2026-05-16, Cognia FP) ─────────────────────
+        # The deterministic fit/pivot moderator above was producing APPLY_STRONGLY
+        # for cases the v3 stack had already classified as "discard" + "weak_case"
+        # (e.g. construction-site lead scoring 81 because keyword overlap on
+        # "leder"/"prosjekt" inflated fit_score, while v3 had every other signal
+        # screaming weak match). Veto so v3 disagreement caps the decision.
+        veto_reason = None
+        adv = ctx.advantage_assessment_v3
+        v3_label = getattr(triage_decision_v3, "label", None)
+        if v3_label == "discard":
+            veto_reason = "v3_discard"
+        elif adv is not None and adv.advantage_type == "weak_case" and fit < 85:
+            veto_reason = "advantage_weak_case"
+        if veto_reason:
+            # Strong vote-against: never promote past REVIEW_LOW. SKIP only when
+            # the moderator already wanted it (don't downgrade a moderator
+            # REVIEW_LOW to SKIP — keep the chance of a human review).
+            if final in ("APPLY_STRONGLY", "APPLY", "REVIEW_HIGH"):
+                final = "REVIEW_LOW"
+
         ctx.moderator = ModeratorOut(
             final_decision=final,
             confidence=conf,
-            recommendation_reason=f"fit={fit}, pivot={pivot}",
+            recommendation_reason=(
+                f"fit={fit}, pivot={pivot}"
+                + (f", veto={veto_reason}" if veto_reason else "")
+            ),
             cv_focus=[],
-            feedback_flags=[],
+            feedback_flags=([veto_reason] if veto_reason else []),
             triage_decision_v3=triage_decision_v3,
         )
         return ctx

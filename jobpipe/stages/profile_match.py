@@ -90,6 +90,16 @@ def profile_match_stage_factory(model: str):
                 "employer_name": ctx.job.get("employer_name"),
                 "sector": ctx.job.get("sector"),
                 "deadline": ctx.job.get("applicationDue"),
+                # Canonical NAV occupation classification — added 2026-05-16
+                # to address Cognia-class false positives where the marketing
+                # ad ``title`` ("Leder prosjekt og kundesuksess") suggests a
+                # digital/product role but the NAV occupation classification
+                # ("Arbeidsleder, bygg og anlegg") reveals it's actually
+                # manual-trade. The matcher should weight occupation heavily
+                # when title and occupation disagree.
+                "occupation_level1": ctx.job.get("occupation_level1"),
+                "occupation_level2": ctx.job.get("occupation_level2"),
+                "role": ctx.job.get("role"),
             },
         }
 
