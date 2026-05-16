@@ -360,4 +360,41 @@ class JobContext(BaseModel):
             "fit_score": self.profile_match.fit_score if self.profile_match else None,
             "pivot_score": self.pivot.pivot_score if self.pivot else None,
             "confidence": self.moderator.confidence if self.moderator else None,
+            # Rich list/prose fields from upstream deterministic stages. The
+            # workspace read model uses these to render concrete strengths,
+            # gaps, and per-dimension rationales instead of tag-translations.
+            # All optional — drop into signals JSONB only when the stage ran.
+            "profile_match_overlaps": (
+                list(self.profile_match.overlaps) if self.profile_match else []
+            ),
+            "profile_match_gaps": (
+                list(self.profile_match.gaps) if self.profile_match else []
+            ),
+            "profile_match_level": (
+                self.profile_match.match_level if self.profile_match else None
+            ),
+            "pivot_why_it_matters": (
+                list(self.pivot.why_it_matters) if self.pivot else []
+            ),
+            "pivot_potential_risk": (
+                self.pivot.potential_risk if self.pivot else None
+            ),
+            "advantage_signals": (
+                list(self.advantage_assessment_v3.advantage_signals) if self.advantage_assessment_v3 else []
+            ),
+            "objection_signals": (
+                list(self.advantage_assessment_v3.objection_signals) if self.advantage_assessment_v3 else []
+            ),
+            "differentiation_signals": (
+                list(self.advantage_assessment_v3.differentiation_signals) if self.advantage_assessment_v3 else []
+            ),
+            "neutralizing_evidence": (
+                list(self.advantage_assessment_v3.neutralizing_evidence) if self.advantage_assessment_v3 else []
+            ),
+            "recruiter_hook": (
+                self.advantage_assessment_v3.recruiter_hook if self.advantage_assessment_v3 else ""
+            ),
+            "applicant_pool_hypothesis": (
+                self.advantage_assessment_v3.applicant_pool_hypothesis if self.advantage_assessment_v3 else ""
+            ),
         }

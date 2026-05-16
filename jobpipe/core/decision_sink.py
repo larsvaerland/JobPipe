@@ -53,8 +53,15 @@ def get_profile_version(profile_pack_path: Path) -> Optional[str]:
 def _signals_payload(summary: Dict[str, Any]) -> Dict[str, Any]:
     """Bundle the triage-related fields from snapshot_summary into the
     `signals` jsonb column. Excludes job_id/title/employer/decision/score
-    which have their own columns."""
+    which have their own columns.
+
+    The rich list/prose fields (profile_match_overlaps, pivot_why_it_matters,
+    advantage_signals, etc.) drive concrete strengths/gaps/rationales in the
+    workspace read model. They're deterministic outputs from upstream stages,
+    so persisting them costs nothing extra at runtime.
+    """
     keys = (
+        # legacy aggregate / decision fields
         "triage_decision",
         "triage_confidence",
         "triage_signals",
@@ -70,8 +77,27 @@ def _signals_payload(summary: Dict[str, Any]) -> Dict[str, Any]:
         "narrative_brand_frame",
         "pivot_score",
         "confidence",
+        # rich deterministic outputs from profile_match / pivot / advantage_v3
+        "profile_match_overlaps",
+        "profile_match_gaps",
+        "profile_match_level",
+        "pivot_why_it_matters",
+        "pivot_potential_risk",
+        "advantage_signals",
+        "objection_signals",
+        "differentiation_signals",
+        "neutralizing_evidence",
+        "recruiter_hook",
+        "applicant_pool_hypothesis",
     )
-    return {k: summary.get(k) for k in keys if summary.get(k) is not None}
+    # Filter empties — None, "", and []. Avoids bloating the JSONB column on
+    # cases where an upstream stage didn't run (e.g. legacy rows decided
+    # before this projection landed).
+    return {
+        k: summary.get(k)
+        for k in keys
+        if summary.get(k) not in (None, "", [])
+    }
 
 
 def load_decided_job_ids(

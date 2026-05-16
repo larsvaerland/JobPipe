@@ -40,4 +40,16 @@ def test_job_context_snapshot_summary_uses_model_schema() -> None:
         # narrative strategy
         "narrative_positioning_angle": None,
         "narrative_brand_frame": None,
+        # rich list/prose projections (consumed by workspace read model)
+        "profile_match_overlaps": [],
+        "profile_match_gaps": [],
+        "profile_match_level": None,
+        "pivot_why_it_matters": [],
+        "pivot_potential_risk": None,
+        "advantage_signals": [],
+        "objection_signals": [],
+        "differentiation_signals": [],
+        "neutralizing_evidence": [],
+        "recruiter_hook": "",
+        "applicant_pool_hypothesis": "",
     }

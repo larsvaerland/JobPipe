@@ -21,6 +21,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from jobpipe.core.decision_sink import get_user_id
+from jobpipe.core.io import html_to_text
 
 from .contracts import (
     ApplicationCaseReadModel,
@@ -83,24 +84,15 @@ def _confidence_band(score: int) -> str:
     return "low"
 
 
-# triage_signals mixes human-readable tags with internal markers like
-# "sim:0.59", "safety:weak", "weak_hits:6", "anchor:0", "wk:digitale løsninger".
-# Filter to the human ones for display in strengths / mainStrength.
+# `wk:` prefixed triage_signals are weak-keyword hits from the ad that the
+# profile barely covers. Used by _extract_ats_keywords below; the rest of the
+# triage_signals list is filter-pass metadata (not strengths) and never reaches
+# the workspace read model.
+#
+# _INTERNAL_SIGNAL_PREFIXES catches the same internal markers when they leak
+# into advantage_signals / objection_signals (which mix prose and tags) — see
+# _filter_human_strings.
 _INTERNAL_SIGNAL_PREFIXES = ("sim:", "safety:", "weak_hits:", "anchor:", "wk:")
-
-
-def _filter_human_signals(signals: Any) -> list[str]:
-    if not isinstance(signals, list):
-        return []
-    out: list[str] = []
-    for s in signals:
-        if not isinstance(s, str):
-            continue
-        s = s.strip()
-        if not s or any(s.startswith(p) for p in _INTERNAL_SIGNAL_PREFIXES):
-            continue
-        out.append(s)
-    return out
 
 
 def _wk_signals(signals: Any) -> list[str]:
@@ -111,16 +103,111 @@ def _wk_signals(signals: Any) -> list[str]:
     return [s[3:].strip() for s in signals if isinstance(s, str) and s.startswith("wk:") and len(s) > 3]
 
 
-def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSignal]:
-    """Derive the 4-dimension breakdown from the flat score fields in signals.
+def _filter_human_strings(values: Any) -> list[str]:
+    """Return only the prose entries from a list — skip empty strings and the
+    internal snake_case markers (`strong_core_tech_alignment`, `wk:foo`, etc.)
+    that AdvantageAssessmentV3 mixes into its signal lists alongside real
+    prose. Used for both strengths and gaps."""
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for v in values:
+        if not isinstance(v, str):
+            continue
+        s = v.strip()
+        if not s or s.lower() in seen:
+            continue
+        # Drop the internal markers — single snake_case token, no spaces.
+        if " " not in s and "_" in s and s == s.lower():
+            continue
+        if any(s.startswith(p) for p in _INTERNAL_SIGNAL_PREFIXES):
+            continue
+        seen.add(s.lower())
+        out.append(s)
+    return out
 
-    Mapping (approximate — JobPipe's bridge_triage_features had finer
-    sub-features per dimension; those aren't yet in Supabase, so we use the
-    aggregate scores that ARE available):
-      can_do      ← triage_v3_weighted_score (overall technical/role fit)
-      can_get     ← advantageous_match_score (likelihood-to-succeed framing)
-      should_want ← pivot_score (motivation / pivot strength)
-      can_explain ← triage_v3_confidence (story / narrative confidence)
+
+def _rationale_can_do(overlaps: list[str], score: int) -> str:
+    """What the profile actually overlaps with in the ad.
+
+    Only real profile_match.overlaps are surfaced as evidence — triage_signals
+    tags ("geo", "offentlig") and wk:* weak-keyword hits are filter-pass
+    markers, not profile evidence, so they aren't dressed up as can-do
+    rationale. When no real overlap exists, return score-based prose.
+    """
+    if overlaps:
+        first = overlaps[0]
+        if len(overlaps) >= 2:
+            return f"{first}; {overlaps[1]}"
+        return first
+    if score >= 70:
+        return f"Aggregert fit {score} uten konkrete profil-treff å peke på"
+    return f"Aggregert fit {score} — under terskel for klar match"
+
+
+def _rationale_can_get(recruiter_hook: str, advantage_type: str, score: int) -> str:
+    """How realistic the case looks against the likely competing field."""
+    if recruiter_hook:
+        return recruiter_hook
+    if advantage_type == "strong_fit":
+        return f"Strong fit ({score}) — direkte konkurransedyktig profil"
+    if advantage_type == "advantageous_mismatch":
+        return f"Advantageous mismatch ({score}) — uvanlig vinkel kan gi forsprang"
+    if advantage_type == "stretch_review":
+        return f"Stretch ({score}) — må overbevise mot mer åpenbare kandidater"
+    if advantage_type == "weak_case":
+        return f"Weak case ({score}) — sterkere kandidater finnes sannsynligvis"
+    return f"Konkurransebilde uavklart ({score})"
+
+
+def _rationale_should_want(why_it_matters: list[str], score: int) -> str:
+    """Pivot/motivation strength — whether this case moves the candidate in
+    the direction they actually want to go."""
+    if why_it_matters:
+        return why_it_matters[0]
+    if score >= 80:
+        return f"Pivot-styrke {score} — motivasjonen kan bære saken"
+    if score >= 60:
+        return f"Pivot-styrke {score} — moderat retningstreff"
+    if score >= 40:
+        return f"Pivot-styrke {score} — svak retningsstemning"
+    return f"Pivot-styrke {score} — utenfor ønsket retning"
+
+
+def _rationale_can_explain(hypothesis: str, score: int, triage_label: str) -> str:
+    """How confidently the triage model thinks the story can be told."""
+    if hypothesis:
+        return hypothesis
+    if score >= 80:
+        return f"Modellkonfidans {score} — story bør være lett å ramme inn"
+    if score >= 65:
+        return f"Modellkonfidans {score} — story trenger en tydelig vinkel"
+    if triage_label == "discard":
+        return f"Modellkonfidans {score} — modellen ville droppet saken, story må overstyre"
+    return f"Modellkonfidans {score} — story-grunnlaget er tynt"
+
+
+def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSignal]:
+    """Derive four distinct rationales from the deterministic triage features.
+
+    Preference order per slot:
+      can_do      — profile_match_overlaps → humanized triage_signals → wk: keywords → score prose
+      can_get     — recruiter_hook → advantage_type prose → score prose
+      should_want — pivot_why_it_matters → pivot_score prose
+      can_explain — applicant_pool_hypothesis → triage_v3_confidence prose
+
+    Score mapping unchanged:
+      can_do      ← triage_v3_weighted_score
+      can_get     ← advantageous_match_score
+      should_want ← pivot_score
+      can_explain ← triage_v3_confidence
+
+    Pre-2026-05-16 this leaned on narrative_positioning_angle and
+    narrative_brand_frame, but those were template strings (no LLM prose)
+    that surfaced in 2-3 slots simultaneously — see commit db545d2 disabling
+    narrative_strategy_v3 and the snapshot_summary projection upgrade that
+    landed the rich fields below.
     """
     def _pick(key: str, fallback: int) -> int:
         return _clamp_score(signals.get(key) if isinstance(signals.get(key), (int, float)) else fallback)
@@ -130,9 +217,13 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
     should_want = _pick("pivot_score", score)
     can_explain = _pick("triage_v3_confidence", score)
 
-    rationale = str(signals.get("narrative_positioning_angle") or "").strip()
-    brand = str(signals.get("narrative_brand_frame") or "").strip()
     confidence = _confidence_band(_clamp_score(signals.get("triage_v3_confidence")))
+    overlaps = _filter_human_strings(signals.get("profile_match_overlaps"))
+    why_it_matters = _filter_human_strings(signals.get("pivot_why_it_matters"))
+    recruiter_hook = str(signals.get("recruiter_hook") or "").strip()
+    applicant_pool_hypothesis = str(signals.get("applicant_pool_hypothesis") or "").strip()
+    advantage_type = str(signals.get("advantage_type") or "").lower()
+    triage_label = str(signals.get("triage_v3_label") or "").lower()
 
     return [
         DecisionSignal(
@@ -140,7 +231,7 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
             label="Can do",
             score=can_do,
             band=_score_band(can_do),
-            rationale=brand or rationale,
+            rationale=_rationale_can_do(overlaps, can_do),
             confidence=confidence,
         ),
         DecisionSignal(
@@ -148,7 +239,7 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
             label="Can get",
             score=can_get,
             band=_score_band(can_get),
-            rationale=str(signals.get("advantage_type") or "").replace("_", " ").title(),
+            rationale=_rationale_can_get(recruiter_hook, advantage_type, can_get),
             confidence=confidence,
         ),
         DecisionSignal(
@@ -156,7 +247,7 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
             label="Should want",
             score=should_want,
             band=_score_band(should_want),
-            rationale=rationale,
+            rationale=_rationale_should_want(why_it_matters, should_want),
             confidence=confidence,
         ),
         DecisionSignal(
@@ -164,7 +255,7 @@ def _build_dimensions(signals: dict[str, Any], score: int) -> list[DecisionSigna
             label="Can explain",
             score=can_explain,
             band=_score_band(can_explain),
-            rationale=brand or rationale,
+            rationale=_rationale_can_explain(applicant_pool_hypothesis, can_explain, triage_label),
             confidence=confidence,
         ),
     ]
@@ -191,22 +282,18 @@ def _extract_ats_keywords(row: dict[str, Any], signals: dict[str, Any]) -> list[
 
 
 def _build_strengths_gaps(signals: dict[str, Any]) -> tuple[list[str], list[str]]:
-    """Strengths = human-readable triage_signals (what matched).
-    Gaps = surfaced from advantage_type + narrative cues when 'weak_case'."""
-    strengths = _filter_human_signals(signals.get("triage_signals"))
-    advantage = str(signals.get("advantage_type") or "").lower()
-    gaps: list[str] = []
-    brand = str(signals.get("narrative_brand_frame") or "").strip()
-    if advantage in ("weak_case", "weak_fit"):
-        if brand:
-            gaps.append(brand)
-        gaps.append("Profile match is thin — make the relevance case explicit.")
-    elif advantage == "strong_fit":
-        # Even strong cases sometimes have weak keywords listed; surface them as soft gaps
-        wks = _wk_signals(signals.get("triage_signals"))
-        if wks:
-            gaps.append(f"Less-direct match on: {', '.join(wks[:5])}")
-    return strengths[:8], gaps[:4]
+    """Strengths = concrete profile↔ad overlaps from profile_match.
+    Gaps     = concrete profile↔ad gaps from profile_match.
+
+    Only the pipeline's real overlaps/gaps surface. triage_signals tags
+    ("geo", "offentlig") and wk:* keywords are filter-pass markers, not
+    candidate strengths, so they don't get dressed up as strengths. When
+    profile_match data is missing (legacy rows, failed run), both lists
+    return empty and the UI shows the honest empty state.
+    """
+    overlaps = _filter_human_strings(signals.get("profile_match_overlaps"))
+    real_gaps = _filter_human_strings(signals.get("profile_match_gaps"))
+    return overlaps[:8], real_gaps[:4]
 
 
 def _resolve_source_url(row: dict[str, Any]) -> str:
@@ -240,11 +327,13 @@ def _row_to_read_model(row: dict[str, Any]) -> ApplicationCaseReadModel:
     if not isinstance(raw_signals, dict):
         raw_signals = {}
 
-    # Prefer the pipeline's narrative angle as the case summary when present —
-    # it's a 1-2 sentence positioning crafted for this exact match. Fall back
-    # to the raw NAV description (HTML, longer).
-    narrative = str(raw_signals.get("narrative_positioning_angle") or "").strip()
-    summary = narrative if narrative else _truncate(row.get("description"), 500)
+    # narrative_strategy_v3 produced template strings (not LLM prose) for every
+    # advantage type — see jobpipe/stages/narrative_strategy_v3.py and the
+    # disable commit db545d2 (2026-05-16). Legacy rows still carry those
+    # templates in signals.narrative_positioning_angle; skip them and derive
+    # the summary from the raw ad description (HTML → plain text). Real prose
+    # positioning happens JIT in the editor at B7, not here.
+    summary = html_to_text(str(row.get("description") or ""), max_chars=500)
 
     strengths, gaps = _build_strengths_gaps(raw_signals)
     dimensions = _build_dimensions(raw_signals, score)
